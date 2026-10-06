@@ -13,21 +13,23 @@ using System.Collections.Generic;
 namespace DotNet.VisionMaster
 {
     /// <summary>
-    /// 宿主主窗：工具列表（流程）、参数页、显示窗口、运行与方案读写。
+    /// 宿主主窗：持有流程（工具列表）、参数页、显示窗口，负责运行与方案读写。
     /// </summary>
     /// <remarks>
     /// 只认识 <see cref="AlgoCatalog"/>、<see cref="IParaStrategy"/> 与能力接口，不认识任何具体算法：
     /// 可添加的工具来自目录扫描（内置 HalconAlgo + <c>plugins\</c>），新增算法不需要改这里。
+    /// 界面只是三块容器，内容在运行时嵌入：显示窗口、参数页、流程窗口（<see cref="JobForm"/>）。
     /// </remarks>
     public partial class MainForm : Form
     {
         private readonly HDisplayUI _display;
         private readonly ParaForm _formPara;
         private readonly ToolForm _formTool;
+        private readonly JobForm _formJob;
+        private readonly Timer _loopTimer = new Timer { Interval = 100 };
         private readonly List<IParaStrategy> _tools = new List<IParaStrategy>();
         private readonly HashSet<Guid> _invalid = new HashSet<Guid>();
         private int _index = -1;
-        private bool _syncingList;
 
         public MainForm() : this(LoadCatalog(), createDefaultFlow: true) { }
 
@@ -44,23 +46,23 @@ namespace DotNet.VisionMaster
             _formPara = new ParaForm(_display);
             panel2.Controls.Add(_formPara);
 
-            lst_tools.DrawMode = DrawMode.OwnerDrawFixed;
-            lst_tools.ItemHeight = lst_tools.Font.Height + 6;   // Designer 里的 12px 放不下中文, 自绘时各行会叠在一起
-            lst_tools.DrawItem += lst_tools_DrawItem;
             _formTool = new ToolForm(Catalog);
             _formTool.ToolSelected += AddToolFromToolbox;
-            lst_tools.AllowDrop = true;
-            lst_tools.DragEnter += lst_tools_DragEnter;
-            lst_tools.DragDrop += lst_tools_DragDrop;
+
+            // 流程窗口嵌在右侧（同旧项目 Fun_FormNoneBorder）；随主窗一起释放
+            _formJob = new JobForm(this) { TopLevel = false, FormBorderStyle = FormBorderStyle.None, Dock = DockStyle.Fill };
+            panel3.Controls.Add(_formJob);
+            _formJob.Show();
 
             if (createDefaultFlow)
             {
                 foreach (var info in Catalog.Algorithms) AddTool(info.Key, select: false);
-                RefreshToolList();
+                OnFlowChanged();
             }
 
             // 挂 Disposed 而不是重写 Dispose(bool): 后者已在 Designer 里定义。
             // 此时子控件(含 _display)都已销毁, 不会再有绘制去碰策略持有的句柄。
+            _loopTimer.Tick += LoopTimer_Tick;
             Disposed += MainForm_Disposed;
         }
 
@@ -78,6 +80,12 @@ namespace DotNet.VisionMaster
         internal int SelectedIndex => _index;
 
         internal IParaStrategy CurrentTool => _index >= 0 && _index < _tools.Count ? _tools[_index] : null;
+
+        /// <summary> 流程内容或选中项变了（增删、排序、改名、运行状态、切换工具） </summary>
+        internal event EventHandler FlowChanged;
+
+        /// <summary> 连续运行开始或停止 </summary>
+        internal event EventHandler LoopStateChanged;
 
         /// <summary> 选择方案目录；参数是建议目录，返回 null 表示取消。测试可替换 </summary>
         internal Func<string, string> SchemeDirPicker { get; set; } = PickFolder;
@@ -113,7 +121,7 @@ namespace DotNet.VisionMaster
             _tools.Insert(at, tool);
             if (select)
             {
-                RefreshToolList();
+                OnFlowChanged();
                 SelectTool(at);
             }
             return tool;
@@ -126,7 +134,7 @@ namespace DotNet.VisionMaster
             _tools.RemoveAt(index);
             DisposeTool(tool);
             _index = -1;
-            RefreshToolList();
+            OnFlowChanged();
             SelectTool(Math.Min(index, _tools.Count - 1));
             ValidateFlow(showStatus: true);
         }
@@ -139,7 +147,7 @@ namespace DotNet.VisionMaster
             _tools.RemoveAt(index);
             _tools.Insert(target, tool);
             _index = target;
-            RefreshToolList();
+            OnFlowChanged();
             SelectTool(target);
             ValidateFlow(showStatus: true);
         }
@@ -151,7 +159,7 @@ namespace DotNet.VisionMaster
             if (string.IsNullOrEmpty(name) || name == _tools[index].Name) return;
             // 引用按 Id 保存, 改名不会断开下游的来源
             _tools[index].Name = name;
-            RefreshToolList();
+            OnFlowChanged();
             if (index == _index) _formPara.ShowTool(_tools[index], _tools);
         }
 
@@ -163,15 +171,29 @@ namespace DotNet.VisionMaster
             if (index == _index && index >= 0) return;
             if (!EnsureNotDrawing())
             {
-                SyncListSelection();
+                OnFlowChanged();
                 return;
             }
 
             _index = index;
-            SyncListSelection();
-            var tool = CurrentTool;
-            txt_name.Text = tool?.Name ?? string.Empty;
-            if (tool != null) _formPara.ShowTool(tool, _tools);
+            OnFlowChanged();
+            // 没有选中时也要刷新: 否则删掉最后一个工具、打开空方案后, 参数页仍持有已释放的工具
+            _formPara.ShowTool(CurrentTool, _tools);
+        }
+
+        internal bool CanRunFlow() => EnsureNotDrawing();
+
+        /// <summary> 清空当前流程，同时解除参数页对已释放工具的引用。 </summary>
+        internal void ClearFlow()
+        {
+            if (!EnsureNotDrawing()) return;
+            _formPara.ShowTool(null, new IParaStrategy[0]);
+            foreach (var tool in _tools) DisposeTool(tool);
+            _tools.Clear();
+            _invalid.Clear();
+            _index = -1;
+            OnFlowChanged();
+            ShowStatus("当前流程已清空");
         }
 
         private bool EnsureNotDrawing()
@@ -203,64 +225,25 @@ namespace DotNet.VisionMaster
             catch (Exception ex) { Log.Warn(nameof(MainForm), $"释放工具 {tool.GetType().Name} 失败.", ex); }
         }
 
-        private void RefreshToolList()
-        {
-            _syncingList = true;
-            try
-            {
-                lst_tools.BeginUpdate();
-                lst_tools.Items.Clear();
-                for (int i = 0; i < _tools.Count; i++) lst_tools.Items.Add(ItemText(i));
-                lst_tools.EndUpdate();
-            }
-            finally { _syncingList = false; }
-            SyncListSelection();
-        }
+        /// <summary> 流程内容或选中项变了：通知流程窗口刷新 </summary>
+        private void OnFlowChanged() => FlowChanged?.Invoke(this, EventArgs.Empty);
 
-        private string ItemText(int i)
-        {
-            var tool = _tools[i];
-            string mark = tool is MissingTool ? " (缺失)" : _invalid.Contains(tool.Id) ? " (引用错误)" : string.Empty;
-            switch (tool.LastResult?.Status)
-            {
-                case RunStatus.Error: mark += " ✘"; break;
-                case RunStatus.Warning: mark += " !"; break;
-            }
-            return $"{i + 1}. {tool.Name}{mark}";
-        }
+        /// <summary> 引用校验没通过的工具（列表里标红） </summary>
+        internal bool IsInvalid(IParaStrategy tool) => _invalid.Contains(tool.Id);
 
-        private void SyncListSelection()
-        {
-            _syncingList = true;
-            try { lst_tools.SelectedIndex = _index >= 0 && _index < lst_tools.Items.Count ? _index : -1; }
-            finally { _syncingList = false; }
-        }
+        /// <summary> 画工具所属分组的图标，与工具箱一致 </summary>
+        internal void DrawGroupIcon(Graphics g, Rectangle bounds, IParaStrategy tool) =>
+            _formTool.DrawGroupIcon(g, bounds, AlgoInfo.Of(tool)?.Group);
 
-        private void lst_tools_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (!_syncingList) SelectTool(lst_tools.SelectedIndex);
-        }
-
-        /// <summary> 引用有问题、缺失、上一轮失败的工具标红 </summary>
-        private void lst_tools_DrawItem(object sender, DrawItemEventArgs e)
-        {
-            e.DrawBackground();
-            if (e.Index < 0 || e.Index >= _tools.Count) return;
-            var tool = _tools[e.Index];
-            bool bad = tool is MissingTool || _invalid.Contains(tool.Id) || tool.LastResult?.Status == RunStatus.Error;
-            bool selected = (e.State & DrawItemState.Selected) != 0;
-            var color = bad ? Color.Red : selected ? SystemColors.HighlightText : SystemColors.ControlText;
-            TextRenderer.DrawText(e.Graphics, lst_tools.Items[e.Index].ToString(), e.Font, e.Bounds, color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
-            e.DrawFocusRectangle();
-        }
-
-        private void btn_add_Click(object sender, EventArgs e)
+        internal void ShowToolbox()
         {
             if (!_formTool.Visible) _formTool.Show(this);
             _formTool.Activate();
         }
 
-        private void AddToolFromToolbox(string key)
+        internal void FocusParameters() => _formPara.Focus();
+
+        internal void AddToolFromToolbox(string key)
         {
             try { AddTool(key, select: true); }
             catch (Exception ex)
@@ -270,41 +253,7 @@ namespace DotNet.VisionMaster
             }
         }
 
-        private string DraggedAlgorithmKey(IDataObject data)
-        {
-            if (data == null || !data.GetDataPresent(ToolForm.AlgorithmDragFormat)) return null;
-            var key = data.GetData(ToolForm.AlgorithmDragFormat) as string;
-            return Catalog.Find(key) != null ? key : null;
-        }
-
-        private void lst_tools_DragEnter(object sender, DragEventArgs e)
-        {
-            e.Effect = (e.AllowedEffect & DragDropEffects.Copy) != 0 && DraggedAlgorithmKey(e.Data) != null
-                ? DragDropEffects.Copy : DragDropEffects.None;
-        }
-
-        private void lst_tools_DragDrop(object sender, DragEventArgs e)
-        {
-            var key = DraggedAlgorithmKey(e.Data);
-            // 等 OLE 拖放循环结束再添加：添加时可能弹模态提示，拖放中弹出会卡住工具箱的拖拽状态
-            if ((e.AllowedEffect & DragDropEffects.Copy) != 0 && key != null)
-                BeginInvoke(new Action(() => AddToolFromToolbox(key)));
-        }
-
-        private void btn_remove_Click(object sender, EventArgs e) => RemoveTool(_index);
-
-        private void btn_up_Click(object sender, EventArgs e) => MoveTool(_index, -1);
-
-        private void btn_down_Click(object sender, EventArgs e) => MoveTool(_index, +1);
-
-        private void txt_name_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.KeyCode != Keys.Enter) return;
-            RenameTool(_index, txt_name.Text);
-            e.SuppressKeyPress = true;
-        }
-
-        private void txt_name_Leave(object sender, EventArgs e) => RenameTool(_index, txt_name.Text);
+        private void mnu_toolbox_Click(object sender, EventArgs e) => ShowToolbox();
 
         #endregion
 
@@ -316,8 +265,9 @@ namespace DotNet.VisionMaster
             if (CurrentTool == null) return null;
             _display.ReDispImage();
             var step = new FlowRunner(_tools).RunStep(_index, _display.Display.HoImage, _display.Display);
+            ShowCycleTime(step.Result.Elapsed);
             ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}");
-            RefreshToolList();
+            OnFlowChanged();
             return step.Result;
         }
 
@@ -330,8 +280,9 @@ namespace DotNet.VisionMaster
             var error = result.FirstError;
             if (error != null) summary += Environment.NewLine + $"失败: {error.Tool.Name}: {error.Result.Message}";
             if (issues.Count > 0) summary += Environment.NewLine + $"引用问题 {issues.Count} 处: {issues[0]}";
+            ShowCycleTime(result.Elapsed);
             ShowStatus(summary);
-            RefreshToolList();
+            OnFlowChanged();
             return result;
         }
 
@@ -342,20 +293,47 @@ namespace DotNet.VisionMaster
             _invalid.Clear();
             foreach (var issue in issues) _invalid.Add(issue.Tool.Id);
             if (showStatus && issues.Count > 0) ShowStatus($"引用问题 {issues.Count} 处: {issues[0]}");
-            RefreshToolList();
+            OnFlowChanged();
             return issues;
         }
 
-        private void but_Run_Click(object sender, EventArgs e)
+        internal bool IsLoopRunning => _loopTimer.Enabled;
+
+        /// <summary> 连续运行：反复跑整个流程，遇到失败、异常或正在绘制时自动停下。只有主窗这一套定时器 </summary>
+        internal void StartLoop()
         {
-            try { RunCurrent(); }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
+            if (IsLoopRunning || _tools.Count == 0 || !CanRunFlow()) return;
+            _loopTimer.Start();
+            OnLoopStateChanged();
         }
 
-        private void but_RunFlow_Click(object sender, EventArgs e)
+        internal void StopLoop()
         {
-            try { RunFlow(); }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
+            _loopTimer.Stop();
+            OnLoopStateChanged();
+        }
+
+        private void OnLoopStateChanged() => LoopStateChanged?.Invoke(this, EventArgs.Empty);
+
+        /// <summary> 每轮先停表、跑完再续上：提示框是模态的, 不能让下一轮在提示期间重入 </summary>
+        private void LoopTimer_Tick(object sender, EventArgs e)
+        {
+            _loopTimer.Stop();
+            if (_tools.Count == 0 || !CanRunFlow())
+            {
+                OnLoopStateChanged();
+                return;
+            }
+            try
+            {
+                if (RunFlow().FirstError == null) _loopTimer.Start();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(nameof(MainForm), "连续运行失败.", ex);
+                Prompt.Show(ex.Message);
+            }
+            OnLoopStateChanged();
         }
 
         private static string Describe(RunResult result)
@@ -364,11 +342,15 @@ namespace DotNet.VisionMaster
             return $"{text} {result.Message} ({result.Elapsed.TotalMilliseconds:F0} ms)";
         }
 
+        /// <summary> 状态栏只有一行：多行内容压成一行显示，完整内容放在悬停提示里 </summary>
         private void ShowStatus(string text)
         {
-            lbl_status.Text = text;
+            lbl_status.Text = text.Replace(Environment.NewLine, "    ");
+            toolTip1.SetToolTip(lbl_status, text);
             Log.Info(nameof(MainForm), text);
         }
+
+        private void ShowCycleTime(TimeSpan elapsed) => lbl_CT.Text = $"CT: {elapsed.TotalMilliseconds:F0} ms";
 
         #endregion
 
@@ -396,6 +378,15 @@ namespace DotNet.VisionMaster
             ShowStatus($"方案已打开: {dir}" + (missing > 0 ? $" (缺失 {missing} 个工具, 配置已保留)" : string.Empty));
         }
 
+        /// <summary> 新建方案即清空当前流程；连续运行中不允许 </summary>
+        private void mnu_new_Click(object sender, EventArgs e)
+        {
+            if (!EnsureLoopStopped()) return;
+            if (_tools.Count > 0 && MessageBox.Show(this, "清空当前流程？未保存的工具配置将丢失。", "新建方案",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            ClearFlow();
+        }
+
         private void btn_save_Click(object sender, EventArgs e)
         {
             try
@@ -406,8 +397,17 @@ namespace DotNet.VisionMaster
             catch (Exception ex) { Prompt.Show(ex.Message); }
         }
 
+        /// <summary> 连续运行中不允许替换流程（新建、打开方案） </summary>
+        private bool EnsureLoopStopped()
+        {
+            if (!IsLoopRunning) return true;
+            Prompt.Show("请先停止连续运行。");
+            return false;
+        }
+
         private void btn_open_Click(object sender, EventArgs e)
         {
+            if (!EnsureLoopStopped()) return;
             try
             {
                 string dir = SchemeDirPicker(SchemeRoot);
@@ -438,6 +438,7 @@ namespace DotNet.VisionMaster
         /// </summary>
         private void MainForm_Disposed(object sender, EventArgs e)
         {
+            _loopTimer.Dispose();
             _formTool.Dispose();
             foreach (var tool in _tools) DisposeTool(tool);
         }

@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using DotNet.HalconCore;
@@ -69,6 +70,16 @@ namespace DotNet.VisionMaster
                 label_Note.Text = "提示：双击或按 Enter 添加工具，也可拖到流程列表。";
             }
             finally { treeView_Tool.EndUpdate(); }
+        }
+
+        /// <summary>
+        /// 画分组图标，流程列表与工具箱共用同一套；没有对应图标时不画。
+        /// 不用 Images[i]：每次取都会新建一个 Bitmap，放在重绘里会一直漏句柄。
+        /// </summary>
+        internal void DrawGroupIcon(Graphics g, Rectangle bounds, string group)
+        {
+            int icon = GroupIcon(group);
+            if (icon >= 0) imageList1.Draw(g, bounds.X, bounds.Y, bounds.Width, bounds.Height, icon);
         }
 
         private int GroupIcon(string group)

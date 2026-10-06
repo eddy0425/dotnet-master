@@ -85,6 +85,12 @@
     <Compile Include="Prompt.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="DrawingLogBridge.cs" />
+    <Compile Include="TreeNode\JobForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TreeNode\JobForm.designer.cs">
+      <DependentUpon>JobForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="TreeNode\ToolForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -115,6 +121,9 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="TreeNode\JobForm.resx">
+      <DependentUpon>JobForm.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="TreeNode\ToolForm.resx">
       <DependentUpon>ToolForm.cs</DependentUpon>
     </EmbeddedResource>
@@ -165,6 +174,15 @@
       <ProductName>.NET Framework 3.5 SP1</ProductName>
       <Install>false</Install>
     </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\FlowAdd.png" />
+    <None Include="Resources\FlowDelete.png" />
+    <None Include="Resources\FlowDown.png" />
+    <None Include="Resources\FlowRename.png" />
+    <None Include="Resources\FlowUp.png" />
+    <None Include="Resources\MenuDelete.png" />
+    <None Include="Resources\RunButton.png" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

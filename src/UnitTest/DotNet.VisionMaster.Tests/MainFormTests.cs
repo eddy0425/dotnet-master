@@ -34,6 +34,11 @@ namespace DotNet.VisionMaster.Tests
 
         private static string Status(MainForm form) => Priv.Get<Label>(form, "lbl_status").Text;
 
+        /// <summary> 主窗右侧嵌入的流程窗口 </summary>
+        private static JobForm Jobs(MainForm form) => Priv.Get<JobForm>(form, "_formJob");
+
+        private static ListBox ToolList(JobForm jobs) => Priv.Get<ListBox>(jobs, "lst_tools");
+
         /// <summary> 工具箱的树只在 Load 时生成；测试不显示工具箱，这里手动生成 </summary>
         private static ToolForm Toolbox(MainForm form)
         {
@@ -179,7 +184,7 @@ namespace DotNet.VisionMaster.Tests
                     form.SelectTool(i);
                     Assert.AreEqual(i, form.SelectedIndex);
                     Assert.AreSame(Tools(form)[i], Para(form).Tool);
-                    Assert.AreEqual(i, Priv.Get<ListBox>(form, "lst_tools").SelectedIndex);
+                    Assert.AreEqual(i, ToolList(Jobs(form)).SelectedIndex);
                 }
             });
         }
@@ -240,7 +245,7 @@ namespace DotNet.VisionMaster.Tests
                 var issues = form.ValidateFlow(false);
                 Assert.AreEqual(1, issues.Count);
                 Assert.AreSame(user, issues[0].Tool);
-                StringAssert.Contains(Priv.Get<ListBox>(form, "lst_tools").Items[0].ToString(), "引用错误");
+                StringAssert.Contains(ToolList(Jobs(form)).Items[0].ToString(), "引用错误");
             }, defaultFlow: false);
         }
 
@@ -282,7 +287,7 @@ namespace DotNet.VisionMaster.Tests
                 Assert.AreEqual(0, a.Runs);
                 Assert.AreEqual(1, b.Runs);
                 StringAssert.Contains(Status(form), "B: 失败 运行失败原因");
-                StringAssert.EndsWith(Priv.Get<ListBox>(form, "lst_tools").Items[1].ToString(), "✘", "失败的工具在列表里标出来");
+                StringAssert.EndsWith(ToolList(Jobs(form)).Items[1].ToString(), "✘", "失败的工具在列表里标出来");
             }, defaultFlow: false);
         }
 
@@ -312,9 +317,196 @@ namespace DotNet.VisionMaster.Tests
             {
                 using (var prompts = new PromptLog())
                 {
-                    Priv.Click(form, "but_Run_Click");
-                    Priv.Click(form, "but_RunFlow_Click");
+                    Priv.Click(Jobs(form), "mnu_runCurrent_Click");
+                    Priv.Click(Jobs(form), "btn_runOnce_Click");
                     CollectionAssert.AreEqual(new string[0], prompts.Messages);
+                }
+            }, defaultFlow: false);
+        }
+
+        #endregion
+
+        [TestMethod]
+        public void RunLoop_StopsOnFailure_AndToggles()
+        {
+            Run(form =>
+            {
+                var tool = new FakeStrategy("失败工具") { RunError = new InvalidOperationException("失败") };
+                Tools(form).Add(tool);
+                Priv.Click(Jobs(form), "btn_runLoop_Click");
+                Assert.IsTrue(form.IsLoopRunning);
+                Priv.Click(Jobs(form), "btn_runOnce_Click");
+                Assert.AreEqual(0, tool.Runs, "连续运行期间单次运行不生效");
+                Priv.Click(form, "LoopTimer_Tick");
+                Assert.IsFalse(form.IsLoopRunning, "失败后自动停下");
+                Assert.AreEqual(1, tool.Runs);
+
+                tool.RunError = null;
+                Priv.Click(Jobs(form), "btn_runLoop_Click");
+                Priv.Click(form, "LoopTimer_Tick");
+                Assert.IsTrue(form.IsLoopRunning);
+                Priv.Click(Jobs(form), "btn_runLoop_Click");
+                Assert.IsFalse(form.IsLoopRunning, "再点一次停止");
+            }, defaultFlow: false);
+        }
+
+        #region 流程窗口
+
+        /// <summary> 流程窗口在运行时嵌进主窗右侧，主窗 Designer 里不放列表和按钮 </summary>
+        [TestMethod]
+        public void MainForm_EmbedsJobForm()
+        {
+            Run(form =>
+            {
+                var jobs = Jobs(form);
+                Assert.IsFalse(jobs.TopLevel);
+                Assert.AreSame(Priv.Get<Panel>(form, "panel3"), jobs.Parent);
+                Assert.IsTrue(jobs.Visible);
+                Assert.AreEqual(Tools(form).Count, ToolList(jobs).Items.Count);
+            });
+        }
+
+        [TestMethod]
+        public void JobForm_Unbound_DisablesRunButtons()
+        {
+            Sta.Run(() =>
+            {
+                using (var jobs = new JobForm())
+                {
+                    Assert.IsFalse(jobs.btn_runOnce.Enabled);
+                    Assert.IsFalse(jobs.btn_runLoop.Enabled);
+                    jobs.RunOnce();
+                    Priv.Click(jobs, "btn_runLoop_Click");
+                    Assert.IsFalse(jobs.IsLoopRunning);
+                }
+            });
+        }
+
+        [TestMethod]
+        public void JobForm_RunAndSelect_UseHostFlow()
+        {
+            Run(form =>
+            {
+                var a = new FakeStrategy("A");
+                var b = new FakeStrategy("B");
+                Tools(form).AddRange(new IParaStrategy[] { a, b });
+                using (var jobs = new JobForm(form))
+                {
+                    var list = ToolList(jobs);
+                    Assert.AreEqual(2, list.Items.Count);
+                    list.SelectedIndex = 1;
+                    Assert.AreEqual(1, form.SelectedIndex);
+                    jobs.RunOnce();
+                    Assert.AreEqual(1, a.Runs);
+                    Assert.AreEqual(1, b.Runs);
+                    StringAssert.EndsWith(list.Items[1].ToString(), "✔", "成功的工具也要标出来，行尾 ✔ 才会重画");
+                }
+            }, defaultFlow: false);
+        }
+
+        [TestMethod]
+        public void JobForm_SharesHostLoop()
+        {
+            Run(form =>
+            {
+                var tool = new FakeStrategy("失败工具") { RunError = new InvalidOperationException("失败") };
+                Tools(form).Add(tool);
+                using (var jobs = new JobForm(form))
+                {
+                    WindowHost.ShowOffscreen(jobs);
+                    Priv.Click(jobs, "btn_runLoop_Click");
+                    Assert.IsTrue(form.IsLoopRunning, "流程窗口开的是主窗那一套循环");
+                    Assert.IsFalse(jobs.btn_runOnce.Enabled);
+                    Assert.AreEqual("停止运行", jobs.btn_runLoop.Text);
+                    Priv.Click(form, "LoopTimer_Tick");
+                    Assert.IsFalse(jobs.IsLoopRunning, "失败后自动停下");
+                    Assert.IsTrue(jobs.btn_runOnce.Enabled, "主窗停下后流程窗口的按钮跟着恢复");
+                    Assert.AreEqual(1, tool.Runs);
+
+                    tool.RunError = null;
+                    form.StartLoop();
+                    Assert.IsTrue(jobs.IsLoopRunning, "主窗开的循环流程窗口也能看到");
+                    jobs.Hide();
+                    Assert.IsTrue(form.IsLoopRunning, "关流程窗口不影响主窗的循环");
+                    Priv.Click(jobs, "btn_runLoop_Click");
+                    Assert.IsFalse(form.IsLoopRunning, "流程窗口也能停");
+                }
+            }, defaultFlow: false);
+        }
+
+        [TestMethod]
+        public void JobForm_FollowsHostFlowChanges_AndUnsubscribesOnDispose()
+        {
+            Run(form =>
+            {
+                Tools(form).AddRange(new IParaStrategy[] { new FakeStrategy("A"), new FakeStrategy("B") });
+                var jobs = new JobForm(form);
+                var list = ToolList(jobs);
+                form.SelectTool(1);
+                Assert.AreEqual(1, list.SelectedIndex, "主窗切换工具时同步选中");
+                form.RemoveTool(0);
+                Assert.AreEqual(1, list.Items.Count, "主窗删工具时同步列表");
+                jobs.Dispose();
+                form.RemoveTool(0);   // 已释放的流程窗口不再收到回调
+                Assert.AreEqual(0, form.Tools.Count);
+            }, defaultFlow: false);
+        }
+
+        [TestMethod]
+        public void RemoveTool_Last_ClearsParameterBinding()
+        {
+            Run(form =>
+            {
+                var tool = new FakeStrategy();
+                Tools(form).Add(tool);
+                form.SelectTool(0);
+                form.RemoveTool(0);
+                Assert.IsTrue(tool.Disposed);
+                Assert.IsNull(Para(form).Tool, "参数页不能留着已释放的工具");
+            }, defaultFlow: false);
+        }
+
+        [TestMethod]
+        public void JobForm_WhileDrawing_DoesNotRun()
+        {
+            Run(form =>
+            {
+                var tool = new FakeStrategy();
+                Tools(form).Add(tool);
+                using (var jobs = new JobForm(form))
+                using (var prompts = new PromptLog())
+                {
+                    Priv.Set(Para(form), "_drawBusy", true);
+                    try
+                    {
+                        jobs.RunOnce();
+                        Priv.Click(jobs, "btn_runLoop_Click");
+                        Assert.AreEqual(0, tool.Runs);
+                        Assert.IsFalse(jobs.IsLoopRunning);
+                        Assert.AreEqual(2, prompts.Messages.Count);
+                    }
+                    finally { Priv.Set(Para(form), "_drawBusy", false); }
+                }
+            }, defaultFlow: false);
+        }
+
+        [TestMethod]
+        public void ClearFlow_DisposesToolsAndClearsParameterBinding()
+        {
+            Run(form =>
+            {
+                var tool = new FakeStrategy();
+                Tools(form).Add(tool);
+                form.SelectTool(0);
+                form.ClearFlow();
+                Assert.IsTrue(tool.Disposed);
+                Assert.AreEqual(0, form.Tools.Count);
+                Assert.AreEqual(-1, form.SelectedIndex);
+                Assert.IsNull(Para(form).Tool);
+                using (var jobs = new JobForm(form))
+                {
+                    Assert.IsFalse(jobs.btn_runOnce.Enabled);
+                    Assert.IsFalse(jobs.btn_runLoop.Enabled);
                 }
             }, defaultFlow: false);
         }
@@ -371,6 +563,26 @@ namespace DotNet.VisionMaster.Tests
                 }
                 Assert.AreEqual(11, Tools(form).Count, "流程不变");
             });
+        }
+
+        [TestMethod]
+        public void Open_WhileLoopRunning_Prompts()
+        {
+            Run(form =>
+            {
+                Tools(form).Add(new FakeStrategy());
+                form.StartLoop();
+                bool picked = false;
+                form.SchemeDirPicker = s => { picked = true; return null; };
+                using (var prompts = new PromptLog())
+                {
+                    Priv.Click(form, "btn_open_Click");
+                    StringAssert.Contains(prompts.Messages.Single(), "停止连续运行");
+                }
+                Assert.IsFalse(picked, "连续运行中不弹选择目录");
+                Assert.IsTrue(form.IsLoopRunning);
+                form.StopLoop();
+            }, defaultFlow: false);
         }
 
         #endregion
