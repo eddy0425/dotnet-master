@@ -21,10 +21,15 @@ namespace DotNet.HalconUI
     public partial class HDisplayUI : UserControl, IRoiHost
     {
         readonly HDisplay display;
+        readonly UiThreadDisplay uiDisplay;
         readonly HWindowMouse mouse;
 
         /// <summary> 绘制接口。所有 <c>Disp*</c> 调用都经由它，不再由本控件转发。 </summary>
-        public IHDisplay Display => display;
+        /// <remarks>
+        /// 返回切回 UI 线程的包装（<see cref="UiThreadDisplay"/>）：策略可能在后台线程（流程运行、相机回调）里绘制，
+        /// HALCON 窗口只能在 UI 线程上操作。
+        /// </remarks>
+        public IHDisplay Display => uiDisplay;
         public event HMouseEventHandler HMouseUp { add => hWindowControl.HMouseUp += value; remove => hWindowControl.HMouseUp -= value; }
         public event HMouseEventHandler HMouseMove { add => hWindowControl.HMouseMove += value; remove => hWindowControl.HMouseMove -= value; }
         public event HMouseEventHandler HMouseDown { add => hWindowControl.HMouseDown += value; remove => hWindowControl.HMouseDown -= value; }
@@ -87,6 +92,7 @@ namespace DotNet.HalconUI
             // 直接组合 HDisplay + HWindowMouse：原先夹在中间的 HDisplayCore 除了这两个字段的
             // 转发外没有任何行为，却让每个新增的绘制方法都要改三处签名。
             display = new HDisplay(hWindowControl);
+            uiDisplay = new UiThreadDisplay(display, this);
             // 视图导航(平移/缩放/双击复位)不自己订阅控件事件, 由本类按固定顺序转发
             mouse = new HWindowMouse(hWindowControl, display, subscribe: false);
             mouse.RefreshUI += Display_RefreshUI;

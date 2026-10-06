@@ -38,40 +38,19 @@ namespace DotNet.HalconUI
         {
             hWindowControl.Focus();
 
-            HObject srcImage = null, modeRect = null, contour = null;
-            try
+            using (var preview = TemplatePreview.Load(modelPath, ho_ModeRect, ho_Contour, result))
             {
-                HOperatorSet.ReadImage(out srcImage, modelPath);
-
-                Point2d from = result.Coord.Center;
-                Point2d to = ImageCentre(srcImage);
-                TransObject(from, to, ho_ModeRect, out modeRect);
-                TransObject(from, to, ho_Contour, out contour);
-                Point2d centerTrans = HalconController.TransPoint(from, to, new Point2d(result.Column, result.Row));
-
+                _coord = preview.Coord;
+                preview.Detach(out HObject srcImage, out HObject modeRect, out HObject contour);
                 Replace(ref _srcImage, ref srcImage);
                 Replace(ref _modeRect, ref modeRect);
                 Replace(ref _contour, ref contour);
-                _coord = new CvCoord(centerTrans, Angle.FromRadians(result.Angle));
-            }
-            finally
-            {
-                srcImage?.Dispose();
-                modeRect?.Dispose();
-                contour?.Dispose();
             }
 
             display.DispImage(_srcImage);
             display.Disp(_modeRect, DrawStyle.Of(HColor.Blue));
             display.Disp(_contour, DrawStyle.Of(HColor.Green));
             display.Disp(_coord, DrawStyle.Of(HColor.Red));
-        }
-
-        /// <summary> 图像中心，与 <see cref="HDisplay.HoCentre"/> 同一约定（X = 列）。 </summary>
-        internal static Point2d ImageCentre(HObject image)
-        {
-            HOperatorSet.GetImageSize(image, out HTuple width, out HTuple height);
-            return new Point2d(width.D / 2, height.D / 2);
         }
 
         /// <summary> 用 <paramref name="value"/> 换下 <paramref name="field"/> 并释放旧对象；<paramref name="value"/> 置空，所有权转入字段。 </summary>
@@ -81,25 +60,6 @@ namespace DotNet.HalconUI
             field = value;
             value = null;
             old?.Dispose();
-        }
-
-        private static void TransObject(Point2d from, Point2d to, HObject obj, out HObject objTrans)
-        {
-            if (obj == null || !obj.IsInitialized() || obj.CountObj() <= 0)
-            {
-                HOperatorSet.GenEmptyObj(out objTrans);
-                return;
-            }
-
-            HOperatorSet.GetObjClass(obj, out HTuple objClass);
-            if (objClass.S.StartsWith("xld"))
-            {
-                HalconController.TransContourXld(from, to, obj, out objTrans);
-            }
-            else
-            {
-                HalconController.TransRegion(from, to, obj, out objTrans);
-            }
         }
 
         /// <summary>

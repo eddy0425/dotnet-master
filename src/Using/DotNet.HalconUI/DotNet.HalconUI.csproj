@@ -106,6 +106,8 @@
     <Compile Include="Param\ParamPanel.cs" />
     <Compile Include="HWindows\HMouse\Draw\IDrawCanvas.cs" />
     <Compile Include="HWindows\HDisplay\RoiInteraction.cs" />
+    <Compile Include="HModel\TemplatePreview.cs" />
+    <Compile Include="HWindows\HDisplay\UiThreadDisplay.cs" />
     <EmbeddedResource Include="HModelUI.resx">
       <DependentUpon>HModelUI.cs</DependentUpon>
     </EmbeddedResource>

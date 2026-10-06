@@ -13,8 +13,8 @@ namespace DotNet.HalconUI.Tests
         public void ZoomImage_Defaults()
         {
             var z = new ZoomImage();
-            Assert.AreEqual(1248, z.width.I);
-            Assert.AreEqual(2200, z.height.I);
+            Assert.AreEqual(0, z.width.I, "不再写死某台相机的分辨率");
+            Assert.AreEqual(0, z.height.I);
             Assert.IsTrue(z.parent.IsEmpty);
         }
 

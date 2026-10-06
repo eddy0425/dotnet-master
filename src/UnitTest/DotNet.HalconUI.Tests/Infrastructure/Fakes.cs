@@ -46,8 +46,12 @@ namespace DotNet.HalconUI.Tests
         public void ReDispImage() { }
         public void ClearWinDisp(HObject objectVal) { }
 
+        /// <summary> 最近一次 Disp(Point2d) 调用所在的线程 </summary>
+        public int LastCallThread;
+
         public void Disp(Point2d point, DrawStyle style = null)
         {
+            LastCallThread = System.Threading.Thread.CurrentThread.ManagedThreadId;
             if (ThrowOnDispPoint != null) throw ThrowOnDispPoint;
             Points.Add(new Drawn<Point2d>(point, style));
         }

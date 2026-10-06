@@ -451,19 +451,19 @@ plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
 
 这部分不影响算法类的写法：
 
-- [ ] 拆分 `HDisplay`：
+- [x] 拆分 `HDisplay`：（交互绘制拆到 `RoiInteraction`；圆环生成三份实现收拢为 `DotNet.Drawing.RegionShapes.GenRing`；字体经构造函数可注入；删除会改写传入 CvRegion 的 `DispGenRegion` / `GenCoordsRegion`）
   - 显示和画笔状态。
   - 交互绘制（`RoiInteraction`）。
   - 区域生成逻辑移到 Drawing 或 Core。
   - `IHWindowFont` 改为注入，并按 Halcon 版本选择实现。
-- [ ] 把 `HModelUI`、`HEditModelUI` 中的模板编辑（仿射变换、Union、擦除累积）和读图抽成服务，合并两份重复的 `TransObject`、`DisplayModel`。
-- [ ] 鼠标模式改成显式的状态机：同一时刻只有一个活动模式，平移和缩放作为默认模式。`DrawType` 不再公开可写。
-- [ ] 去掉绘制子系统中的静态状态：`DrawSession` 注册表改为每个窗口一个实例；`Timeout` 改为参数传入；`autodraw` 的保存和还原按窗口隔离。
-- [ ] 让 Shape 状态机可以脱离 Halcon 测试：`DrawRenderer` 抽出 `IDrawCanvas` 接口，Shape 改用自有的 `MouseInput` 结构，代替 `HMouseEventArgs`。
+- [x] 把 `HModelUI`、`HEditModelUI` 中的模板编辑（仿射变换、Union、擦除累积）和读图抽成服务，合并两份重复的 `TransObject`、`DisplayModel`。（`TemplatePreview`：读图、平移到小图中心、并集 / 差集）
+- [x] 鼠标模式改成显式的状态机：同一时刻只有一个活动模式，平移和缩放作为默认模式。`DrawType` 不再公开可写。（`HDisplayUI.Dispatch` 固定顺序：视图导航 → 重绘 → 当前模式；`DrawType` 外部只读、设置时校验取值）
+- [x] 去掉绘制子系统中的静态状态：`DrawSession` 注册表改为每个窗口一个实例；`Timeout` 改为参数传入；`autodraw` 的保存和还原按窗口隔离。（`Timeout` 改为各入口参数；删除进程级 `HalconAPI.CancelDraw()`；**autodraw 的保存 / 还原直接删除**：HALCON 22.11 没有这个系统参数，get/set 都报 #1301，原代码每次会话都静默失败。会话注册表本来就按窗口区分，保留）
+- [x] 让 Shape 状态机可以脱离 Halcon 测试：`DrawRenderer` 抽出 `IDrawCanvas` 接口，Shape 改用自有的 `MouseInput` 结构，代替 `HMouseEventArgs`。
 - [x] VsControl 改为显式注册控件，取代按私有字段名反射（阶段 1 的 `ParamPanel` 生成的控件已经是显式注册的，这里处理剩下的 Region、Matching 页）。（VsControl 已整体删除：参数页由 ParamPanel 生成，Region / Matching 页的固定控件由 ParaForm 直接持有，不再有按名字反射的地方）
 - [x] ParaForm 里 4 个重复的 async 绘制入口合并为一个。（`RunDraw`）
-- [ ] 显示入口统一切回 UI 线程，为将来接入相机做准备。
-- [ ] 删除死代码 `ModelExtension`、`ModelType`；`ZoomImage` 构造函数的默认分辨率 1248x2200 不再写死（`HWindowImage` 的 `zoomInfo` 已改为 0x0，只有 `getInfo` 还在沿用这个默认值）。
+- [x] 显示入口统一切回 UI 线程，为将来接入相机做准备。（`UiThreadDisplay` 装饰器，`HDisplayUI.Display` 返回它）
+- [x] 删除死代码 `ModelExtension`、`ModelType`；`ZoomImage` 构造函数的默认分辨率 1248x2200 不再写死（`HWindowImage` 的 `zoomInfo` 已改为 0x0，只有 `getInfo` 还在沿用这个默认值）。（`ZoomImage` 默认改为 0×0）
 
 ### 阶段 6（可选）：拆分 DotNet.Drawing
 
@@ -481,7 +481,7 @@ plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
 - [x] `MainForm`、`ParaForm` 中不出现任何具体策略类型名、`AlgoEnum` 或 `cmb_1xx` 槽位；算法类中不出现任何控件名字符串。
 - [x] 每个参数只在 `DeclareParams` 里出现一次；每个输出只在 `DeclareOutputs` 里出现一次。
 - [x] 每个策略的 `Execute` 可以在单元测试里无界面运行，失败原因通过 `RunResult` 返回，而不是只画在屏幕上。
-- [ ] 每个策略都会被释放（基类实现 `IDisposable`），长时间循环运行时内存平稳，不泄漏 HObject 或 HTuple 句柄。
+- [x] 每个策略都会被释放（基类实现 `IDisposable`），长时间循环运行时内存平稳，不泄漏 HObject 或 HTuple 句柄。（`SoakTests`：真实流程跑 2000 轮，私有内存增长 < 8 MB）
 - [x] `inPara` 只包含可序列化的配置：没有运行结果、没有 Halcon 句柄、没有界面文字。
 - [x] 方案保存后重新打开，参数、ROI、模板、工具之间的引用全部还原；重命名工具不会断开引用；插件缺失时配置不丢。
 - [x] HalconAlgo 只引用 Drawing、HalconCore、halcondotnet 和 BCL（架构测试守住）。（`AlgoCatalogTests.HalconAlgo_ReferencesOnlyContractAndHalcon`）

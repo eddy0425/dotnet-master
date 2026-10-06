@@ -22,6 +22,13 @@ namespace DotNet.HalconAlgo.Tests
         public readonly List<CvCoord> Coords = new List<CvCoord>();
         public int DispImageCount;
 
+        /// <summary> 清掉已记录的绘制（长循环测试里避免记录本身占内存） </summary>
+        public void Clear()
+        {
+            Texts.Clear(); Points.Clear(); Objects.Clear(); Regions.Clear();
+            Rect2Centers.Clear(); Arrows.Clear(); Coords.Clear();
+        }
+
         public bool IsCross { get; set; }
         public bool Adaptive { get; set; }
         public double HoWidth { get; private set; }

@@ -71,6 +71,7 @@
     <Compile Include="MatchingStrategyTests.cs" />
     <Compile Include="CoreContractTests.cs" />
     <Compile Include="FlowTests.cs" />
+    <Compile Include="SoakTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Using\DotNet.Drawing\DotNet.Drawing.csproj">

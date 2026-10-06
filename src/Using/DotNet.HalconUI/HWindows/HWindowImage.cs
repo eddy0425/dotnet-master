@@ -53,7 +53,7 @@ namespace DotNet.HalconUI
             // zoomInfo 记录的是「控件已按哪个尺寸布局过」，初始必须是未布局(0x0)。
             // 原先与 getInfo 同为默认 1248x2200，首张图恰好是这个尺寸（本项目相机的实际分辨率）时
             // 两者相等、跳过布局，控件保持铺满父容器，竖图被拉伸。
-            zoomInfo = new ZoomImage { width = 0, height = 0 };
+            zoomInfo = new ZoomImage();
             HOperatorSet.GenEmptyObj(out _hoImage);
 
             hWindowControl.Resize += HWindowControl_Resize;

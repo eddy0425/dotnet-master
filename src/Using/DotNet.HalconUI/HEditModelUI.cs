@@ -227,14 +227,7 @@ namespace DotNet.HalconUI
                     return;
                 }
 
-                if (IsAdd)
-                {
-                    HOperatorSet.Union2(findMode, drawRegion, out regionResult);
-                }
-                else
-                {
-                    HOperatorSet.Difference(findMode, drawRegion, out regionResult);
-                }
+                regionResult = TemplatePreview.Combine(findMode, drawRegion, IsAdd);
 
                 findMode.Dispose();
                 shrFindMode = regionResult;
@@ -285,30 +278,15 @@ namespace DotNet.HalconUI
         {
             display.Reset();
 
-            HObject srcImage = null, findMode = null, contour = null, erase = null;
-            try
+            using (var preview = TemplatePreview.Load(modelPath, ho_ModeRect, ho_Contour, result))
             {
-                HOperatorSet.ReadImage(out srcImage, modelPath);
-
-                Point2d from = result.Coord.Center;
-                Point2d to = HModelUI.ImageCentre(srcImage);
-                TransObject(from, to, ho_ModeRect, out findMode);
-                TransObject(from, to, ho_Contour, out contour);
-                Point2d centerTrans = HalconController.TransPoint(from, to, new Point2d(result.Column, result.Row));
-                HOperatorSet.GenEmptyObj(out erase);
-
+                HOperatorSet.GenEmptyObj(out HObject erase);
+                _shrCoord = preview.Coord;
+                preview.Detach(out HObject srcImage, out HObject findMode, out HObject contour);
                 HModelUI.Replace(ref _srcImage, ref srcImage);
                 HModelUI.Replace(ref shrFindMode, ref findMode);
                 HModelUI.Replace(ref _shrContour, ref contour);
                 HModelUI.Replace(ref shrErase, ref erase);
-                _shrCoord = new CvCoord(centerTrans, Angle.FromRadians(result.Angle));
-            }
-            finally
-            {
-                srcImage?.Dispose();
-                findMode?.Dispose();
-                contour?.Dispose();
-                erase?.Dispose();
             }
 
             // 先换图再 SetModelPara：后者内部 ReDispImage 重绘的是窗口里的当前图
@@ -319,25 +297,6 @@ namespace DotNet.HalconUI
             display.Display.Disp(shrFindMode, DrawStyle.Of(HColor.Blue));
             display.Display.Disp(_shrContour, DrawStyle.Of(HColor.Green));
             display.Display.Disp(_shrCoord, DrawStyle.Of(HColor.Red));
-        }
-
-        private static void TransObject(Point2d from, Point2d to, HObject obj, out HObject objTrans)
-        {
-            if (obj == null || !obj.IsInitialized() || obj.CountObj() <= 0)
-            {
-                HOperatorSet.GenEmptyObj(out objTrans);
-                return;
-            }
-
-            HOperatorSet.GetObjClass(obj, out HTuple objClass);
-            if (objClass.S.StartsWith("xld"))
-            {
-                HalconController.TransContourXld(from, to, obj, out objTrans);
-            }
-            else
-            {
-                HalconController.TransRegion(from, to, obj, out objTrans);
-            }
         }
 
         /// <summary>
