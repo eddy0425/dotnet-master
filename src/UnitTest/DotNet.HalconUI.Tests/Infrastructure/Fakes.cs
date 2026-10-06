@@ -74,8 +74,6 @@ namespace DotNet.HalconUI.Tests
         public void DispLineWithEndMarker(CvLine line, double markerRadius, DrawStyle style = null) { }
         public void DispSegmentWithCrosses(Point2d start, Point2d end, double armLength, DrawStyle style = null) { }
 
-        public void DispGenRegion(CvRegion region) { }
-        public void GenCoordsRegion(CvRegion region, List<CvCoord> coords) { }
         public Task<bool> DrawRegionAsync(CvRegion region) => Task.FromResult(false);
         public Task<bool> DrawRegionModAsync(CvRegion region) => Task.FromResult(false);
         public Task<HObject> DrawRegionAsync(RectEnum type) => Task.FromResult<HObject>(null);

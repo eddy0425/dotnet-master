@@ -137,13 +137,7 @@ namespace DotNet.HalconCore
 
         #endregion
 
-        #region 区域
-
-        /// <summary> 重建并显示橡皮筋区域 </summary>
-        void DispGenRegion(CvRegion region);
-
-        /// <summary> 由坐标列表生成区域并显示 </summary>
-        void GenCoordsRegion(CvRegion region, List<CvCoord> coords);
+        #region 交互绘制
 
         /// <summary>
         /// 交互式绘制（新建）橡皮筋区域。用户右键确认后把几何写回 <paramref name="region"/>；

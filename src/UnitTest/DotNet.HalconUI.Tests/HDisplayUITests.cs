@@ -121,24 +121,31 @@ namespace DotNet.HalconUI.Tests
             });
         }
 
+        /// <summary> 模式切换有校验：未知模式在设置时就被拒绝，而不是等到每个鼠标事件里才告警 </summary>
         [TestMethod]
-        public void UnknownMode_IsIgnoredWithWarning()
+        public void UnknownMode_RejectedOnSet()
         {
             Run(ui =>
             {
-                using (var log = new CapturingLogger())
-                {
-                    var task = StartDraw(ui, out _);
-                    ui.DrawType = (DrawEnum)99;
+                Assert.ThrowsException<ArgumentOutOfRangeException>(() => ui.DrawType = (DrawEnum)99);
+                Assert.AreEqual(DrawEnum.None, ui.DrawType);
+            });
+        }
 
-                    Raise(ui, "OnMouseDown", Mouse.Left(50, 30));
-                    Raise(ui, "OnMouseUp", Mouse.Left(200, 150));
-                    Raise(ui, "OnMouseUp", Mouse.Right(0, 0));
-                    WindowHost.Pump();
+        /// <summary>
+        /// 视图导航先于模式处理器执行：中键拖动平移视图后，同一次抬起事件里模式处理器拿到的已是新视图。
+        /// 顺序由 HDisplayUI 显式决定，不再依赖两个订阅方谁先订阅。
+        /// </summary>
+        [TestMethod]
+        public void Dispatch_NavigationIsForwardedNotSelfSubscribed()
+        {
+            Run(ui =>
+            {
+                const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var mouse = typeof(HDisplayUI).GetField("mouse", Private).GetValue(ui);
+                bool subscribed = (bool)typeof(HWindowMouse).GetField("_subscribed", Private).GetValue(mouse);
 
-                    Assert.IsFalse(task.IsCompleted);
-                    Assert.AreEqual(3, log.Entries.FindAll(e => e.Level == LogLevel.Warn).Count, "每个事件各告警一次");
-                }
+                Assert.IsFalse(subscribed, "视图导航由 HDisplayUI.Dispatch 按固定顺序转发, 不再自己订阅控件事件");
             });
         }
 

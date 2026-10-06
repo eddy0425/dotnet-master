@@ -17,6 +17,7 @@ namespace DotNet.HalconUI
         readonly HWindow _hWindow;
         readonly IHWindowFont _hWindowFont;
         readonly HWindowImage _hWindowImage;
+        readonly RoiInteraction _roi;
 
         public bool IsCross { get; set; }           //是否画十字
         public bool Adaptive { get; set; } = true;   //自适应
@@ -35,13 +36,17 @@ namespace DotNet.HalconUI
         /// <summary>当前图像中心点 (X, Y)。</summary>
         public Point2d HoCentre => new Point2d(HoWidth / 2, HoHeight / 2);
 
-        public HDisplay(HWindowControl hWindowControl)
+        public HDisplay(HWindowControl hWindowControl) : this(hWindowControl, null) { }
+
+        /// <param name="font">文本实现；为 null 时按窗口图形栈自动选择（<see cref="HWindowFonts.Create"/>）。</param>
+        public HDisplay(HWindowControl hWindowControl, IHWindowFont font)
         {
             if (hWindowControl == null) throw new ArgumentNullException(nameof(hWindowControl));
 
             _hWindow = hWindowControl.HalconWindow;
-            _hWindowFont = HWindowFonts.Create(_hWindow);
+            _hWindowFont = font ?? HWindowFonts.Create(_hWindow);
             _hWindowImage = new HWindowImage(hWindowControl);
+            _roi = new RoiInteraction(_hWindow, IsWindowUsable);
 
             // 用占位灰图初始化窗口，避免首帧到来前窗口处于未设置 Part 的状态。
             // HWindowImage 接管时会 CopyImage，所以这里 using 释放是安全的。
@@ -287,45 +292,6 @@ namespace DotNet.HalconUI
             }
         }
 
-        #region 区域相关
-
-        /// <summary> 显示橡皮筋区域 </summary>
-        public void DispGenRegion(CvRegion hRegion)
-        {
-            if (!IsWindowUsable() || hRegion == null) return;
-
-            try
-            {
-                hRegion.RebuildRegion();
-                if (hRegion.HoRegion.NotNull())
-                {
-                    _hWindow.DispObj(hRegion.HoRegion);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(HDisplay), "生成并显示区域失败.", ex);
-            }
-        }
-
-        /// <summary> 获取坐标区域并显示 </summary>
-        public void GenCoordsRegion(CvRegion hRegion, List<CvCoord> coords)
-        {
-            if (!IsWindowUsable() || hRegion == null || coords == null) return;
-
-            try
-            {
-                hRegion.GenCoordsRegion(coords);
-                Disp(hRegion.HoRegion, DrawStyle.Of(HColor.Green));
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(HDisplay), "由坐标生成区域失败.", ex);
-            }
-        }
-
-        #endregion
-
         #region 图元绘制
 
         // 本区域统一遵循三条约定：
@@ -451,402 +417,21 @@ namespace DotNet.HalconUI
 
         #endregion
 
-        #region Draw Region
+        #region 交互绘制
 
-        /// <summary> 交互式新建区域 </summary>
-        /// <remarks>
-        /// 用户取消 / 超时（结果的 <c>Completed</c> 为 false）时直接返回，<b>不改动</b> <paramref name="hRegion"/>。
-        /// 旧的阻塞实现不区分这一点，新建时取消会把全零几何写回去，把 ROI 变成 (0,0,0,0)。
-        /// </remarks>
-        /// <returns>
-        /// 用户确认并写回几何返回 true；取消 / 超时 / 窗口不可用 / 绘制异常返回 false。
-        /// 调用方据此决定要不要执行有副作用的后续动作（典型如重建模板）。
-        /// </returns>
-        public async Task<bool> DrawRegionAsync(CvRegion hRegion)
-        {
-            if (!IsWindowUsable() || hRegion == null) return false;
+        // 交互绘制的流程在 RoiInteraction 里: 本类只管显示与画笔状态。
+        // 用户取消 / 超时一律不改动传入的 CvRegion, 返回 false。
 
-            DrawHelper.CancelDraw(_hWindow);
+        /// <summary> 交互式新建区域；用户确认并写回几何返回 true，取消 / 超时返回 false 且不改动 <paramref name="hRegion"/> </summary>
+        public Task<bool> DrawRegionAsync(CvRegion hRegion) => _roi.DrawAsync(hRegion);
 
-            try
-            {
-                switch (hRegion.Type)
-                {
-                    case RectEnum.Rectangle:
-                        {
-                            var r = await DrawHelper.DrawRectangle1Async(_hWindow);
-                            if (!r.Completed) return false;
-                            ApplyRect1(hRegion, r.Row1, r.Column1, r.Row2, r.Column2);
-                            return true;
-                        }
-                    case RectEnum.AffRect:
-                        {
-                            var r = await DrawHelper.DrawRectangle2Async(_hWindow);
-                            if (!r.Completed) return false;
-                            ApplyRect2(hRegion, r.Row, r.Column, r.Phi, r.Length1, r.Length2);
-                            return true;
-                        }
-                    case RectEnum.Circle:
-                        {
-                            var r = await DrawHelper.DrawCircleAsync(_hWindow);
-                            if (!r.Completed) return false;
-                            ApplyCircle(hRegion, r.Row, r.Column, r.Radius);
-                            return true;
-                        }
-                    case RectEnum.Ellipse:
-                        {
-                            var r = await DrawHelper.DrawEllipseAsync(_hWindow);
-                            if (!r.Completed) return false;
-                            ApplyEllipse(hRegion, r.Row, r.Column, r.Phi, r.Radius1, r.Radius2);
-                            return true;
-                        }
-                    case RectEnum.Polygon:
-                        return await DrawPolygonIntoAsync(hRegion);
-                    case RectEnum.Ring:
-                        return await DrawRingIntoAsync(hRegion, modify: false);
-                    default:
-                        throw new NotSupportedException($"DrawRegionAsync: 不支持的 ROI 类型: {hRegion.Type}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(HDisplay), "DrawRegionAsync 失败.", ex);
-                return false;
-            }
-        }
-
-        /// <summary> 交互式修改区域：以现有几何为初值进入编辑 </summary>
-        /// <remarks>取消 / 超时同样保持 <paramref name="hRegion"/> 原样，见 <see cref="DrawRegionAsync(CvRegion)"/>。</remarks>
-        /// <returns>语义同 <see cref="DrawRegionAsync(CvRegion)"/>。</returns>
-        public async Task<bool> DrawRegionModAsync(CvRegion hRegion)
-        {
-            if (!IsWindowUsable() || hRegion == null) return false;
-
-            DrawHelper.CancelDraw(_hWindow);
-
-            try
-            {
-                switch (hRegion.Type)
-                {
-                    case RectEnum.Rectangle:
-                        {
-                            var r = await DrawHelper.DrawRectangle1ModAsync(_hWindow,
-                                hRegion.Top, hRegion.Left, hRegion.Bottom, hRegion.Right);
-                            if (!r.Completed) return false;
-                            ApplyRect1(hRegion, r.Row1, r.Column1, r.Row2, r.Column2);
-                            return true;
-                        }
-                    case RectEnum.AffRect:
-                        {
-                            var r = await DrawHelper.DrawRectangle2ModAsync(_hWindow,
-                                hRegion.CenterY, hRegion.CenterX, hRegion.Phi.D,
-                                hRegion.Width / 2, hRegion.Height / 2);
-                            if (!r.Completed) return false;
-                            ApplyRect2(hRegion, r.Row, r.Column, r.Phi, r.Length1, r.Length2);
-                            return true;
-                        }
-                    case RectEnum.Circle:
-                        {
-                            var r = await DrawHelper.DrawCircleModAsync(_hWindow,
-                                hRegion.CenterY, hRegion.CenterX, hRegion.Width / 2);
-                            if (!r.Completed) return false;
-                            ApplyCircle(hRegion, r.Row, r.Column, r.Radius);
-                            return true;
-                        }
-                    case RectEnum.Ellipse:
-                        {
-                            var r = await DrawHelper.DrawEllipseModAsync(_hWindow,
-                                hRegion.CenterY, hRegion.CenterX, hRegion.Phi.D,
-                                hRegion.Width / 2, hRegion.Height / 2);
-                            if (!r.Completed) return false;
-                            ApplyEllipse(hRegion, r.Row, r.Column, r.Phi, r.Radius1, r.Radius2);
-                            return true;
-                        }
-                    case RectEnum.Polygon:
-                        return await DrawPolygonIntoAsync(hRegion);
-                    case RectEnum.Ring:
-                        return await DrawRingIntoAsync(hRegion, modify: true);
-                    default:
-                        throw new NotSupportedException($"DrawRegionModAsync: 不支持的 ROI 类型: {hRegion.Type}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(HDisplay), "DrawRegionModAsync 失败.", ex);
-                return false;
-            }
-        }
+        /// <summary> 交互式修改区域：以现有几何为初值进入编辑；语义同 <see cref="DrawRegionAsync(CvRegion)"/> </summary>
+        public Task<bool> DrawRegionModAsync(CvRegion hRegion) => _roi.ModifyAsync(hRegion);
 
         /// <summary>
-        /// 把新生成的 HObject 转移到 <paramref name="hRegion"/> 的 HoRegion 上：
-        /// 先把 <paramref name="created"/> 置 null 取走所有权，再赋值（由 HoRegion 的 setter 释放旧句柄），
-        /// 这样即使释放旧句柄时抛异常，调用方的 finally 也不会再次释放新句柄（即"所有权已转移"语义）。
+        /// 交互式新建指定类型的区域，所有权归调用方。取消 / 超时返回<b>空对象元组</b>（不是 null，也不是空区域）。
         /// </summary>
-        static void ReplaceRegion(CvRegion hRegion, ref HObject created)
-        {
-            if (hRegion == null || created == null) return;
-            var handle = created;
-            created = null;
-            hRegion.HoRegion = handle;
-        }
-
-        #region 结果写回
-
-        // 下面 4 个 Apply* 负责"绘制结果 → CvRegion"的写回：生成 HObject、写外接框/角度、转移所有权。
-        // 新建与修改两条路径的写回逻辑完全一致，抽出来避免 8 处复制。
-        // 只在 Completed == true 时调用；参数是 double，HTuple 有隐式转换，调用点无需再包一层。
-
-        static void ApplyRect1(CvRegion hRegion, double row1, double column1, double row2, double column2)
-        {
-            HObject rectangle = null;
-            try
-            {
-                HOperatorSet.GenRectangle1(out rectangle, row1, column1, row2, column2);
-                hRegion.SetRectByCorners(row1, column1, row2, column2);
-                ReplaceRegion(hRegion, ref rectangle);
-            }
-            finally { rectangle?.Dispose(); }
-        }
-
-        static void ApplyRect2(CvRegion hRegion, double row, double column, double phi, double length1, double length2)
-        {
-            HObject rectangle = null;
-            try
-            {
-                HOperatorSet.GenRectangle2(out rectangle, row, column, phi, length1, length2);
-                hRegion.SetRectByCenter(new Point2d(column, row), new Size2d(length1 * 2, length2 * 2));
-                hRegion.Phi = phi;
-                ReplaceRegion(hRegion, ref rectangle);
-            }
-            finally { rectangle?.Dispose(); }
-        }
-
-        static void ApplyCircle(CvRegion hRegion, double row, double column, double radius)
-        {
-            HObject circle = null;
-            try
-            {
-                HOperatorSet.GenCircle(out circle, row, column, radius);
-                hRegion.SetRectByCenter(new Point2d(column, row), new Size2d(radius * 2, radius * 2));
-                ReplaceRegion(hRegion, ref circle);
-            }
-            finally { circle?.Dispose(); }
-        }
-
-        static void ApplyEllipse(CvRegion hRegion, double row, double column, double phi, double radius1, double radius2)
-        {
-            HObject ellipse = null;
-            try
-            {
-                HOperatorSet.GenEllipse(out ellipse, row, column, phi, radius1, radius2);
-                hRegion.SetRectByCenter(new Point2d(column, row), new Size2d(radius1 * 2, radius2 * 2));
-                hRegion.Phi = phi;
-                ReplaceRegion(hRegion, ref ellipse);
-            }
-            finally { ellipse?.Dispose(); }
-        }
-
-        #endregion
-
-        /// <summary>
-        /// 多边形 ROI 的共享实现：DrawRegionAsync / DrawRegionModAsync 都走这里。
-        /// 使用 try/finally 兜底，避免 GetRegionPolygon 或 AreaCenter 出错时 region 句柄泄漏。
-        /// </summary>
-        async Task<bool> DrawPolygonIntoAsync(CvRegion hRegion)
-        {
-            var result = await DrawHelper.DrawRegionAsync(_hWindow);
-
-            // Region 的所有权已交到这里，无论确认与否都由本方法负责释放（未确认时是空区域）
-            HObject region = result.Region;
-            try
-            {
-                if (!result.Completed || !region.NotNull()) return false;
-
-                HOperatorSet.GetRegionPolygon(region, 1, out HTuple rows, out HTuple columns);
-                HOperatorSet.SmallestRectangle1(region, out HTuple row1, out HTuple column1, out HTuple row2, out HTuple column2);
-
-                hRegion.PolygonX = columns;
-                hRegion.PolygonY = rows;
-                // 与其它 ROI 类型一样写外接框（Center 随之为外接框中心）。原先只设 Center(面积重心)，
-                // 而 Center 的 setter 只平移 X/Y，新建 ROI 的 Width/Height 一直是 0。
-                hRegion.SetRectByCorners(row1.D, column1.D, row2.D, column2.D);
-
-                ReplaceRegion(hRegion, ref region);
-                return true;
-            }
-            finally
-            {
-                region?.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// 生成同心圆环区域 (外圆减内圆). 调用方获得返回句柄的所有权.
-        /// 内外半径顺序不敏感: 自动取大者为外圆.
-        /// </summary>
-        static HObject GenRing(HTuple row, HTuple column, double radiusA, double radiusB)
-        {
-            double outer = Math.Max(radiusA, radiusB);
-            double inner = Math.Min(radiusA, radiusB);
-
-            HObject outerCircle = null;
-            HObject innerCircle = null;
-            try
-            {
-                HOperatorSet.GenCircle(out outerCircle, row, column, outer);
-                HOperatorSet.GenCircle(out innerCircle, row, column, inner);
-                HObject ring;
-                HOperatorSet.Difference(outerCircle, innerCircle, out ring);
-                return ring;
-            }
-            finally
-            {
-                outerCircle?.Dispose();
-                innerCircle?.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// 圆环 ROI 的共享实现: DrawRegionAsync / DrawRegionModAsync 都走这里.
-        /// 交互分两步 —— 先画(或调整)外圆, 再调整内圆半径.
-        /// 第二步用外圆的圆心作为内圆圆心, 强制保持同心; 用户在第二步移动圆心的操作会被忽略,
-        /// 因为 <see cref="CvRegion"/> 的圆环模型 (MaxRadius / MinRadius) 只能表达同心圆环.
-        /// </summary>
-        /// <remarks>
-        /// 两步交互中任意一步被取消都整次放弃：第一步取消就没有圆心可供第二步定位，
-        /// 第二步取消则只有外圆、构不成圆环，此时保留 <paramref name="hRegion"/> 原样比写半成品更安全。
-        /// </remarks>
-        async Task<bool> DrawRingIntoAsync(CvRegion hRegion, bool modify)
-        {
-            DrawCircleResult outerResult = modify
-                ? await DrawHelper.DrawCircleModAsync(_hWindow, hRegion.CenterY, hRegion.CenterX, hRegion.MaxRadius)
-                : await DrawHelper.DrawCircleAsync(_hWindow);
-            if (!outerResult.Completed) return false;
-
-            // 新建时给内圆一个可见的初值(外圆一半), 修改时沿用已有的 MinRadius.
-            double innerSeed = modify ? hRegion.MinRadius : outerResult.Radius / 2;
-            var innerResult = await DrawHelper.DrawCircleModAsync(_hWindow,
-                outerResult.Row, outerResult.Column, innerSeed);
-            if (!innerResult.Completed) return false;
-
-            double outer = Math.Max(outerResult.Radius, innerResult.Radius);
-            double inner = Math.Min(outerResult.Radius, innerResult.Radius);
-
-            HObject ring = GenRing(outerResult.Row, outerResult.Column, outer, inner);
-            try
-            {
-                // 外接框按外圆直径写入, 保证 Width/Height/BoundingBox 与其它 ROI 类型语义一致.
-                hRegion.SetRectByCenter(new Point2d(outerResult.Column, outerResult.Row), new Size2d(outer * 2, outer * 2));
-                hRegion.MaxRadius = outer;
-                hRegion.MinRadius = inner;
-                hRegion.RingWidth = outer - inner;
-                ReplaceRegion(hRegion, ref ring);
-            }
-            finally { ring?.Dispose(); }
-
-            return true;
-        }
-
-        /// <summary> 交互式新建指定类型的区域，直接返回结果 </summary>
-        /// <returns>
-        /// 新绘制的区域，所有权归调用方，用完必须 <c>Dispose</c>。
-        /// <para>
-        /// 取消 / 超时 / 窗口不可用返回<b>空对象元组</b>（<c>gen_empty_obj</c>，<c>count_obj == 0</c>），
-        /// 不会是 null。注意它<b>不是</b>“空区域”(<c>gen_empty_region</c>, <c>count_obj == 1</c>)：
-        /// 把 0 长度的对象元组喂给 <c>union2</c> / <c>difference</c> 并非无操作，而是会报错或返回空结果。
-        /// 调用方必须先用 <c>CountObj</c> 判空并短路，参见 <c>HEditModelUI.DrawROIAsync</c>。
-        /// </para>
-        /// </returns>
-        /// <remarks>
-        /// 修复点：原实现先 <c>GenEmptyObj(out rectangle)</c> 再被各 case 的 <c>GenXxx(out rectangle, …)</c> 覆盖，
-        /// 第一次创建的空 HObject 句柄丢失 → 句柄泄漏。
-        /// 现在改为先在 case 内创建临时变量，全部成功后再赋给返回值；
-        /// 任何失败路径都会保证返回的是一个合法（可 Dispose）的空对象。
-        /// </remarks>
-        public async Task<HObject> DrawRegionAsync(RectEnum type)
-        {
-            HOperatorSet.GenEmptyObj(out HObject rectangle);
-            if (!IsWindowUsable()) return rectangle;
-
-            DrawHelper.CancelDraw(_hWindow);
-
-            HObject created = null;
-            try
-            {
-                switch (type)
-                {
-                    case RectEnum.Rectangle:
-                        {
-                            var r = await DrawHelper.DrawRectangle1Async(_hWindow);
-                            if (r.Completed)
-                                HOperatorSet.GenRectangle1(out created, r.Row1, r.Column1, r.Row2, r.Column2);
-                        }
-                        break;
-                    case RectEnum.AffRect:
-                        {
-                            var r = await DrawHelper.DrawRectangle2Async(_hWindow);
-                            if (r.Completed)
-                                HOperatorSet.GenRectangle2(out created, r.Row, r.Column, r.Phi, r.Length1, r.Length2);
-                        }
-                        break;
-                    case RectEnum.Circle:
-                        {
-                            var r = await DrawHelper.DrawCircleAsync(_hWindow);
-                            if (r.Completed)
-                                HOperatorSet.GenCircle(out created, r.Row, r.Column, r.Radius);
-                        }
-                        break;
-                    case RectEnum.Ellipse:
-                        {
-                            var r = await DrawHelper.DrawEllipseAsync(_hWindow);
-                            if (r.Completed)
-                                HOperatorSet.GenEllipse(out created, r.Row, r.Column, r.Phi, r.Radius1, r.Radius2);
-                        }
-                        break;
-                    case RectEnum.Polygon:
-                        {
-                            var r = await DrawHelper.DrawRegionAsync(_hWindow);
-                            // 未确认时拿到的是空区域, 就地释放; 确认则直接接管所有权
-                            if (r.Completed) created = r.Region;
-                            else r.Region?.Dispose();
-                        }
-                        break;
-                    case RectEnum.Ring:
-                        {
-                            var outerResult = await DrawHelper.DrawCircleAsync(_hWindow);
-                            if (!outerResult.Completed) break;
-
-                            var innerResult = await DrawHelper.DrawCircleModAsync(_hWindow,
-                                outerResult.Row, outerResult.Column, outerResult.Radius / 2);
-                            if (!innerResult.Completed) break;
-
-                            created = GenRing(outerResult.Row, outerResult.Column,
-                                outerResult.Radius, innerResult.Radius);
-                        }
-                        break;
-                    default:
-                        throw new NotSupportedException($"DrawRegionAsync: 不支持的 ROI 类型: {type}");
-                }
-
-                if (created.NotNull())
-                {
-                    rectangle.Dispose();    // 释放占位的空对象
-                    rectangle = created;
-                    created = null;         // 所有权已转移
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(HDisplay), "交互绘制区域失败.", ex);
-            }
-            finally
-            {
-                // 失败路径或中途异常下未转移所有权的对象兜底释放
-                created?.Dispose();
-            }
-
-            return rectangle;
-        }
+        public Task<HObject> DrawRegionAsync(RectEnum type) => _roi.DrawAsync(type);
 
         #endregion
 
@@ -936,21 +521,11 @@ namespace DotNet.HalconUI
 
         void DispRingInternal(CvRegion hRegion)
         {
-            HObject circle1 = null;
-            HObject circle2 = null;
-            HObject regionDifference = null;
-            try
+            // 只显示：差集区域用完即弃，不碰 hRegion.HoRegion
+            using (var ring = RegionShapes.GenRing(hRegion.CenterY + DispRowOffset, hRegion.CenterX + DispColOffset,
+                                                   hRegion.MaxRadius, hRegion.MinRadius))
             {
-                HOperatorSet.GenCircle(out circle1, hRegion.CenterY + DispRowOffset, hRegion.CenterX + DispColOffset, hRegion.MaxRadius);
-                HOperatorSet.GenCircle(out circle2, hRegion.CenterY + DispRowOffset, hRegion.CenterX + DispColOffset, hRegion.MinRadius);
-                HOperatorSet.Difference(circle1, circle2, out regionDifference);
-                _hWindow.DispObj(regionDifference);
-            }
-            finally
-            {
-                circle1?.Dispose();
-                circle2?.Dispose();
-                regionDifference?.Dispose();
+                _hWindow.DispObj(ring);
             }
         }
 

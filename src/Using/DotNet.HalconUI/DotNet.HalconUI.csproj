@@ -104,6 +104,8 @@
     <Compile Include="TreeNode\TreeVisualizer.cs" />
     <Compile Include="HWindows\HFont\HWindowFonts.cs" />
     <Compile Include="Param\ParamPanel.cs" />
+    <Compile Include="HWindows\HMouse\Draw\IDrawCanvas.cs" />
+    <Compile Include="HWindows\HDisplay\RoiInteraction.cs" />
     <EmbeddedResource Include="HModelUI.resx">
       <DependentUpon>HModelUI.cs</DependentUpon>
     </EmbeddedResource>

@@ -79,6 +79,7 @@
     <Compile Include="Diagnostics\Log.cs" />
     <Compile Include="Serialize\JsonConvertHObject.cs" />
     <Compile Include="Serialize\SerializeConvert.cs" />
+    <Compile Include="Extension\RegionShapes.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

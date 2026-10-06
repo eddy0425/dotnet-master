@@ -63,27 +63,7 @@ namespace DotNet.Drawing
                     }
                     break;
                 case RectEnum.Ring:
-                    {
-                        // 直接以 GenCircle 创建句柄：原实现先 GenEmptyObj 再被 GenCircle 覆盖，空对象句柄永不释放
-                        HOperatorSet.GenCircle(out HObject circle1, hRegion.CenterY, hRegion.CenterX, hRegion.MaxRadius);
-                        try
-                        {
-                            HOperatorSet.GenCircle(out HObject circle2, hRegion.CenterY, hRegion.CenterX, hRegion.MinRadius);
-                            try
-                            {
-                                HOperatorSet.Difference(circle1, circle2, out HObject region);
-                                ReplaceHandle(hRegion, region);
-                            }
-                            finally
-                            {
-                                circle2.Dispose();
-                            }
-                        }
-                        finally
-                        {
-                            circle1.Dispose();
-                        }
-                    }
+                    ReplaceHandle(hRegion, RegionShapes.GenRing(hRegion.CenterY, hRegion.CenterX, hRegion.MaxRadius, hRegion.MinRadius));
                     break;
             }
         }

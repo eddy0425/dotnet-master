@@ -9,7 +9,7 @@ namespace DotNet.HalconUI.Draw
     {
         internal double CX, CY, Radius;
 
-        internal override void OnDown(HMouseEventArgs e)
+        internal override void OnDown(MouseInput e)
         {
             if (e.Button != MouseButtons.Left) return;
 
@@ -30,7 +30,7 @@ namespace DotNet.HalconUI.Draw
             }
         }
 
-        internal override void OnUp(HMouseEventArgs e)
+        internal override void OnUp(MouseInput e)
         {
             if (e.Button == MouseButtons.Left
                 && Phase == DrawPhase.Drawing
@@ -44,7 +44,7 @@ namespace DotNet.HalconUI.Draw
             HandleEditingMouseUp(e);
         }
 
-        internal override void Render(HMouseEventArgs e)
+        internal override void Render(MouseInput e)
         {
             R.RestoreBackground();
 
@@ -75,7 +75,7 @@ namespace DotNet.HalconUI.Draw
             R.Circle(CX, CY, Radius, "red");
         }
 
-        private void Edit(HMouseEventArgs e)
+        private void Edit(MouseInput e)
         {
             double edgeX = CX + Radius, edgeY = CY;
 

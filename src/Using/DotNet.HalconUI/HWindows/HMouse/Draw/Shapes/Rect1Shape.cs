@@ -16,7 +16,7 @@ namespace DotNet.HalconUI.Draw
             CY = (Y1 + Y2) / 2;
         }
 
-        internal override void OnDown(HMouseEventArgs e)
+        internal override void OnDown(MouseInput e)
         {
             if (e.Button != MouseButtons.Left) return;
 
@@ -37,7 +37,7 @@ namespace DotNet.HalconUI.Draw
             }
         }
 
-        internal override void OnUp(HMouseEventArgs e)
+        internal override void OnUp(MouseInput e)
         {
             if (e.Button == MouseButtons.Left
                 && Phase == DrawPhase.Drawing
@@ -52,7 +52,7 @@ namespace DotNet.HalconUI.Draw
             HandleEditingMouseUp(e);
         }
 
-        internal override void Render(HMouseEventArgs e)
+        internal override void Render(MouseInput e)
         {
             R.RestoreBackground();
 
@@ -82,7 +82,7 @@ namespace DotNet.HalconUI.Draw
             R.Rect1(X1, Y1, X2, Y2, "red");
         }
 
-        private void Edit(HMouseEventArgs e)
+        private void Edit(MouseInput e)
         {
             if (Dragging)
             {

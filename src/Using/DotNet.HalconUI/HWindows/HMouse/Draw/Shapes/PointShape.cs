@@ -9,7 +9,7 @@ namespace DotNet.HalconUI.Draw
         internal double X;
         internal double Y;
 
-        internal override void OnDown(HMouseEventArgs e)
+        internal override void OnDown(MouseInput e)
         {
             if (e.Button != MouseButtons.Left) return;
 
@@ -24,9 +24,9 @@ namespace DotNet.HalconUI.Draw
             }
         }
 
-        internal override void OnUp(HMouseEventArgs e) => HandleEditingMouseUp(e);
+        internal override void OnUp(MouseInput e) => HandleEditingMouseUp(e);
 
-        internal override void Render(HMouseEventArgs e)
+        internal override void Render(MouseInput e)
         {
             R.RestoreBackground();
 
@@ -44,7 +44,7 @@ namespace DotNet.HalconUI.Draw
 
         internal override void RenderStatic() => R.Cross(X, Y, "red", 30);
 
-        private void Edit(HMouseEventArgs e)
+        private void Edit(MouseInput e)
         {
             if (Dragging)
             {

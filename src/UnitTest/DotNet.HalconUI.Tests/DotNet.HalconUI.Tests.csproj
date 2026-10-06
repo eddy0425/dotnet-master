@@ -84,6 +84,7 @@
     <Compile Include="HWindowImageTests.cs" />
     <Compile Include="HWindowMouseTests.cs" />
     <Compile Include="ParamPanelTests.cs" />
+    <Compile Include="DrawCanvasTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Using\DotNet.Drawing\DotNet.Drawing.csproj">

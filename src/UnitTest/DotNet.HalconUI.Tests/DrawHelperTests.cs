@@ -26,7 +26,6 @@ namespace DotNet.HalconUI.Tests
         public void Cleanup()
         {
             DrawHelper.CancelDraw();
-            DrawHelper.Timeout = DrawSession.DefaultTimeout;
             _window?.Dispose();
         }
 
@@ -45,7 +44,7 @@ namespace DotNet.HalconUI.Tests
         public void DefaultTimeout_IsFiveMinutes()
         {
             Assert.AreEqual(TimeSpan.FromMinutes(5), DrawSession.DefaultTimeout);
-            Assert.AreEqual(DrawSession.DefaultTimeout, DrawHelper.Timeout);
+            Assert.AreEqual(DrawSession.DefaultTimeout, DrawHelper.DefaultTimeout);
         }
 
         [TestMethod]
@@ -125,9 +124,8 @@ namespace DotNet.HalconUI.Tests
         [TestMethod]
         public async Task Timeout_CompletesWithFalse()
         {
-            DrawHelper.Timeout = TimeSpan.FromMilliseconds(30);
-
-            var result = await DrawHelper.DrawPointAsync(_window);
+            // 超时按次传入: 原来改的是全进程共用的静态属性, 测试之间、窗口之间互相影响
+            var result = await DrawHelper.DrawPointAsync(_window, timeout: TimeSpan.FromMilliseconds(30));
 
             Assert.IsFalse(result.Completed);
             Assert.IsFalse(DrawHelper.IsDrawing(_window));

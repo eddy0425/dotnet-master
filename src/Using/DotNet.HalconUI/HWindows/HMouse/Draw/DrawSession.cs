@@ -124,7 +124,7 @@ namespace DotNet.HalconUI.Draw
             }
 
             // 旧会话的 await 尚未返回时就可能发起新的 Draw*(用户连点两个按钮)。
-            // 这里立即给旧会话填入 false 并释放，避免 flush/autodraw 状态被新旧会话交叉还原。
+            // 这里立即给旧会话填入 false 并释放，避免 flush 状态被新旧会话交叉还原。
             foreach (var s in victims)
             {
                 s.Finish(false);
@@ -168,7 +168,7 @@ namespace DotNet.HalconUI.Draw
 
         internal void OnMouseMove(HMouseEventArgs e)
         {
-            // 进入会话时已设置 flush=false + autodraw=false, 所有绘图都在 backbuffer 中累积.
+            // 进入会话时已设置 flush=false, 所有绘图都在 backbuffer 中累积.
             // 这里不再切换 flush 状态, 避免 SetWindowParam("flush",...) 反复触发隐式刷新导致闪烁.
             RedrawAndFlush(e);
         }

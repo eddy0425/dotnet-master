@@ -13,7 +13,7 @@ namespace DotNet.HalconUI.Draw
     /// 生命周期与一次交互会话严格对应：构造即进入双缓冲模式并抓取背景，
     /// <see cref="Dispose"/> 还原窗口状态并释放背景快照。
     /// </remarks>
-    internal sealed class DrawRenderer : IDisposable
+    internal sealed class DrawRenderer : IDrawCanvas, IDisposable
     {
         private readonly HTuple _handle;
 
@@ -21,7 +21,6 @@ namespace DotNet.HalconUI.Draw
         private HTuple _partR1, _partC1, _partR2, _partC2;
 
         private HTuple _savedFlush;
-        private HTuple _savedAutodraw;
         private bool _windowConfigured;
 
         private double _pixelSize = 1;
@@ -50,7 +49,7 @@ namespace DotNet.HalconUI.Draw
         /// 窗口缩放比例 (图像像素 / 屏幕像素)。读取的是缓存值，
         /// 由 <see cref="RefreshPixelSize"/> 在每帧开头刷新一次。
         /// </summary>
-        internal double PixelSize => _pixelSize;
+        public double PixelSize => _pixelSize;
 
         /// <summary>每帧开头刷新一次缩放比例，避免每个图元都触发 GetPart + GetWindowExtents。</summary>
         internal void RefreshPixelSize() => _pixelSize = ComputePixelSize();
@@ -103,7 +102,7 @@ namespace DotNet.HalconUI.Draw
         }
 
         /// <summary>把背景快照重新铺回 backbuffer，作为一帧绘制的起点。</summary>
-        internal void RestoreBackground()
+        public void RestoreBackground()
         {
             if (_bgImage == null) return;
             // 重新捕获时使用临时变量, 防止 DumpWindowImage 异常导致 _bgImage 引用泄漏或悬空
@@ -168,7 +167,7 @@ namespace DotNet.HalconUI.Draw
 
         #region 图元绘制
 
-        internal void Cross(double col, double row, string color, double screenSize = 20)
+        public void Cross(double col, double row, string color, double screenSize = 20)
         {
             try
             {
@@ -181,7 +180,7 @@ namespace DotNet.HalconUI.Draw
             catch (Exception ex) { OnDrawFailure(nameof(Cross), ex); }
         }
 
-        internal void Rect1(double col1, double row1, double col2, double row2, string color)
+        public void Rect1(double col1, double row1, double col2, double row2, string color)
         {
             try
             {
@@ -194,7 +193,7 @@ namespace DotNet.HalconUI.Draw
             catch (Exception ex) { OnDrawFailure(nameof(Rect1), ex); }
         }
 
-        internal void Rect2(double cx, double cy, double phi, double len1, double len2, string color)
+        public void Rect2(double cx, double cy, double phi, double len1, double len2, string color)
         {
             try
             {
@@ -206,7 +205,7 @@ namespace DotNet.HalconUI.Draw
         }
 
         /// <summary>矩形 + 沿 phi 方向(主轴方向)的箭头: 起点在矩形中心, 终点在主轴端点。</summary>
-        internal void Rect2Arrow(double cx, double cy, double phi, double len1, double len2, string color)
+        public void Rect2Arrow(double cx, double cy, double phi, double len1, double len2, string color)
         {
             Rect2(cx, cy, phi, len1, len2, color);
 
@@ -216,7 +215,7 @@ namespace DotNet.HalconUI.Draw
             Arrow(cx, cy, endCol, endRow, color);
         }
 
-        internal void Arrow(double col1, double row1, double col2, double row2, string color)
+        public void Arrow(double col1, double row1, double col2, double row2, string color)
         {
             try
             {
@@ -229,7 +228,7 @@ namespace DotNet.HalconUI.Draw
             catch (Exception ex) { OnDrawFailure(nameof(Arrow), ex); }
         }
 
-        internal void Circle(double col, double row, double radius, string color)
+        public void Circle(double col, double row, double radius, string color)
         {
             try
             {
@@ -240,7 +239,7 @@ namespace DotNet.HalconUI.Draw
             catch (Exception ex) { OnDrawFailure(nameof(Circle), ex); }
         }
 
-        internal void Ellipse(double cx, double cy, double phi, double r1, double r2, string color)
+        public void Ellipse(double cx, double cy, double phi, double r1, double r2, string color)
         {
             try
             {
@@ -254,7 +253,7 @@ namespace DotNet.HalconUI.Draw
             catch (Exception ex) { OnDrawFailure(nameof(Ellipse), ex); }
         }
 
-        internal void Line(double col1, double row1, double col2, double row2, string color)
+        public void Line(double col1, double row1, double col2, double row2, string color)
         {
             try
             {
@@ -280,24 +279,14 @@ namespace DotNet.HalconUI.Draw
 
         // 进入交互会话: 一次性切换为双缓冲模式, 整个会话保持稳定.
         // - flush=false : 禁用自动刷新, 所有 disp_* 累积到 backbuffer
-        // - autodraw=false : 阻止 set_part 等操作触发 Halcon 内部的隐式 redraw
+        // 原来还会 set_system('autodraw', 'false') 并在结束时还原: HALCON 22.11 没有这个系统参数
+        // (get/set 都报 #1301), 每次会话都静默失败一次, 已删除。
         // 参考 Halcon 官方文档 set_window_param 中关于 flush 的双缓冲建议.
         private void SetupWindow()
         {
             if (_windowConfigured) return;
 
-            // 取不到原值就置 null，RestoreWindow 会退回到默认值(flush=true / 不改 autodraw)
-            try
-            {
-                HOperatorSet.GetSystem("autodraw", out HTuple autodraw);
-                _savedAutodraw = autodraw;
-            }
-            catch (Exception ex)
-            {
-                _savedAutodraw = null;
-                Log.Debug(DrawSafe.Category, $"读取 autodraw 原值失败, 还原时将走默认值: {ex.Message}");
-            }
-
+            // 取不到原值就置 null，RestoreWindow 会退回到默认值 flush=true
             try
             {
                 HOperatorSet.GetWindowParam(_handle, "flush", out HTuple flush);
@@ -310,13 +299,12 @@ namespace DotNet.HalconUI.Draw
             }
 
             // 开关设置失败只是退化为非双缓冲(可能闪烁)，不影响绘制结果
-            DrawSafe.WindowOp("关闭 autodraw", () => HOperatorSet.SetSystem("autodraw", "false"));
             DrawSafe.WindowOp("关闭 flush", () => HOperatorSet.SetWindowParam(_handle, "flush", "false"));
 
             _windowConfigured = true;
         }
 
-        // 离开交互会话: 还原 flush / autodraw. 把 flush 切回 true 会顺带触发一次刷新,
+        // 离开交互会话: 还原 flush. 把 flush 切回 true 会顺带触发一次刷新,
         // 让 RestoreBackground 恢复的背景立即可见.
         private void RestoreWindow()
         {
@@ -330,14 +318,7 @@ namespace DotNet.HalconUI.Draw
                     HOperatorSet.SetWindowParam(_handle, "flush", "true");
             });
 
-            DrawSafe.WindowOp("还原 autodraw", () =>
-            {
-                if (_savedAutodraw != null)
-                    HOperatorSet.SetSystem("autodraw", _savedAutodraw);
-            });
-
             _savedFlush = null;
-            _savedAutodraw = null;
             _windowConfigured = false;
         }
 

@@ -37,12 +37,19 @@ namespace DotNet.HalconUI
         readonly HWindow _hWindow;
         readonly IHDisplay _display;
         readonly HWindowControl _hWindowControl;
+        readonly bool _subscribed;
 
         bool _disposed;
 
         public event Action<HTuple, HTuple, HTuple> RefreshUI;
 
-        public HWindowMouse(HWindowControl hWindowControl, IHDisplay display)
+        public HWindowMouse(HWindowControl hWindowControl, IHDisplay display) : this(hWindowControl, display, subscribe: true) { }
+
+        /// <param name="subscribe">
+        /// false 时不自己订阅控件的鼠标事件，由宿主按固定顺序转发（见 <c>HDisplayUI</c>）：
+        /// 同一控件上的多个订阅方按订阅先后执行，把顺序交给订阅时机是隐式依赖。
+        /// </param>
+        public HWindowMouse(HWindowControl hWindowControl, IHDisplay display, bool subscribe)
         {
             if (hWindowControl == null) throw new ArgumentNullException(nameof(hWindowControl));
             if (display == null) throw new ArgumentNullException(nameof(display));
@@ -51,9 +58,11 @@ namespace DotNet.HalconUI
             _hWindowControl = hWindowControl;
             _display = display;
 
+            if (!subscribe) return;
             hWindowControl.HMouseDown += OnHMouseDown;
             hWindowControl.HMouseUp += OnHMouseUp;
             hWindowControl.HMouseWheel += OnHMouseWheel;
+            _subscribed = true;
         }
 
         bool IsUsable()
@@ -187,7 +196,7 @@ namespace DotNet.HalconUI
             if (_disposed) return;
             _disposed = true;
 
-            if (_hWindowControl != null && !_hWindowControl.IsDisposed)
+            if (_subscribed && _hWindowControl != null && !_hWindowControl.IsDisposed)
             {
                 _hWindowControl.HMouseDown -= OnHMouseDown;
                 _hWindowControl.HMouseUp -= OnHMouseUp;

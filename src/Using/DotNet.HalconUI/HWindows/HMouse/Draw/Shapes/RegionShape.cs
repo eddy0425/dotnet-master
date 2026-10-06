@@ -19,7 +19,7 @@ namespace DotNet.HalconUI.Draw
         /// <summary>多边形顶点的行坐标 (y)。与 <see cref="Cols"/> 一一对应。</summary>
         internal IReadOnlyList<double> Rows => _rows;
 
-        internal override void OnDown(HMouseEventArgs e)
+        internal override void OnDown(MouseInput e)
         {
             if (e.Button != MouseButtons.Left) return;
 
@@ -35,7 +35,7 @@ namespace DotNet.HalconUI.Draw
             }
         }
 
-        internal override void OnUp(HMouseEventArgs e)
+        internal override void OnUp(MouseInput e)
         {
             if (e.Button == MouseButtons.Left && Phase == DrawPhase.Editing)
             {
@@ -51,7 +51,7 @@ namespace DotNet.HalconUI.Draw
             }
         }
 
-        internal override void Render(HMouseEventArgs e)
+        internal override void Render(MouseInput e)
         {
             R.RestoreBackground();
 
@@ -80,7 +80,7 @@ namespace DotNet.HalconUI.Draw
         /// <remarks>
         /// 拖拽时先更新顶点再画：原先先画后改，画出的多边形总落后鼠标一帧，松手那一帧的位置永远不显示。
         /// </remarks>
-        private void Edit(HMouseEventArgs e)
+        private void Edit(MouseInput e)
         {
             bool dragging = Dragging && _editIdx >= 0 && _editIdx < _cols.Count;
             if (dragging)

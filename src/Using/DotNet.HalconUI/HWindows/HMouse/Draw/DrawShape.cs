@@ -37,13 +37,13 @@ namespace DotNet.HalconUI.Draw
     /// </remarks>
     internal abstract class DrawShape
     {
-        private DrawRenderer _renderer;
+        private IDrawCanvas _renderer;
 
         /// <summary>绘制目标。由 <see cref="DrawSession"/> 在会话开始时注入。</summary>
-        protected DrawRenderer R =>
+        protected IDrawCanvas R =>
             _renderer ?? throw new InvalidOperationException("DrawShape 尚未绑定 DrawRenderer.");
 
-        internal void Attach(DrawRenderer renderer) => _renderer = renderer;
+        internal void Attach(IDrawCanvas renderer) => _renderer = renderer;
 
         internal DrawPhase Phase { get; set; } = DrawPhase.Idle;
 
@@ -70,7 +70,7 @@ namespace DotNet.HalconUI.Draw
 
         /// <summary>编辑阶段的通用左/右键收尾：左键释放结束拖拽，右键确认。</summary>
         /// <returns>已被本方法处理时返回 true。</returns>
-        protected bool HandleEditingMouseUp(HMouseEventArgs e)
+        protected bool HandleEditingMouseUp(MouseInput e)
         {
             if (Phase != DrawPhase.Editing) return false;
             if (e.Button == System.Windows.Forms.MouseButtons.Left) { EndDrag(); return true; }
@@ -79,20 +79,20 @@ namespace DotNet.HalconUI.Draw
         }
 
         /// <summary>命中测试：鼠标是否落在控制点 (x, y) 的热区内。</summary>
-        protected bool IsNear(double x, double y, HMouseEventArgs e)
+        protected bool IsNear(double x, double y, MouseInput e)
             => DrawGeometry.IsNear(R.PixelSize, x, y, e.X, e.Y);
 
         /// <summary>把外部传入的初始几何直接置为可编辑状态（<c>Draw*Mod</c> 入口用）。</summary>
         internal void BeginEdit() => Phase = DrawPhase.Editing;
 
-        internal abstract void OnDown(HMouseEventArgs e);
+        internal abstract void OnDown(MouseInput e);
 
-        internal abstract void OnUp(HMouseEventArgs e);
+        internal abstract void OnUp(MouseInput e);
 
         /// <summary>
         /// 按当前阶段把图元画到 backbuffer（起手先铺背景，结尾不负责 swap）。
         /// </summary>
-        internal abstract void Render(HMouseEventArgs e);
+        internal abstract void Render(MouseInput e);
 
         /// <summary>
         /// 不依赖鼠标位置的稳态绘制，供 <c>Draw*Mod</c> 在阻塞等待前把初始 ROI 显示出来。

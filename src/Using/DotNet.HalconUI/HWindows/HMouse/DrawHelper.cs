@@ -34,9 +34,10 @@ namespace DotNet.HalconUI
     {
         /// <summary>
         /// 等待的默认上限，超时后自动结束绘制并返回 <c>Completed == false</c> 的结果。
-        /// 设为 <see cref="TimeSpan.Zero"/> 或负值表示不限时。
+        /// 各入口可用 <c>timeout</c> 参数单独指定；<see cref="TimeSpan.Zero"/> 或负值表示不限时。
+        /// 原来是可写的静态属性，一处改动影响所有窗口的所有绘制，测试之间也互相干扰。
         /// </summary>
-        public static TimeSpan Timeout { get; set; } = DrawSession.DefaultTimeout;
+        public static readonly TimeSpan DefaultTimeout = DrawSession.DefaultTimeout;
 
         /// <summary> 开新会话前反复取消旧会话的轮数上限（见 <see cref="RunAsync{TShape}"/>）。 </summary>
         private const int MaxCancelRounds = 8;
@@ -51,12 +52,13 @@ namespace DotNet.HalconUI
         /// <param name="shape">已填好初始几何的图元状态机；返回后其几何字段即为最终结果。</param>
         /// <param name="edit">true 表示 <c>Mod</c> 语义：直接进入编辑阶段并先画一帧。</param>
         /// <param name="token">调用方的取消令牌。</param>
+        /// <param name="timeout">等待上限；null 取 <see cref="DefaultTimeout"/>。</param>
         /// <returns>用户右键确认返回 true；取消 / 超时 / 被新会话顶掉返回 false。</returns>
         /// <remarks>
-        /// <c>using</c> 的释放点在 <c>await</c> 之后：窗口的 flush/autodraw 状态与背景快照
+        /// <c>using</c> 的释放点在 <c>await</c> 之后：窗口的 flush 状态与背景快照
         /// 会在结果交还调用方之前还原，与旧实现 <c>finally</c> 的时序一致。
         /// </remarks>
-        private static async Task<bool> RunAsync<TShape>(HWindow window, TShape shape, bool edit, CancellationToken token)
+        private static async Task<bool> RunAsync<TShape>(HWindow window, TShape shape, bool edit, CancellationToken token, TimeSpan? timeout)
             where TShape : DrawShape
         {
             if (window == null) throw new ArgumentNullException(nameof(window));
@@ -79,7 +81,7 @@ namespace DotNet.HalconUI
                     shape.BeginEdit();
                     session.RenderInitial();
                 }
-                return await session.WaitForCompletionAsync(Timeout, token);
+                return await session.WaitForCompletionAsync(timeout ?? DefaultTimeout, token);
             }
         }
 
@@ -91,10 +93,10 @@ namespace DotNet.HalconUI
         /// 交互式绘制一个点 ROI: 左键点击设置位置后进入编辑, 可拖拽十字调整, 右键确认.
         /// </summary>
         public static async Task<DrawPointResult> DrawPointAsync(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new PointShape();
-            bool ok = await RunAsync(window, s, edit: false, token);
+            bool ok = await RunAsync(window, s, edit: false, token, timeout);
             return new DrawPointResult(ok, s.Y, s.X);
         }
 
@@ -103,46 +105,46 @@ namespace DotNet.HalconUI
         /// 可拖拽端点或中点平移整条线, 右键确认.
         /// </summary>
         public static async Task<DrawLineResult> DrawLineAsync(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new LineShape();
-            bool ok = await RunAsync(window, s, edit: false, token);
+            bool ok = await RunAsync(window, s, edit: false, token, timeout);
             return new DrawLineResult(ok, s.Y1, s.X1, s.Y2, s.X2);
         }
 
         /// <summary>交互式绘制一个轴对齐矩形 ROI, 右键确认。输出已归一化为左上/右下。</summary>
         public static async Task<DrawRectangle1Result> DrawRectangle1Async(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new Rect1Shape();
-            bool ok = await RunAsync(window, s, edit: false, token);
+            bool ok = await RunAsync(window, s, edit: false, token, timeout);
             return NormalizeRect1(ok, s);
         }
 
         /// <summary>交互式绘制一个可旋转矩形 ROI, 右键确认。</summary>
         public static async Task<DrawRectangle2Result> DrawRectangle2Async(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new Rect2Shape();
-            bool ok = await RunAsync(window, s, edit: false, token);
+            bool ok = await RunAsync(window, s, edit: false, token, timeout);
             return new DrawRectangle2Result(ok, s.CY, s.CX, s.Phi, s.HalfLen1, s.HalfLen2);
         }
 
         /// <summary>交互式绘制一个圆 ROI, 右键确认。</summary>
         public static async Task<DrawCircleResult> DrawCircleAsync(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new CircleShape();
-            bool ok = await RunAsync(window, s, edit: false, token);
+            bool ok = await RunAsync(window, s, edit: false, token, timeout);
             return new DrawCircleResult(ok, s.CY, s.CX, s.Radius);
         }
 
         /// <summary>交互式绘制一个椭圆 ROI, 右键确认。输出 radius1 &gt;= radius2, phi 为长轴方向。</summary>
         public static async Task<DrawEllipseResult> DrawEllipseAsync(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new EllipseShape();
-            bool ok = await RunAsync(window, s, edit: false, token);
+            bool ok = await RunAsync(window, s, edit: false, token, timeout);
             return NormalizeEllipse(ok, s);
         }
 
@@ -151,7 +153,7 @@ namespace DotNet.HalconUI
         /// 返回的 <see cref="DrawRegionResult.Region"/> 所有权归调用方，未确认时是一个可正常释放的空区域。
         /// </summary>
         public static async Task<DrawRegionResult> DrawRegionAsync(HWindow window,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             // 先备好空 region: 无论走哪条失败路径, 调用方拿到的都是可释放对象
             HOperatorSet.GenEmptyRegion(out HObject region);
@@ -161,7 +163,7 @@ namespace DotNet.HalconUI
             bool ok;
             try
             {
-                ok = await RunAsync(window, s, edit: false, token);
+                ok = await RunAsync(window, s, edit: false, token, timeout);
             }
             catch
             {
@@ -207,10 +209,10 @@ namespace DotNet.HalconUI
         /// 用户可拖拽十字调整位置, 右键确认.
         /// </summary>
         public static async Task<DrawPointResult> DrawPointModAsync(HWindow window,
-            double rowIn, double columnIn, CancellationToken token = default)
+            double rowIn, double columnIn, CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new PointShape { X = columnIn, Y = rowIn };
-            bool ok = await RunAsync(window, s, edit: true, token);
+            bool ok = await RunAsync(window, s, edit: true, token, timeout);
             return new DrawPointResult(ok, s.Y, s.X);
         }
 
@@ -220,14 +222,14 @@ namespace DotNet.HalconUI
         /// </summary>
         public static async Task<DrawLineResult> DrawLineModAsync(HWindow window,
             double row1In, double column1In, double row2In, double column2In,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new LineShape
             {
                 X1 = column1In, Y1 = row1In,
                 X2 = column2In, Y2 = row2In,
             };
-            bool ok = await RunAsync(window, s, edit: true, token);
+            bool ok = await RunAsync(window, s, edit: true, token, timeout);
             return new DrawLineResult(ok, s.Y1, s.X1, s.Y2, s.X2);
         }
 
@@ -237,7 +239,7 @@ namespace DotNet.HalconUI
         /// </summary>
         public static async Task<DrawRectangle1Result> DrawRectangle1ModAsync(HWindow window,
             double row1In, double column1In, double row2In, double column2In,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new Rect1Shape
             {
@@ -246,7 +248,7 @@ namespace DotNet.HalconUI
             };
             s.SyncCenter();
 
-            bool ok = await RunAsync(window, s, edit: true, token);
+            bool ok = await RunAsync(window, s, edit: true, token, timeout);
             return NormalizeRect1(ok, s);
         }
 
@@ -257,7 +259,7 @@ namespace DotNet.HalconUI
         /// </summary>
         public static async Task<DrawRectangle2Result> DrawRectangle2ModAsync(HWindow window,
             double rowIn, double columnIn, double phiIn, double length1In, double length2In,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new Rect2Shape
             {
@@ -267,7 +269,7 @@ namespace DotNet.HalconUI
                 HalfLen1 = Math.Max(1, length1In),
                 HalfLen2 = Math.Max(1, length2In),
             };
-            bool ok = await RunAsync(window, s, edit: true, token);
+            bool ok = await RunAsync(window, s, edit: true, token, timeout);
             return new DrawRectangle2Result(ok, s.CY, s.CX, s.Phi, s.HalfLen1, s.HalfLen2);
         }
 
@@ -276,7 +278,7 @@ namespace DotNet.HalconUI
         /// 可拖拽圆心或半径端点, 右键确认.
         /// </summary>
         public static async Task<DrawCircleResult> DrawCircleModAsync(HWindow window,
-            double rowIn, double columnIn, double radiusIn, CancellationToken token = default)
+            double rowIn, double columnIn, double radiusIn, CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new CircleShape
             {
@@ -284,7 +286,7 @@ namespace DotNet.HalconUI
                 CY = rowIn,
                 Radius = Math.Max(1, radiusIn),
             };
-            bool ok = await RunAsync(window, s, edit: true, token);
+            bool ok = await RunAsync(window, s, edit: true, token, timeout);
             return new DrawCircleResult(ok, s.CY, s.CX, s.Radius);
         }
 
@@ -296,7 +298,7 @@ namespace DotNet.HalconUI
         /// </summary>
         public static async Task<DrawEllipseResult> DrawEllipseModAsync(HWindow window,
             double rowIn, double columnIn, double phiIn, double radius1In, double radius2In,
-            CancellationToken token = default)
+            CancellationToken token = default, TimeSpan? timeout = null)
         {
             var s = new EllipseShape
             {
@@ -306,7 +308,7 @@ namespace DotNet.HalconUI
                 R1 = Math.Max(1, radius1In),
                 R2 = Math.Max(1, radius2In),
             };
-            bool ok = await RunAsync(window, s, edit: true, token);
+            bool ok = await RunAsync(window, s, edit: true, token, timeout);
             return NormalizeEllipse(ok, s);
         }
 
@@ -318,10 +320,12 @@ namespace DotNet.HalconUI
         public static void CancelDraw() => CancelDraw(null);
 
         /// <summary>取消指定窗口上正在进行的交互绘制；<paramref name="window"/> 为 null 时取消全部。</summary>
+        /// <remarks>
+        /// 不再调用 <c>HalconAPI.CancelDraw()</c>：它是进程级操作，会打断<b>所有</b>窗口上的原生 <c>draw_*</c>；
+        /// 本库已不再使用原生 <c>draw_*</c>，留着它只剩跨窗口误伤的风险。
+        /// </remarks>
         public static void CancelDraw(HWindow window)
         {
-            // 兼容仍在使用 HALCON 原生 draw_* 的路径
-            DrawSafe.WindowOp("CancelDraw", () => HalconAPI.CancelDraw());
             DrawSession.CancelAll(window);
         }
 

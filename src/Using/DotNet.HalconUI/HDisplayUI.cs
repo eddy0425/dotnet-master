@@ -55,13 +55,22 @@ namespace DotNet.HalconUI
         private DrawEnum _drawType = DrawEnum.None;
 
         /// <summary>
-        /// 当前鼠标交互模式。
+        /// 当前鼠标交互模式；同一时刻只有一个。
         /// </summary>
-        /// <remarks>原为公开可变字段，改成属性以便后续加入校验/通知，外部读写语义不变。</remarks>
+        /// <remarks>
+        /// 外部只读：模式只经由 <see cref="SetNonePara"/> / <see cref="SetRectPara"/> / <see cref="SetModelPara"/>、
+        /// 交互绘制入口与（同程序集的）模板编辑窗切换，切换时一并配好对应的处理器。
+        /// 平移 / 缩放 / 双击复位不属于任何模式，所有模式下都先于模式处理器执行（见 <see cref="Dispatch"/>）。
+        /// </remarks>
         public DrawEnum DrawType
         {
             get { return _drawType; }
-            set { _drawType = value; }
+            internal set
+            {
+                if (!Enum.IsDefined(typeof(DrawEnum), value))
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "未知的鼠标交互模式");
+                _drawType = value;
+            }
         }
 
         // 在构造函数里创建: 需要 InitializeComponent() 之后才拿得到 hWindowControl.HalconWindow,
@@ -78,7 +87,8 @@ namespace DotNet.HalconUI
             // 直接组合 HDisplay + HWindowMouse：原先夹在中间的 HDisplayCore 除了这两个字段的
             // 转发外没有任何行为，却让每个新增的绘制方法都要改三处签名。
             display = new HDisplay(hWindowControl);
-            mouse = new HWindowMouse(hWindowControl, display);
+            // 视图导航(平移/缩放/双击复位)不自己订阅控件事件, 由本类按固定顺序转发
+            mouse = new HWindowMouse(hWindowControl, display, subscribe: false);
             mouse.RefreshUI += Display_RefreshUI;
 
             // 绑定本控件的窗口: 绘制会话按窗口对象注册, 多个 HDisplayUI 并存时事件不会串台
@@ -146,23 +156,29 @@ namespace DotNet.HalconUI
             }
         }
 
-        private void OnMouseDown(object sender, HMouseEventArgs e)
+        /// <summary>
+        /// 鼠标事件的唯一分发点，顺序固定：视图导航 → 重绘图像 → 当前模式的处理器。
+        /// </summary>
+        /// <remarks>
+        /// 原来视图导航与模式处理器各自订阅控件事件，执行顺序取决于谁先订阅；现在显式写在这里。
+        /// 视图导航改 Part 之后再重绘，模式处理器（含绘制会话）画在最新视图上。
+        /// </remarks>
+        private void Dispatch(HMouseEventArgs e, Action<object, HMouseEventArgs> navigate, Action<IMouseHandler> handle)
         {
+            navigate(this, e);
             ReDispImage();
-            ResolveMouseHandler()?.OnMouseDown(e);
+            var handler = ResolveMouseHandler();
+            if (handler != null) handle(handler);
         }
+
+        private void OnMouseDown(object sender, HMouseEventArgs e)
+            => Dispatch(e, mouse.OnHMouseDown, h => h.OnMouseDown(e));
 
         private void OnMouseUp(object sender, HMouseEventArgs e)
-        {
-            ReDispImage();
-            ResolveMouseHandler()?.OnMouseUp(e);
-        }
+            => Dispatch(e, mouse.OnHMouseUp, h => h.OnMouseUp(e));
 
         private void OnMouseWheel(object sender, HMouseEventArgs e)
-        {
-            ReDispImage();
-            ResolveMouseHandler()?.OnMouseWheel(e);
-        }
+            => Dispatch(e, mouse.OnHMouseWheel, h => h.OnMouseWheel(e));
 
         private void OnMouseMove(object sender, HMouseEventArgs e)
         {
