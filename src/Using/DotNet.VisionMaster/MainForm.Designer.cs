@@ -47,7 +47,6 @@ namespace DotNet.VisionMaster
             this.btn_save = new System.Windows.Forms.Button();
             this.btn_open = new System.Windows.Forms.Button();
             this.lbl_status = new System.Windows.Forms.Label();
-            this.menu_add = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.tableLayoutPanel1.SuspendLayout();
             this.panel3.SuspendLayout();
             this.pnl_toolOps.SuspendLayout();
@@ -229,10 +228,6 @@ namespace DotNet.VisionMaster
             this.lbl_status.Size = new System.Drawing.Size(214, 64);
             this.lbl_status.TabIndex = 5;
             //
-            // menu_add
-            //
-            this.menu_add.Name = "menu_add";
-            //
             // MainForm
             //
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
@@ -270,6 +265,5 @@ namespace DotNet.VisionMaster
         private System.Windows.Forms.Button btn_save;
         private System.Windows.Forms.Button btn_open;
         private System.Windows.Forms.Label lbl_status;
-        private System.Windows.Forms.ContextMenuStrip menu_add;
     }
 }

@@ -34,9 +34,21 @@ namespace DotNet.VisionMaster.Tests
 
         private static string Status(MainForm form) => Priv.Get<Label>(form, "lbl_status").Text;
 
+        /// <summary> 工具箱的树只在 Load 时生成；测试不显示工具箱，这里手动生成 </summary>
+        private static ToolForm Toolbox(MainForm form)
+        {
+            var toolbox = Priv.Get<ToolForm>(form, "_formTool");
+            toolbox.GenerateTree();
+            return toolbox;
+        }
+
+        private static TreeNode ToolboxNode(ToolForm toolbox, string group, string displayName) =>
+            Priv.Get<TreeView>(toolbox, "treeView_Tool").Nodes.Cast<TreeNode>().Single(n => n.Text == group)
+                .Nodes.Cast<TreeNode>().Single(n => n.Text == displayName);
+
         #region 工具箱
 
-        /// <summary> 新增算法不改宿主：初始流程与"添加"菜单都来自目录扫描（含原先漏注册的三个） </summary>
+        /// <summary> 新增算法不改宿主：初始流程与工具箱都来自目录扫描（含原先漏注册的三个） </summary>
         [TestMethod]
         public void Constructor_OneToolPerAlgorithm_FromCatalog()
         {
@@ -54,29 +66,66 @@ namespace DotNet.VisionMaster.Tests
         }
 
         [TestMethod]
-        public void AddMenu_GroupedByCatalogGroups()
+        public void Toolbox_TreeUsesCatalogKeys_AndActivationAddsTool()
         {
             Run(form =>
             {
-                var menu = Priv.Get<ContextMenuStrip>(form, "menu_add");
-                var groups = menu.Items.Cast<ToolStripMenuItem>().Select(i => i.Text).ToArray();
-                CollectionAssert.AreEquivalent(new[] { "图像", "区域", "测量", "定位" }, groups);
-                var measure = menu.Items.Cast<ToolStripMenuItem>().Single(i => i.Text == "测量");
-                CollectionAssert.AreEqual(new[] { "拟合直线", "圆弧中点" }, measure.DropDownItems.Cast<ToolStripItem>().Select(i => i.Text).ToArray());
+                var toolbox = Toolbox(form);
+                var tree = Priv.Get<TreeView>(toolbox, "treeView_Tool");
+                var images = Priv.Get<ImageList>(toolbox, "imageList1");
+                Assert.AreSame(images, tree.ImageList);
+                Assert.IsTrue(images.Images.IndexOfKey("调试.png") >= 0, "图标不能在初始化时丢失");
+                Assert.IsTrue(tree.Nodes.Cast<TreeNode>().All(n => n.ImageIndex >= 0), "每个分组都有图标");
+                var nodes = tree.Nodes.Cast<TreeNode>().SelectMany(n => n.Nodes.Cast<TreeNode>()).ToArray();
+                CollectionAssert.AreEqual(BuiltIn.Algorithms.GroupBy(a => a.Group).Select(g => g.Key).ToArray(),
+                    tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray());
+                CollectionAssert.AreEquivalent(BuiltIn.Algorithms.Select(a => a.Key).ToArray(), nodes.Select(n => n.Name).ToArray());
+                Assert.IsTrue(nodes.All(n => ReferenceEquals(n.Tag, BuiltIn.Find(n.Name))));
+
+                toolbox.ActivateTool(tree.Nodes[0]);
+                Assert.AreEqual(0, form.Tools.Count, "分类节点不能添加工具");
+                var info = BuiltIn.Algorithms[0];
+                toolbox.ActivateTool(nodes.Single(n => n.Name == info.Key));
+                Assert.AreEqual(1, form.Tools.Count);
+                Assert.AreEqual(info.Type, form.CurrentTool.GetType());
+                Assert.AreEqual(info.DisplayName, form.CurrentTool.Name);
+            }, defaultFlow: false);
+        }
+
+        [TestMethod]
+        public void Toolbox_DisposedWithHost()
+        {
+            Sta.Run(() =>
+            {
+                var form = new MainForm(BuiltIn, createDefaultFlow: false);
+                var toolbox = Priv.Get<ToolForm>(form, "_formTool");
+                form.Dispose();
+                Assert.IsTrue(toolbox.IsDisposed);
             });
         }
 
         [TestMethod]
-        public void AddMenuItem_InsertsAfterCurrent_AndSelectsIt()
+        public void Toolbox_GroupedByCatalogGroups()
+        {
+            Run(form =>
+            {
+                var tree = Priv.Get<TreeView>(Toolbox(form), "treeView_Tool");
+                var groups = tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray();
+                CollectionAssert.AreEquivalent(new[] { "图像", "区域", "测量", "定位" }, groups);
+                var measure = tree.Nodes.Cast<TreeNode>().Single(n => n.Text == "测量");
+                CollectionAssert.AreEqual(new[] { "拟合直线", "圆弧中点" }, measure.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray());
+            });
+        }
+
+        [TestMethod]
+        public void ToolboxActivate_InsertsAfterCurrent_AndSelectsIt()
         {
             Run(form =>
             {
                 form.SelectTool(2);
-                var menu = Priv.Get<ContextMenuStrip>(form, "menu_add");
-                var item = menu.Items.Cast<ToolStripMenuItem>().Single(i => i.Text == "测量")
-                    .DropDownItems.Cast<ToolStripItem>().Single(i => i.Text == "拟合直线");
+                var toolbox = Toolbox(form);
 
-                item.PerformClick();
+                toolbox.ActivateTool(ToolboxNode(toolbox, "测量", "拟合直线"));
 
                 Assert.AreEqual(12, Tools(form).Count);
                 Assert.AreEqual(3, form.SelectedIndex);
@@ -87,7 +136,7 @@ namespace DotNet.VisionMaster.Tests
         }
 
         /// <summary>
-        /// 验收：只引用 Drawing + HalconCore 编译出的插件，出现在"添加"菜单里，参数页按它的声明生成。
+        /// 验收：只引用 Drawing + HalconCore 编译出的插件，出现在工具箱里，参数页按它的声明生成。
         /// </summary>
         [TestMethod]
         public void Plugin_AppearsInToolbox_AndItsParamsAreShown()
@@ -101,9 +150,9 @@ namespace DotNet.VisionMaster.Tests
 
                 Run(form =>
                 {
-                    var menu = Priv.Get<ContextMenuStrip>(form, "menu_add");
-                    var sample = menu.Items.Cast<ToolStripMenuItem>().Single(i => i.Text == "示例");
-                    sample.DropDownItems[0].PerformClick();
+                    var toolbox = Toolbox(form);
+                    var sample = Priv.Get<TreeView>(toolbox, "treeView_Tool").Nodes.Cast<TreeNode>().Single(n => n.Text == "示例");
+                    toolbox.ActivateTool(sample.Nodes[0]);
 
                     Assert.AreEqual("sample.region-area", AlgoInfo.Of(form.CurrentTool).Key);
                     CollectionAssert.AreEqual(new[] { "区域来源", "最小面积" },

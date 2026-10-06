@@ -23,6 +23,7 @@ namespace DotNet.VisionMaster
     {
         private readonly HDisplayUI _display;
         private readonly ParaForm _formPara;
+        private readonly ToolForm _formTool;
         private readonly List<IParaStrategy> _tools = new List<IParaStrategy>();
         private readonly HashSet<Guid> _invalid = new HashSet<Guid>();
         private int _index = -1;
@@ -46,7 +47,11 @@ namespace DotNet.VisionMaster
             lst_tools.DrawMode = DrawMode.OwnerDrawFixed;
             lst_tools.ItemHeight = lst_tools.Font.Height + 6;   // Designer 里的 12px 放不下中文, 自绘时各行会叠在一起
             lst_tools.DrawItem += lst_tools_DrawItem;
-            BuildAddMenu();
+            _formTool = new ToolForm(Catalog);
+            _formTool.ToolSelected += AddToolFromToolbox;
+            lst_tools.AllowDrop = true;
+            lst_tools.DragEnter += lst_tools_DragEnter;
+            lst_tools.DragDrop += lst_tools_DragDrop;
 
             if (createDefaultFlow)
             {
@@ -96,21 +101,6 @@ namespace DotNet.VisionMaster
         }
 
         #region 工具列表
-
-        private void BuildAddMenu()
-        {
-            menu_add.Items.Clear();
-            foreach (var group in Catalog.Algorithms.GroupBy(a => a.Group))
-            {
-                var groupItem = new ToolStripMenuItem(group.Key);
-                foreach (var info in group)
-                {
-                    string key = info.Key;
-                    groupItem.DropDownItems.Add(new ToolStripMenuItem(info.DisplayName, null, (s, e) => AddTool(key, select: true)) { Tag = key });
-                }
-                menu_add.Items.Add(groupItem);
-            }
-        }
 
         /// <summary> 在当前工具之后插入一个新工具（没有选中时追加到末尾） </summary>
         internal IParaStrategy AddTool(string key, bool select)
@@ -264,7 +254,42 @@ namespace DotNet.VisionMaster
             e.DrawFocusRectangle();
         }
 
-        private void btn_add_Click(object sender, EventArgs e) => menu_add.Show(btn_add, new Point(0, btn_add.Height));
+        private void btn_add_Click(object sender, EventArgs e)
+        {
+            if (!_formTool.Visible) _formTool.Show(this);
+            _formTool.Activate();
+        }
+
+        private void AddToolFromToolbox(string key)
+        {
+            try { AddTool(key, select: true); }
+            catch (Exception ex)
+            {
+                Log.Error(nameof(MainForm), $"添加工具 '{key}' 失败.", ex);
+                Prompt.Show(ex.Message);
+            }
+        }
+
+        private string DraggedAlgorithmKey(IDataObject data)
+        {
+            if (data == null || !data.GetDataPresent(ToolForm.AlgorithmDragFormat)) return null;
+            var key = data.GetData(ToolForm.AlgorithmDragFormat) as string;
+            return Catalog.Find(key) != null ? key : null;
+        }
+
+        private void lst_tools_DragEnter(object sender, DragEventArgs e)
+        {
+            e.Effect = (e.AllowedEffect & DragDropEffects.Copy) != 0 && DraggedAlgorithmKey(e.Data) != null
+                ? DragDropEffects.Copy : DragDropEffects.None;
+        }
+
+        private void lst_tools_DragDrop(object sender, DragEventArgs e)
+        {
+            var key = DraggedAlgorithmKey(e.Data);
+            // 等 OLE 拖放循环结束再添加：添加时可能弹模态提示，拖放中弹出会卡住工具箱的拖拽状态
+            if ((e.AllowedEffect & DragDropEffects.Copy) != 0 && key != null)
+                BeginInvoke(new Action(() => AddToolFromToolbox(key)));
+        }
 
         private void btn_remove_Click(object sender, EventArgs e) => RemoveTool(_index);
 
@@ -413,6 +438,7 @@ namespace DotNet.VisionMaster
         /// </summary>
         private void MainForm_Disposed(object sender, EventArgs e)
         {
+            _formTool.Dispose();
             foreach (var tool in _tools) DisposeTool(tool);
         }
     }
