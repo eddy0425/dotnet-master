@@ -70,35 +70,6 @@ namespace DotNet.VisionMaster
             node.EnsureVisible();
         }
 
-        // 最终调用形式（与YAML结构1:1对应）
-        private void GenerateTree(TreeView treeView1)
-        {
-            treeView1.Nodes.Clear();
-
-            new TreeVisualizer(treeView1)
-                .Branch("直线查找0", branch => branch
-                    .Node("直线", OutEnum.Line, line => line
-                        .Branch("起点", pt => pt
-                            .Node("行", OutEnum.Number)
-                            .Node("列", OutEnum.Number)
-                        )
-                        .Branch("终点", pt => pt
-                            .Node("行", OutEnum.Number)
-                            .Node("列", OutEnum.Number)
-                        )
-                    )
-                    .CommonNodes()
-                )
-                .Branch("点线垂线0", branch => branch
-                    .Node("直线", OutEnum.Line, line => line
-                        .ReusePointStructure("起点")  // 复用结构
-                        .ReusePointStructure("终点")
-                    )
-                    .CommonNodes()
-                )
-                .Branches("点线垂线1", "点线垂线2"); // 空节点生成
-        }
-
         private void GenerateTree(int index, List<IParaStrategy> paraStrategies)    //生成输出变量节点
         {
             treeView1.Nodes.Clear();

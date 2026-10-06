@@ -347,6 +347,40 @@ namespace DotNet.HalconAlgo.Tests
             Assert.ThrowsException<AlgoOutputNotFoundException>(() => Strategy.Fun_action(_display, Strategies.Of()));
         }
 
+        /// <summary>
+        /// 跟随坐标：本地查找 ROI 只框住示教位置，工件平移 (30,20) 后必须随上游坐标系一起搬过去才找得到。
+        /// </summary>
+        [TestMethod]
+        public void Run_CoordIn_MovesLocalRegionWithUpstreamCoord()
+        {
+            CreateTemplate();
+            var tmpl = TmplPoint(Strategy);
+            // 只框住示教位置的 L (行 40..90 × 列 50..100), 平移后的 L 落在框外
+            ReplaceHoRect(NewRegion(RectEnum.Rectangle, 45, 35, 60, 60));
+            var upstream = StubStrategy.Coord("定位", tmpl, new CvCoord(new Point2d(tmpl.X + 30, tmpl.Y + 20), Angle.FromRadians(0)));
+            SetPara(Strategy, "CoordIn", "定位/坐标系");
+
+            using (var shifted = LImage(dx: 30, dy: 20))
+            {
+                _display.SetImage(shifted);
+                Assert.IsTrue(Strategy.Fun_action(_display, Strategies.Of(upstream)));
+            }
+
+            Assert.AreEqual(1, Results(Strategy).Count, "查找区域没跟着搬过去就找不到平移后的目标");
+            Assert.AreEqual(tmpl.X + 30, Coord(Strategy).X, 1.0);
+            Assert.AreEqual(tmpl.Y + 20, Coord(Strategy).Y, 1.0);
+        }
+
+        [TestMethod]
+        public void Run_CoordIn_Unresolvable_Throws()
+        {
+            CreateTemplate();
+            UseFullImageRoi();
+            SetPara(Strategy, "CoordIn", "上游/坐标系");
+            _display.SetImage(_image);
+            Assert.ThrowsException<AlgoOutputNotFoundException>(() => Strategy.Fun_action(_display, Strategies.Of()));
+        }
+
         [TestMethod]
         public void Run_WithoutModel_ReturnsFalse_RedText_ResetsResult()
         {
@@ -791,8 +825,7 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(0, HoContour(Strategy).CountObj(), "轮廓句柄已初始化为空对象");
         }
 
-        /// <remarks>CoordIn 这里只验证"能存能读回": 匹配策略运行时目前不读它 (查找 ROI 不跟随),
-        /// 将来实现跟随时需另加行为测试 (查找 ROI 随上游坐标系平移 / 旋转)。</remarks>
+        /// <remarks>CoordIn 的跟随行为见 <see cref="Run_CoordIn_MovesLocalRegionWithUpstreamCoord"/>。</remarks>
         [TestMethod]
         public void ParaRoundTrip_SearchParams()
         {

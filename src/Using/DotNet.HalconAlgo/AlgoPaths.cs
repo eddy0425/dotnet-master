@@ -18,8 +18,5 @@ namespace DotNet.HalconAlgo
 
         public static string SchemeInfo => "SchemeInfo.json";
         public static string JobInfo => "JobInfo.json";
-
-        /// <summary>是否由 UI 阻塞式交互驱动算法 (VisionMaster 调试窗体会置为 false).</summary>
-        public static bool UIBlock = true;
     }
 }

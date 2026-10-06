@@ -8,7 +8,7 @@
     <OutputType>Library</OutputType>
     <RootNamespace>DotNet.HalconUI</RootNamespace>
     <AssemblyName>DotNet.HalconUI</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
@@ -23,7 +23,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x64</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
@@ -39,11 +39,7 @@
   <ItemGroup>
     <Reference Include="halcondotnet, Version=22.11.0.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>C:\DotNet\.dll\Halcon\halcondotnet.dll</HintPath>
-    </Reference>
-    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>C:\DotNet\.dll\Newtonsoft.Json\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(DotNetDllDir)\Halcon\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -112,6 +108,7 @@
     <Compile Include="VsControl\WinFormsParaUiHost.cs" />
     <Compile Include="VsControl\VsControlFactory.cs" />
     <Compile Include="VsControl\VsControlModel.cs" />
+    <Compile Include="HWindows\HFont\HWindowFonts.cs" />
     <EmbeddedResource Include="HModelUI.resx">
       <DependentUpon>HModelUI.cs</DependentUpon>
     </EmbeddedResource>

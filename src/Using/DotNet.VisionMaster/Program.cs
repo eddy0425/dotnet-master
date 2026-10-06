@@ -15,6 +15,8 @@ namespace DotNet.VisionMaster
         {
             // 初始化应用日志，并在退出时排空待写入的日志。
             Log.Initialize(b => b.WriteToFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs"), "VisionMaster"));
+            // 库层 (HalconCore / HalconAlgo / HalconUI / 插件) 走 DotNet.Drawing.Log, 默认只写 Trace; 接到应用日志上才会落盘
+            DotNet.Drawing.Log.Current = new DrawingLogBridge();
             try
             {
                 Application.EnableVisualStyles();

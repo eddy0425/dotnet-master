@@ -1,6 +1,7 @@
 ﻿using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
+using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -60,6 +61,7 @@ namespace DotNet.HalconAlgo
 
             HObject imgReduced; HOperatorSet.GenEmptyObj(out imgReduced);
             HObject ho_SelRect; HOperatorSet.GenEmptyObj(out ho_SelRect);
+            HObject ho_Follow; HOperatorSet.GenEmptyObj(out ho_Follow);
 
             try
             {
@@ -89,6 +91,17 @@ namespace DotNet.HalconAlgo
                 {
                     // 上游句柄由 ResolveRegionFrom 保证非空且可用（拿不到就抛），无需再判一次。
                     ho_Rect = strategys.ResolveRegionFrom(inPara.RegionIn);
+                }
+
+                // 跟随坐标: 与拟合类同口径, 只把本地配置区域搬到当前工件位姿; 上游区域已在当前图像坐标系。
+                // 原先 CoordIn 能在界面上选, 但查找时从未读取 —— 工件一动, 搜索区域仍停在示教位置。
+                if (useLocalRegion && inPara.CoordIn != "默认")
+                {
+                    var inCoord = strategys.ResolveFrom<CvCoord>(inPara.CoordIn);
+                    var tmplPoint = strategys.ResolveFrom<Point2d>(inPara.CoordIn.ToTmplPoint());
+                    ho_Follow.Dispose();
+                    HalconController.TransRegion(new CvCoord(tmplPoint), inCoord, ho_Rect, out ho_Follow);
+                    ho_Rect = ho_Follow;
                 }
 
                 if (inPara.DispRegion) display.Disp(ho_Rect, DrawStyle.Of(HColor.Blue));
@@ -168,6 +181,7 @@ namespace DotNet.HalconAlgo
             {
                 imgReduced.Dispose();
                 ho_SelRect.Dispose();
+                ho_Follow.Dispose();
             }
         }
         /// <summary>
@@ -421,10 +435,8 @@ namespace DotNet.HalconAlgo
 
         /// <summary> 模版轮廓 </summary>
         /// <remarks>不加 = new HObject() 初始化器：句柄统一由构造函数的 GenEmptyObj 创建，否则初始化器创建的句柄会被覆盖且永不释放。</remarks>
+        [JsonIgnore]
         public HObject HoContour;
-
-        /// <summary> 锁定中心 </summary>
-        public bool LockCenter { get; set; } = true;
 
         /// <summary> 模版路径 </summary>
         /// <remarks>尚未创建模板时为空串而不是 null：这个值会直接交给 ReadImage / DisplayModel，空串换来一条
@@ -434,6 +446,7 @@ namespace DotNet.HalconAlgo
         /// <summary> 模板ID </summary>
         /// <remarks>可空：模板尚未创建、或参数变更后被主动置 null（见 CreateModel），调用点一律先判
         /// <c>ModelID == null || ModelID.Length == 0</c> 再用。</remarks>
+        [JsonIgnore]
         public HTuple ModelID { get; set; }
 
         /// <summary> 起始角度 </summary>

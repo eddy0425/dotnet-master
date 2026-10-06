@@ -50,13 +50,13 @@
       <HintPath>..\..\packages\MSTest.TestFramework.2.2.10\lib\net45\Microsoft.VisualStudio.TestPlatform.TestFramework.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="halcondotnet">
-      <HintPath>C:\DotNet\.dll\Halcon\halcondotnet.dll</HintPath>
+      <HintPath>$(DotNetDllDir)\Halcon\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="SunnyUI">
-      <HintPath>C:\DotNet\.dll\SunnyUI\SunnyUI.dll</HintPath>
+      <HintPath>$(DotNetDllDir)\SunnyUI\SunnyUI.dll</HintPath>
     </Reference>
     <Reference Include="SunnyUI.Common">
-      <HintPath>C:\DotNet\.dll\SunnyUI\SunnyUI.Common.dll</HintPath>
+      <HintPath>$(DotNetDllDir)\SunnyUI\SunnyUI.Common.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -74,6 +74,7 @@
     <Compile Include="ValueFormTests.cs" />
     <Compile Include="ParaFormTests.cs" />
     <Compile Include="MainFormTests.cs" />
+    <Compile Include="DrawingLogBridgeTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Using\DotNet.Drawing\DotNet.Drawing.csproj">

@@ -24,6 +24,28 @@ namespace DotNet.HalconUI.Tests
             return $"{r1},{c1},{r2},{c2}";
         }
 
+        /// <summary>
+        /// HWindowControl 建出的是旧图形栈的 WIN32-Window，在它上面 2022 版的 disp_text 必然报 #5123；
+        /// 工厂必须按窗口类型选 2018 版，否则产品里的状态文本整行消失。
+        /// </summary>
+        [TestMethod]
+        public void Create_LegacyWindow_Picks2018()
+        {
+            WindowHost.Run(host =>
+            {
+                HOperatorSet.GetWindowType(host.Window, out HTuple type);
+                Assert.AreEqual(HWindowFonts.LegacyWindowType, type.S, "前提：测试窗口与产品窗口同为旧图形栈");
+
+                Assert.IsInstanceOfType(HWindowFonts.Create(host.Window), typeof(HWindowFont2018));
+            });
+        }
+
+        [TestMethod]
+        public void Create_NullWindow_Throws()
+        {
+            Assert.ThrowsException<ArgumentNullException>(() => HWindowFonts.Create(null));
+        }
+
         [TestMethod]
         public void Font2018_DispText_RestoresPartAndColor()
         {

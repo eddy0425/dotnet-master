@@ -40,7 +40,7 @@ namespace DotNet.HalconUI
             if (hWindowControl == null) throw new ArgumentNullException(nameof(hWindowControl));
 
             _hWindow = hWindowControl.HalconWindow;
-            _hWindowFont = new HWindowFont2018(_hWindow);
+            _hWindowFont = HWindowFonts.Create(_hWindow);
             _hWindowImage = new HWindowImage(hWindowControl);
 
             // 用占位灰图初始化窗口，避免首帧到来前窗口处于未设置 Part 的状态。

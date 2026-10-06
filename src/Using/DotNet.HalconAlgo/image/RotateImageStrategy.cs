@@ -1,6 +1,7 @@
 ﻿using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 
@@ -204,6 +205,7 @@ namespace DotNet.HalconAlgo
 
         /// <summary> 输出图像 </summary>
         /// <remarks>不加 = new HObject() 初始化器：句柄统一由构造函数的 GenEmptyObj 创建，否则初始化器创建的句柄会被覆盖且永不释放。</remarks>
+        [JsonIgnore]
         public HObject Image;
 
         /// <summary> 旋转方式 </summary>

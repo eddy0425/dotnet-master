@@ -2,6 +2,7 @@
 # [Oo]bj/ 忽略 obj 文件夹，这是 .NET 项目编译时生成的主要输出目录
 # [Dd]ebug/ - 忽略 Debug 文件夹（不区分大小写），包含调试模式下编译生成的文件
 [Dd]ebug/
+[Rr]elease/
 [Oo]bj/
 
 

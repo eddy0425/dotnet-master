@@ -22,7 +22,6 @@ namespace DotNet.VisionMaster
         public MainForm()
         {
             InitializeComponent();
-            AlgoPaths.UIBlock = false;
 
             _display = new HDisplayUI();
             panel1.Controls.Add(_display);
@@ -42,14 +41,13 @@ namespace DotNet.VisionMaster
             for (int i = 0; i < _strategys.Count; i++)
             {
                 _strategys[i].Init(_display);
+                // 模板图目录按 RunIndex 区分: 不赋值时 4 个匹配工具的模板图都写进 JobDir/0/, 互相覆盖
+                _strategys[i].RunIndex = i;
             }
 
             // 挂 Disposed 而不是重写 Dispose(bool): 后者已在 Designer 里定义。
             // 此时子控件(含 _display)都已销毁, 不会再有绘制去碰策略持有的句柄。
             Disposed += MainForm_Disposed;
-
-            var fileImage = ((FileImageStrategy)_strategys[0]).inPara;
-            fileImage.ImageFolder = "D:\\testImage\\FitArcMidpoint";
         }
 
         /// <summary>
@@ -133,18 +131,11 @@ namespace DotNet.VisionMaster
             {
                 _display.ReDispImage();
 
-                switch (_strategys[_index].Name)
-                {
-                    case "ShapeMode":
-                        {
-                            //_display.SetDrawMode("ShapeMode", DrawEnum.DispModel);
-                        }
-                        break;
-                }
-
                 if (_currentStrategy is IParaBinding binding)
                     binding.SavePara(new WinFormsParaUiHost(_formPara, _vsControls));
-                _currentStrategy.Fun_action(_display.Display, _strategys);
+                // 失败原因由策略画在屏幕上; 这里至少留一条日志, 不再整个丢弃返回值
+                if (!_currentStrategy.Fun_action(_display.Display, _strategys))
+                    Log.Warn(nameof(MainForm), $"工具 '{_currentStrategy.Name}' 运行未成功.");
             }
             catch (Exception ex)
             {

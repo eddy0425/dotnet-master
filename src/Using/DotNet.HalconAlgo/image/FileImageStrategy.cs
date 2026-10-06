@@ -1,4 +1,5 @@
 ﻿using HalconDotNet;
+using Newtonsoft.Json;
 using System;
 using DotNet.Drawing;
 using DotNet.HalconCore;
@@ -189,6 +190,7 @@ namespace DotNet.HalconAlgo
         /// <remarks>不加 = new HObject() 初始化器：句柄统一由构造函数的 GenEmptyObj 创建，否则初始化器创建的句柄会被覆盖且永不释放。
         /// 原先句柄只由 <see cref="FileImageStrategy.Init"/> 创建，Init 之前（或 Init 抛异常时）字段为 null，
         /// 与另外四个匹配参数类的约定也不一致；改由构造函数建空句柄，Init 里的 <c>Image?.Dispose()</c> 会正常回收它。</remarks>
+        [JsonIgnore]
         public HObject Image;
 
         /// <summary> 旋转 </summary>

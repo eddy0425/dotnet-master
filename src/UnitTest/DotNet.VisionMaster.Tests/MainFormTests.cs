@@ -18,17 +18,6 @@ namespace DotNet.VisionMaster.Tests
     [TestClass]
     public class MainFormTests : HalconTestBase
     {
-        private bool _savedUIBlock;
-
-        [TestInitialize]
-        public void Init() => _savedUIBlock = AlgoPaths.UIBlock;
-
-        [TestCleanup]
-        public void Cleanup()
-        {
-            AlgoPaths.UIBlock = _savedUIBlock;
-        }
-
         private static void Run(Action<MainForm> body) =>
             Sta.Run(() =>
             {
@@ -60,16 +49,23 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
+        /// <summary>模板图目录按 RunIndex 区分：不赋值时 4 个匹配工具的模板图会写进同一个目录互相覆盖。</summary>
         [TestMethod]
-        public void Constructor_DisablesUIBlock_AndPresetsImageFolder()
+        public void Constructor_AssignsDistinctRunIndex()
         {
-            AlgoPaths.UIBlock = true;
-
             Run(form =>
             {
-                Assert.IsFalse(AlgoPaths.UIBlock);
-                Assert.AreEqual("D:\\testImage\\FitArcMidpoint", ((FileImageStrategy)Strategies(form)[0]).inPara.ImageFolder);
+                var strategies = Strategies(form);
+                for (int i = 0; i < strategies.Count; i++)
+                    Assert.AreEqual(i, strategies[i].RunIndex, strategies[i].Name);
             });
+        }
+
+        /// <summary>不再写死开发机上的测试目录。</summary>
+        [TestMethod]
+        public void Constructor_DoesNotPresetImageFolder()
+        {
+            Run(form => Assert.AreEqual(string.Empty, ((FileImageStrategy)Strategies(form)[0]).inPara.ImageFolder));
         }
 
         [TestMethod]

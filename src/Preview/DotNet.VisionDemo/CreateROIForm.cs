@@ -22,7 +22,6 @@ namespace DotNet.VisionDemo
         public CreateROIForm()
         {
             InitializeComponent();
-            AlgoPaths.UIBlock = false;
 
             _display = new HDisplayUI();
             panel1.Controls.Add(_display);
