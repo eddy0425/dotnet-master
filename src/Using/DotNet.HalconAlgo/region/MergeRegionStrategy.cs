@@ -49,6 +49,7 @@ namespace DotNet.HalconAlgo
                 p.Source($"输入区域{slot}", () => Sources()[slot], v => Sources()[slot] = v, OutEnum.Region);
             }
             p.Tab(TabPageEnum.Display)
+             .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v);
         }
 

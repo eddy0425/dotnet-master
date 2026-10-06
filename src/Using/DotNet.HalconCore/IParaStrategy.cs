@@ -255,7 +255,16 @@ namespace DotNet.HalconCore
 
         #region 参数
 
-        /// <summary> 声明参数面板。"显示文本 / 字体"几项由基类自动追加到显示页 </summary>
+        /// <summary> 显示页分组：放显示开关 </summary>
+        public const string DisplayGroup = "显示设置";
+
+        /// <summary> 显示页分组：放文本坐标 / 字号 / 点大小 </summary>
+        public const string FontGroup = "字体设置";
+
+        /// <summary>
+        /// 声明参数面板。"显示文本 / 字体"几项由基类自动追加到显示页；
+        /// 策略自己的显示开关请归入 <see cref="DisplayGroup"/>，数值项归入 <see cref="FontGroup"/>。
+        /// </summary>
         protected abstract void DeclareParams(ParamBuilder p);
 
         /// <summary>
@@ -269,7 +278,9 @@ namespace DotNet.HalconCore
             var p = new ParamBuilder();
             DeclareParams(p);
             p.Tab(TabPageEnum.Display)
+             .Group(DisplayGroup)
              .Flag("显示文本", () => inPara.DispText, v => inPara.DispText = v)
+             .Group(FontGroup)
              .Int("文本X", () => inPara.FontX, v => inPara.FontX = v, presets: new[] { 20, 50 })
              .Int("文本Y", () => inPara.FontY, v => inPara.FontY = v, presets: new[] { 20, 50 })
              .Int("字号", () => inPara.FontSize, v => inPara.FontSize = v, presets: new[] { 15, 30 }, min: 1);

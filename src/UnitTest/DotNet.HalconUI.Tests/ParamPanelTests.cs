@@ -225,5 +225,67 @@ namespace DotNet.HalconUI.Tests
                 Assert.AreEqual(0, panel.Items.Count);
             });
         }
+
+        [TestMethod]
+        public void Group_SameTitleSharesOneGroupBox_TabEndsGroup()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                bool a = true, b = false;
+                int size = 15;
+                var grouped = new ParamBuilder()
+                    .Tab(TabPageEnum.Display)
+                    .Group("显示设置").Flag("甲", () => a, v => a = v)
+                    .Group("字体设置").Int("字号", () => size, v => size = v)
+                    .Group("显示设置").Flag("乙", () => b, v => b = v)
+                    .Tab(TabPageEnum.Parameter).Flag("不分组", () => a, v => a = v)
+                    .Items.ToList();
+                panel.Bind(grouped);
+
+                var first = panel.EditorOf(grouped[0]).Parent as GroupBox;
+                Assert.IsNotNull(first, "分组项画进分组框");
+                Assert.AreEqual("显示设置", first.Text);
+                Assert.AreSame(first, panel.EditorOf(grouped[2]).Parent, "同名分组合并");
+                Assert.AreEqual("字体设置", ((GroupBox)panel.EditorOf(grouped[1]).Parent).Text);
+                Assert.IsNull(grouped[3].Group, "换页结束分组");
+                Assert.AreSame(panel, panel.EditorOf(grouped[3]).Parent);
+            });
+        }
+
+        [TestMethod]
+        public void Group_NullOrBlankTitleEndsGroup()
+        {
+            bool a = true;
+            var items = new ParamBuilder()
+                .Group("显示设置").Flag("甲", () => a, v => a = v)
+                .Group(null).Flag("乙", () => a, v => a = v)
+                .Group("显示设置").Flag("丙", () => a, v => a = v)
+                .Group("  ").Flag("丁", () => a, v => a = v)
+                .Items;
+
+            Assert.AreEqual("显示设置", items[0].Group);
+            Assert.IsNull(items[1].Group);
+            Assert.AreEqual("显示设置", items[2].Group);
+            Assert.IsNull(items[3].Group);
+        }
+
+        [TestMethod]
+        public void DockTop_HeightFollowsContent()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                int one = 0, two = 0;
+                var single = new ParamBuilder().Int("一", () => one, v => one = v).Items.ToList();
+                var twoRows = new ParamBuilder().Int("一", () => one, v => one = v).Int("二", () => two, v => two = v).Items.ToList();
+                panel.Dock = DockStyle.Top;
+
+                panel.Bind(single);
+                int singleHeight = panel.Height;
+                panel.Bind(twoRows);
+
+                Assert.IsTrue(panel.Height > singleHeight, "多一行面板跟着变高");
+                Assert.IsTrue(panel.EditorOf(twoRows[1]).Bottom <= panel.ClientSize.Height, "末行完整可见");
+            });
+        }
     }
 }

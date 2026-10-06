@@ -49,6 +49,9 @@ namespace DotNet.HalconCore
 
         internal Func<bool> VisibleWhen { get; set; }
 
+        /// <summary> 所属分组（宿主画成一个分组框）；null 表示不分组 </summary>
+        public string Group { get; internal set; }
+
         /// <summary> 当前是否显示；宿主在任一参数写回后重新求值 </summary>
         public bool IsVisible => VisibleWhen == null || VisibleWhen();
 
@@ -286,13 +289,25 @@ namespace DotNet.HalconCore
     {
         private readonly List<ParamItem> _items = new List<ParamItem>();
         private TabPageEnum _tab = TabPageEnum.Parameter;
+        private string _group;
 
         public IReadOnlyList<ParamItem> Items => _items;
 
-        /// <summary> 之后声明的项放到哪一页；默认 <see cref="TabPageEnum.Parameter"/> </summary>
+        /// <summary> 之后声明的项放到哪一页；默认 <see cref="TabPageEnum.Parameter"/>。换页同时结束分组 </summary>
         public ParamBuilder Tab(TabPageEnum tab)
         {
             _tab = tab;
+            _group = null;
+            return this;
+        }
+
+        /// <summary>
+        /// 之后声明的项归入哪个分组；传 null 结束分组。同页同名的分组合并显示，
+        /// 例如策略声明的显示开关与基类追加的"显示文本"都归入"显示设置"。
+        /// </summary>
+        public ParamBuilder Group(string title)
+        {
+            _group = string.IsNullOrWhiteSpace(title) ? null : title;
             return this;
         }
 
@@ -346,6 +361,7 @@ namespace DotNet.HalconCore
         {
             if (_items.Any(i => i.Tab == item.Tab && i.Label == item.Label))
                 throw new ArgumentException($"参数 '{item.Label}' 在 {item.Tab} 页重复声明");
+            item.Group = _group;
             _items.Add(item);
             return this;
         }

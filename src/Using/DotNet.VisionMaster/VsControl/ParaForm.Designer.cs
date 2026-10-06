@@ -104,7 +104,8 @@ namespace DotNet.VisionMaster
             this.tabFile.Name = "tabFile";
             this.tabFile.Padding = new System.Windows.Forms.Padding(3);
             this.tabFile.Text = "文件图像";
-            this.tabFile.UseVisualStyleBackColor = true;
+            this.tabFile.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
+            this.tabFile.UseVisualStyleBackColor = false;
             //
             // filePanel
             //
@@ -117,7 +118,8 @@ namespace DotNet.VisionMaster
             this.tabParam.Name = "tabParam";
             this.tabParam.Padding = new System.Windows.Forms.Padding(3);
             this.tabParam.Text = "基本参数";
-            this.tabParam.UseVisualStyleBackColor = true;
+            this.tabParam.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
+            this.tabParam.UseVisualStyleBackColor = false;
             //
             // paramPanel
             //
@@ -126,17 +128,19 @@ namespace DotNet.VisionMaster
             //
             // tabRegion
             //
-            this.tabRegion.Controls.Add(this.regionPanel);
             this.tabRegion.Controls.Add(this.pnl_roi);
+            this.tabRegion.Controls.Add(this.regionPanel);
             this.tabRegion.Name = "tabRegion";
             this.tabRegion.Padding = new System.Windows.Forms.Padding(3);
             this.tabRegion.Text = "区域设置";
-            this.tabRegion.UseVisualStyleBackColor = true;
+            this.tabRegion.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
+            this.tabRegion.UseVisualStyleBackColor = false;
             //
             // regionPanel
             //
-            this.regionPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.regionPanel.Dock = System.Windows.Forms.DockStyle.Top;
             this.regionPanel.Name = "regionPanel";
+            this.regionPanel.Size = new System.Drawing.Size(554, 41);
             //
             // pnl_roi
             //
@@ -144,8 +148,9 @@ namespace DotNet.VisionMaster
             this.pnl_roi.Controls.Add(this.but_editRegion);
             this.pnl_roi.Controls.Add(this.btn_drawRegion);
             this.pnl_roi.Controls.Add(this.grb_Rect);
-            this.pnl_roi.Dock = System.Windows.Forms.DockStyle.Left;
+            this.pnl_roi.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnl_roi.Name = "pnl_roi";
+            this.pnl_roi.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.pnl_roi.Size = new System.Drawing.Size(300, 250);
             //
             // grb_Rect
@@ -155,16 +160,17 @@ namespace DotNet.VisionMaster
             this.grb_Rect.Controls.Add(this.btn_rectCircle);
             this.grb_Rect.Controls.Add(this.btn_rectEllipse);
             this.grb_Rect.Controls.Add(this.btn_rectPolygon);
-            this.grb_Rect.Location = new System.Drawing.Point(3, 3);
+            this.grb_Rect.Location = new System.Drawing.Point(9, 0);
             this.grb_Rect.Name = "grb_Rect";
-            this.grb_Rect.Size = new System.Drawing.Size(110, 170);
+            this.grb_Rect.Size = new System.Drawing.Size(124, 160);
+            this.grb_Rect.ForeColor = System.Drawing.Color.White;
             this.grb_Rect.Text = "区域形状";
             //
             // btn_rectRectangle
             //
             this.btn_rectRectangle.AutoSize = true;
             this.btn_rectRectangle.Checked = true;
-            this.btn_rectRectangle.Location = new System.Drawing.Point(10, 22);
+            this.btn_rectRectangle.Location = new System.Drawing.Point(18, 22);
             this.btn_rectRectangle.Name = "btn_rectRectangle";
             this.btn_rectRectangle.TabStop = true;
             this.btn_rectRectangle.Text = "矩形";
@@ -172,47 +178,53 @@ namespace DotNet.VisionMaster
             // btn_rectAffRect
             //
             this.btn_rectAffRect.AutoSize = true;
-            this.btn_rectAffRect.Location = new System.Drawing.Point(10, 50);
+            this.btn_rectAffRect.Location = new System.Drawing.Point(18, 49);
             this.btn_rectAffRect.Name = "btn_rectAffRect";
             this.btn_rectAffRect.Text = "仿矩";
             //
             // btn_rectCircle
             //
             this.btn_rectCircle.AutoSize = true;
-            this.btn_rectCircle.Location = new System.Drawing.Point(10, 78);
+            this.btn_rectCircle.Location = new System.Drawing.Point(18, 76);
             this.btn_rectCircle.Name = "btn_rectCircle";
             this.btn_rectCircle.Text = "圆";
             //
             // btn_rectEllipse
             //
             this.btn_rectEllipse.AutoSize = true;
-            this.btn_rectEllipse.Location = new System.Drawing.Point(10, 106);
+            this.btn_rectEllipse.Location = new System.Drawing.Point(18, 103);
             this.btn_rectEllipse.Name = "btn_rectEllipse";
             this.btn_rectEllipse.Text = "椭圆";
             //
             // btn_rectPolygon
             //
             this.btn_rectPolygon.AutoSize = true;
-            this.btn_rectPolygon.Location = new System.Drawing.Point(10, 134);
+            this.btn_rectPolygon.Location = new System.Drawing.Point(18, 130);
             this.btn_rectPolygon.Name = "btn_rectPolygon";
             this.btn_rectPolygon.Text = "多边形";
             //
             // btn_drawRegion
             //
-            this.btn_drawRegion.Location = new System.Drawing.Point(3, 180);
+            this.btn_drawRegion.Location = new System.Drawing.Point(163, 106);
             this.btn_drawRegion.Name = "btn_drawRegion";
-            this.btn_drawRegion.Size = new System.Drawing.Size(110, 30);
+            this.btn_drawRegion.ForeColor = System.Drawing.Color.Black;
+            this.btn_drawRegion.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.btn_drawRegion.BackColor = System.Drawing.Color.Gainsboro;
+            this.btn_drawRegion.Size = new System.Drawing.Size(75, 36);
             this.btn_drawRegion.Text = "新建区域";
-            this.btn_drawRegion.UseVisualStyleBackColor = true;
+            this.btn_drawRegion.UseVisualStyleBackColor = false;
             this.btn_drawRegion.Click += new System.EventHandler(this.btn_drawRegion_Click);
             //
             // but_editRegion
             //
-            this.but_editRegion.Location = new System.Drawing.Point(3, 214);
+            this.but_editRegion.Location = new System.Drawing.Point(163, 50);
             this.but_editRegion.Name = "but_editRegion";
-            this.but_editRegion.Size = new System.Drawing.Size(110, 30);
+            this.but_editRegion.ForeColor = System.Drawing.Color.Black;
+            this.but_editRegion.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.but_editRegion.BackColor = System.Drawing.Color.Gainsboro;
+            this.but_editRegion.Size = new System.Drawing.Size(75, 36);
             this.but_editRegion.Text = "修改区域";
-            this.but_editRegion.UseVisualStyleBackColor = true;
+            this.but_editRegion.UseVisualStyleBackColor = false;
             this.but_editRegion.Click += new System.EventHandler(this.but_editRegion_Click);
             //
             // grb_RectInfo
@@ -227,65 +239,76 @@ namespace DotNet.VisionMaster
             this.grb_RectInfo.Controls.Add(this.txt_BottomRight);
             this.grb_RectInfo.Controls.Add(this.lbl_Fix4);
             this.grb_RectInfo.Controls.Add(this.txt_Center);
-            this.grb_RectInfo.Location = new System.Drawing.Point(118, 3);
+            this.grb_RectInfo.Location = new System.Drawing.Point(268, 0);
             this.grb_RectInfo.Name = "grb_RectInfo";
-            this.grb_RectInfo.Size = new System.Drawing.Size(178, 170);
+            this.grb_RectInfo.Size = new System.Drawing.Size(200, 160);
+            this.grb_RectInfo.ForeColor = System.Drawing.Color.White;
             this.grb_RectInfo.Text = "区域信息";
             //
             // lbl_Fix0 / txt_Width
             //
             this.lbl_Fix0.AutoSize = true;
-            this.lbl_Fix0.Location = new System.Drawing.Point(6, 25);
+            this.lbl_Fix0.Location = new System.Drawing.Point(17, 24);
             this.lbl_Fix0.Name = "lbl_Fix0";
             this.lbl_Fix0.Text = "区域宽";
-            this.txt_Width.Location = new System.Drawing.Point(64, 22);
+            this.txt_Width.Location = new System.Drawing.Point(80, 20);
             this.txt_Width.Name = "txt_Width";
+            this.txt_Width.BackColor = System.Drawing.Color.White;
             this.txt_Width.ReadOnly = true;
-            this.txt_Width.Size = new System.Drawing.Size(106, 24);
+            this.txt_Width.ForeColor = System.Drawing.SystemColors.WindowText;
+            this.txt_Width.Size = new System.Drawing.Size(98, 21);
             //
             // lbl_Fix1 / txt_Height
             //
             this.lbl_Fix1.AutoSize = true;
-            this.lbl_Fix1.Location = new System.Drawing.Point(6, 54);
+            this.lbl_Fix1.Location = new System.Drawing.Point(17, 51);
             this.lbl_Fix1.Name = "lbl_Fix1";
             this.lbl_Fix1.Text = "区域高";
-            this.txt_Height.Location = new System.Drawing.Point(64, 51);
+            this.txt_Height.Location = new System.Drawing.Point(80, 47);
             this.txt_Height.Name = "txt_Height";
+            this.txt_Height.BackColor = System.Drawing.Color.White;
             this.txt_Height.ReadOnly = true;
-            this.txt_Height.Size = new System.Drawing.Size(106, 24);
+            this.txt_Height.ForeColor = System.Drawing.SystemColors.WindowText;
+            this.txt_Height.Size = new System.Drawing.Size(98, 21);
             //
             // lbl_Fix2 / txt_TopLeft
             //
             this.lbl_Fix2.AutoSize = true;
-            this.lbl_Fix2.Location = new System.Drawing.Point(6, 83);
+            this.lbl_Fix2.Location = new System.Drawing.Point(17, 78);
             this.lbl_Fix2.Name = "lbl_Fix2";
             this.lbl_Fix2.Text = "左上角";
-            this.txt_TopLeft.Location = new System.Drawing.Point(64, 80);
+            this.txt_TopLeft.Location = new System.Drawing.Point(80, 74);
             this.txt_TopLeft.Name = "txt_TopLeft";
+            this.txt_TopLeft.BackColor = System.Drawing.Color.White;
             this.txt_TopLeft.ReadOnly = true;
-            this.txt_TopLeft.Size = new System.Drawing.Size(106, 24);
+            this.txt_TopLeft.ForeColor = System.Drawing.SystemColors.WindowText;
+            this.txt_TopLeft.Size = new System.Drawing.Size(98, 21);
             //
             // lbl_Fix3 / txt_BottomRight
             //
             this.lbl_Fix3.AutoSize = true;
-            this.lbl_Fix3.Location = new System.Drawing.Point(6, 112);
+            this.lbl_Fix3.Location = new System.Drawing.Point(17, 105);
             this.lbl_Fix3.Name = "lbl_Fix3";
             this.lbl_Fix3.Text = "右下角";
-            this.txt_BottomRight.Location = new System.Drawing.Point(64, 109);
+            this.txt_BottomRight.Location = new System.Drawing.Point(80, 101);
             this.txt_BottomRight.Name = "txt_BottomRight";
+            this.txt_BottomRight.BackColor = System.Drawing.Color.White;
             this.txt_BottomRight.ReadOnly = true;
-            this.txt_BottomRight.Size = new System.Drawing.Size(106, 24);
+            this.txt_BottomRight.ForeColor = System.Drawing.SystemColors.WindowText;
+            this.txt_BottomRight.Size = new System.Drawing.Size(98, 21);
             //
             // lbl_Fix4 / txt_Center
             //
             this.lbl_Fix4.AutoSize = true;
-            this.lbl_Fix4.Location = new System.Drawing.Point(6, 141);
+            this.lbl_Fix4.Location = new System.Drawing.Point(17, 132);
             this.lbl_Fix4.Name = "lbl_Fix4";
             this.lbl_Fix4.Text = "中心点";
-            this.txt_Center.Location = new System.Drawing.Point(64, 138);
+            this.txt_Center.Location = new System.Drawing.Point(80, 128);
             this.txt_Center.Name = "txt_Center";
+            this.txt_Center.BackColor = System.Drawing.Color.White;
             this.txt_Center.ReadOnly = true;
-            this.txt_Center.Size = new System.Drawing.Size(106, 24);
+            this.txt_Center.ForeColor = System.Drawing.SystemColors.WindowText;
+            this.txt_Center.Size = new System.Drawing.Size(98, 21);
             //
             // tabMatching
             //
@@ -294,7 +317,8 @@ namespace DotNet.VisionMaster
             this.tabMatching.Name = "tabMatching";
             this.tabMatching.Padding = new System.Windows.Forms.Padding(3);
             this.tabMatching.Text = "模版设置";
-            this.tabMatching.UseVisualStyleBackColor = true;
+            this.tabMatching.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
+            this.tabMatching.UseVisualStyleBackColor = false;
             //
             // matchingPanel
             //
@@ -310,7 +334,8 @@ namespace DotNet.VisionMaster
             this.pnl_model.Controls.Add(this.grb_ModeRect);
             this.pnl_model.Dock = System.Windows.Forms.DockStyle.Left;
             this.pnl_model.Name = "pnl_model";
-            this.pnl_model.Size = new System.Drawing.Size(420, 250);
+            this.pnl_model.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.pnl_model.Size = new System.Drawing.Size(540, 250);
             //
             // grb_ModeRect
             //
@@ -319,16 +344,17 @@ namespace DotNet.VisionMaster
             this.grb_ModeRect.Controls.Add(this.btn_modelCircle);
             this.grb_ModeRect.Controls.Add(this.btn_modelEllipse);
             this.grb_ModeRect.Controls.Add(this.btn_modelPolygon);
-            this.grb_ModeRect.Location = new System.Drawing.Point(3, 3);
+            this.grb_ModeRect.Location = new System.Drawing.Point(9, 9);
             this.grb_ModeRect.Name = "grb_ModeRect";
-            this.grb_ModeRect.Size = new System.Drawing.Size(110, 170);
+            this.grb_ModeRect.Size = new System.Drawing.Size(124, 160);
+            this.grb_ModeRect.ForeColor = System.Drawing.Color.White;
             this.grb_ModeRect.Text = "区域形状";
             //
             // btn_modelRectangle
             //
             this.btn_modelRectangle.AutoSize = true;
             this.btn_modelRectangle.Checked = true;
-            this.btn_modelRectangle.Location = new System.Drawing.Point(10, 22);
+            this.btn_modelRectangle.Location = new System.Drawing.Point(18, 22);
             this.btn_modelRectangle.Name = "btn_modelRectangle";
             this.btn_modelRectangle.TabStop = true;
             this.btn_modelRectangle.Text = "矩形1";
@@ -336,63 +362,72 @@ namespace DotNet.VisionMaster
             // btn_modelAffRect
             //
             this.btn_modelAffRect.AutoSize = true;
-            this.btn_modelAffRect.Location = new System.Drawing.Point(10, 50);
+            this.btn_modelAffRect.Location = new System.Drawing.Point(18, 49);
             this.btn_modelAffRect.Name = "btn_modelAffRect";
             this.btn_modelAffRect.Text = "矩形2";
             //
             // btn_modelCircle
             //
             this.btn_modelCircle.AutoSize = true;
-            this.btn_modelCircle.Location = new System.Drawing.Point(10, 78);
+            this.btn_modelCircle.Location = new System.Drawing.Point(18, 76);
             this.btn_modelCircle.Name = "btn_modelCircle";
             this.btn_modelCircle.Text = "圆";
             //
             // btn_modelEllipse
             //
             this.btn_modelEllipse.AutoSize = true;
-            this.btn_modelEllipse.Location = new System.Drawing.Point(10, 106);
+            this.btn_modelEllipse.Location = new System.Drawing.Point(18, 103);
             this.btn_modelEllipse.Name = "btn_modelEllipse";
             this.btn_modelEllipse.Text = "椭圆";
             //
             // btn_modelPolygon
             //
             this.btn_modelPolygon.AutoSize = true;
-            this.btn_modelPolygon.Location = new System.Drawing.Point(10, 134);
+            this.btn_modelPolygon.Location = new System.Drawing.Point(18, 130);
             this.btn_modelPolygon.Name = "btn_modelPolygon";
             this.btn_modelPolygon.Text = "多边形";
             //
             // btn_newModel
             //
-            this.btn_newModel.Location = new System.Drawing.Point(3, 180);
+            this.btn_newModel.Location = new System.Drawing.Point(163, 15);
             this.btn_newModel.Name = "btn_newModel";
-            this.btn_newModel.Size = new System.Drawing.Size(110, 30);
+            this.btn_newModel.ForeColor = System.Drawing.Color.Black;
+            this.btn_newModel.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.btn_newModel.BackColor = System.Drawing.Color.Gainsboro;
+            this.btn_newModel.Size = new System.Drawing.Size(75, 36);
             this.btn_newModel.Text = "新建模版";
-            this.btn_newModel.UseVisualStyleBackColor = true;
+            this.btn_newModel.UseVisualStyleBackColor = false;
             this.btn_newModel.Click += new System.EventHandler(this.btn_newModel_Click);
             //
             // but_modifyModel
             //
-            this.but_modifyModel.Location = new System.Drawing.Point(3, 214);
+            this.but_modifyModel.Location = new System.Drawing.Point(163, 63);
             this.but_modifyModel.Name = "but_modifyModel";
-            this.but_modifyModel.Size = new System.Drawing.Size(110, 30);
+            this.but_modifyModel.ForeColor = System.Drawing.Color.Black;
+            this.but_modifyModel.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.but_modifyModel.BackColor = System.Drawing.Color.Gainsboro;
+            this.but_modifyModel.Size = new System.Drawing.Size(75, 36);
             this.but_modifyModel.Text = "修改模版";
-            this.but_modifyModel.UseVisualStyleBackColor = true;
+            this.but_modifyModel.UseVisualStyleBackColor = false;
             this.but_modifyModel.Click += new System.EventHandler(this.but_modifyModel_Click);
             //
             // but_editModel
             //
-            this.but_editModel.Location = new System.Drawing.Point(118, 214);
+            this.but_editModel.Location = new System.Drawing.Point(163, 111);
             this.but_editModel.Name = "but_editModel";
-            this.but_editModel.Size = new System.Drawing.Size(110, 30);
+            this.but_editModel.ForeColor = System.Drawing.Color.Black;
+            this.but_editModel.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.but_editModel.BackColor = System.Drawing.Color.Gainsboro;
+            this.but_editModel.Size = new System.Drawing.Size(75, 36);
             this.but_editModel.Text = "编辑模板";
-            this.but_editModel.UseVisualStyleBackColor = true;
+            this.but_editModel.UseVisualStyleBackColor = false;
             this.but_editModel.Click += new System.EventHandler(this.but_editModel_Click);
             //
             // panel1
             //
-            this.panel1.Location = new System.Drawing.Point(118, 3);
+            this.panel1.Location = new System.Drawing.Point(268, 9);
             this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(298, 205);
+            this.panel1.Size = new System.Drawing.Size(260, 160);
             //
             // tabDisplay
             //
@@ -400,7 +435,8 @@ namespace DotNet.VisionMaster
             this.tabDisplay.Name = "tabDisplay";
             this.tabDisplay.Padding = new System.Windows.Forms.Padding(3);
             this.tabDisplay.Text = "显示输出";
-            this.tabDisplay.UseVisualStyleBackColor = true;
+            this.tabDisplay.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
+            this.tabDisplay.UseVisualStyleBackColor = false;
             //
             // displayPanel
             //

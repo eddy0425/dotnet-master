@@ -146,6 +146,7 @@ namespace DotNet.HalconAlgo
             p.Tab(TabPageEnum.Region)
              .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
             p.Tab(TabPageEnum.Display)
+             .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v)
              .Flag("显示轮廓", () => inPara.DispContour, v => inPara.DispContour = v)
              .Flag("显示点", () => inPara.DispPoint, v => inPara.DispPoint = v);

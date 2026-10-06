@@ -92,10 +92,12 @@ namespace DotNet.HalconAlgo
             p.Tab(TabPageEnum.Region)
              .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
             p.Tab(TabPageEnum.Display)
+             .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v)
              .Flag("拟合区域", () => inPara.DispFixRegion, v => inPara.DispFixRegion = v)
              .Flag("拟合点", () => inPara.DispFixPoint, v => inPara.DispFixPoint = v)
              .Flag("显示结果", () => inPara.DispResult, v => inPara.DispResult = v)
+             .Group(FontGroup)
              .Int("点大小", () => inPara.PointSize, v => inPara.PointSize = v, presets: new[] { 5, 15, 30 }, min: 1);
             p.Tab(TabPageEnum.Parameter);
         }
