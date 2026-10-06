@@ -1,45 +1,17 @@
-﻿using System.IO;
+﻿using System;
 using DotNet.Drawing;
+using DotNet.HalconCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace DotNet.HalconAlgo.Tests
 {
     [TestClass]
-    public class AlgoPathsTests
-    {
-        private string _savedProjectDir;
-
-        [TestInitialize]
-        public void Save() => _savedProjectDir = AlgoPaths.ProjectDir;
-
-        [TestCleanup]
-        public void Restore() => AlgoPaths.ProjectDir = _savedProjectDir;
-
-        [TestMethod]
-        public void DerivedPaths_FollowProjectDir()
-        {
-            AlgoPaths.ProjectDir = Path.Combine("root", "proj");
-
-            Assert.AreEqual(Path.Combine("root", "proj", "Scheme"), AlgoPaths.SchemeDir);
-            Assert.AreEqual(Path.Combine("root", "proj", "Scheme", "Job"), AlgoPaths.JobDir);
-            Assert.AreEqual(Path.Combine("root", "proj", "System.json"), AlgoPaths.System);
-        }
-
-        [TestMethod]
-        public void FileNames_AreFixed()
-        {
-            Assert.AreEqual("SchemeInfo.json", AlgoPaths.SchemeInfo);
-            Assert.AreEqual("JobInfo.json", AlgoPaths.JobInfo);
-        }
-    }
-
-    [TestClass]
-    public class AlgoFontTests
+    public class DisplayOptionsTests
     {
         [TestMethod]
         public void Defaults()
         {
-            var font = new AlgoFont();
+            var font = new DisplayOptions();
             Assert.IsTrue(font.DispText);
             Assert.AreEqual(50, font.FontX);
             Assert.AreEqual(50, font.FontY);
@@ -111,36 +83,29 @@ namespace DotNet.HalconAlgo.Tests
     public class FitParaMappingTests : HalconTestBase
     {
         [DataTestMethod]
-        [DataRow("由黑到白", "positive")]
-        [DataRow("由白到黑", "negative")]
-        [DataRow("全部", "all")]
-        [DataRow("未知", "")]
-        public void Transition_Mapping(string text, string expected)
+        [DataRow(Transition.Positive, "positive")]
+        [DataRow(Transition.Negative, "negative")]
+        [DataRow(Transition.All, "all")]
+        public void Transition_Mapping(Transition value, string expected)
         {
-            Assert.AreEqual(expected, new FitLine { Transition = text }.GetTransition);
-            Assert.AreEqual(expected, new FitArcMidpoint { Transition = text }.GetTransition);
+            Assert.AreEqual(expected, value.ToHalcon());
+        }
+
+        [TestMethod]
+        public void Transition_Invalid_Throws()
+        {
+            // 旧配置手改出来的非法枚举值: 明确报配置错误, 而不是把空串送进 measure_pos 换来 #1302
+            Assert.ThrowsException<ArgumentOutOfRangeException>(() => ((Transition)99).ToHalcon());
         }
 
         [DataTestMethod]
-        [DataRow("第一条边", "first")]
-        [DataRow("第二条边", "second")]
-        [DataRow("最后一条", "last")]
-        [DataRow("全部", "all")]
-        [DataRow("未知", "")]
-        public void ContourType_Mapping(string text, string expected)
+        [DataRow(EdgeSelect.First, "first")]
+        [DataRow(EdgeSelect.Second, "second")]
+        [DataRow(EdgeSelect.Last, "last")]
+        [DataRow(EdgeSelect.All, "all")]
+        public void ContourType_Mapping(EdgeSelect value, string expected)
         {
-            Assert.AreEqual(expected, new FitLine { ContourType = text }.GetContourType);
-            Assert.AreEqual(expected, new FitArcMidpoint { ContourType = text }.GetContourType);
-        }
-
-        [DataTestMethod]
-        [DataRow("是", true)]
-        [DataRow("否", false)]
-        [DataRow("", false)]
-        public void TrimEnds_Mapping(string text, bool expected)
-        {
-            Assert.AreEqual(expected, new FitLine { TrimEnds = text }.IsTrimEnds);
-            Assert.AreEqual(expected, new FitArcMidpoint { TrimEnds = text }.IsTrimEnds);
+            Assert.AreEqual(expected, value.ToHalcon());
         }
 
         [TestMethod]
@@ -148,14 +113,14 @@ namespace DotNet.HalconAlgo.Tests
         {
             var p = new FitLine();
             Assert.AreEqual(RectEnum.AffRect, p.HoRect.Type, "拟合 ROI 默认是带角度的矩形");
-            Assert.AreEqual("默认", p.ImageIn);
-            Assert.AreEqual("默认", p.RegionIn);
-            Assert.AreEqual("默认", p.CoordIn);
-            Assert.AreEqual("positive", p.GetTransition);
-            Assert.AreEqual("first", p.GetContourType);
+            Assert.AreEqual(SourceRef.Local, p.ImageIn);
+            Assert.AreEqual(SourceRef.Local, p.RegionIn);
+            Assert.AreEqual(SourceRef.Local, p.CoordIn);
+            Assert.AreEqual(Transition.Positive, p.Transition);
+            Assert.AreEqual(EdgeSelect.First, p.ContourType);
             Assert.AreEqual(80, p.Threshold);
-            Assert.IsTrue(p.IsTrimEnds);
-            Assert.IsTrue(p.Line.IsDegenerate);
+            Assert.IsTrue(p.TrimEnds);
+            Assert.IsTrue(new FitLineStrategy().Line.IsDegenerate, "未运行时输出是退化线段而不是 null");
         }
 
         [TestMethod]
@@ -165,7 +130,7 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(RectEnum.AffRect, p.HoRect.Type);
             Assert.AreEqual(60, p.Threshold);
             Assert.AreEqual(15.0, p.CoarseGate);
-            Assert.IsTrue(p.IsTrimEnds);
+            Assert.IsTrue(p.TrimEnds);
         }
     }
 }

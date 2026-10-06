@@ -1,27 +1,36 @@
-﻿using DotNet.Drawing;
+using DotNet.Drawing;
 using HalconDotNet;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace DotNet.HalconCore
 {
-    #region 拆分后的职责接口
+    #region 能力接口
 
     /// <summary>
     /// 算法执行：策略的核心职责，不涉及任何界面概念。
     /// </summary>
     public interface IAlgoStrategy
     {
-        AlgoEnum Algorithm { get; }
+        /// <summary> 实例的稳定标识：下游引用（<see cref="SourceRef"/>）、方案文件、数据目录都按它定位 </summary>
+        Guid Id { get; set; }
+
+        /// <summary> 显示名，用户可改；默认取 <see cref="AlgoAttribute.DisplayName"/> </summary>
         string Name { get; set; }
-        int RunIndex { get; set; }
 
-        /// <summary> 在流程中执行：可从上游 <paramref name="strategys"/> 取输入 </summary>
-        bool Fun_action(IHDisplay display, List<IParaStrategy> strategys);
+        /// <summary> 最近一次执行的结果；从未执行时为 null </summary>
+        RunResult LastResult { get; }
 
-        /// <summary> 单张图快速验证：没有上游策略 </summary>
-        bool Fun_action(HObject ho_Image, IHDisplay display);
+        /// <summary>
+        /// 执行一次。<paramref name="display"/> 为 null 时只计算不绘制（无界面运行）。
+        /// 失败不抛异常，而是返回 <see cref="RunStatus.Error"/>，此时所有输出均已复位；
+        /// 只有取消（<see cref="OperationCanceledException"/>）会向外传播。
+        /// </summary>
+        RunResult Run(RunContext context, IHDisplay display);
     }
 
     /// <summary>
@@ -29,18 +38,16 @@ namespace DotNet.HalconCore
     /// </summary>
     public interface IOutputProvider
     {
-        /// <summary>解析输出; 路径为 null 或不存在时返回 null（不抛异常）.</summary>
-        object ResolveOutput(string[] path);
+        /// <summary> 声明的输出（树的根节点），含基类追加的"结果 / 文本显示" </summary>
+        IReadOnlyList<OutputItem> Outputs { get; }
 
-        /// <summary>解析输出; 路径不存在或类型不匹配时抛 <see cref="AlgoOutputNotFoundException"/>.</summary>
-        T ResolveOutput<T>(string[] path);
-
-        /// <summary>解析输出的安全版本: 失败返回 false 并把 value 置为 default, 不抛异常.</summary>
-        bool TryResolveOutput<T>(string[] path, out T value);
+        /// <summary> 按完整路径（例如 <c>坐标系/原点/行</c>）查找输出；不存在返回 null </summary>
+        OutputItem FindOutput(string path);
     }
 
     /// <summary>
     /// ROI 编辑：需要在画面上交互式绘制或显示区域的策略才实现。
+    /// 新建 ROI 的默认形状由 <see cref="AlgoAttribute.DefaultRoi"/> 声明。
     /// </summary>
     public interface IRoiEditable
     {
@@ -63,15 +70,23 @@ namespace DotNet.HalconCore
         /// 交互式框选模板区域并创建模板。内含 ROI 绘制交互，故为异步；调用方须在 UI 线程 await。
         /// </summary>
         Task SetTemplateAsync(IRoiHost host, RectEnum type, bool newModel);
+
+        /// <summary> 模板的只读视图，供宿主的模板编辑窗 / 缩略图使用 </summary>
+        TemplateView GetTemplateView();
     }
 
     /// <summary>
-    /// 参数绑定：参数面板的显示与回存。
+    /// 参数面板：策略声明"有哪些参数"，宿主负责生成控件和双向绑定。
     /// </summary>
     public interface IParaBinding
     {
-        void DispPara(IParaUiHost ui);
-        void SavePara(IParaUiHost ui);
+        /// <summary>
+        /// 重新声明一遍参数。每次调用都返回新列表，getter / setter 绑定到当前的参数实例。
+        /// </summary>
+        IReadOnlyList<ParamItem> DescribeParams();
+
+        /// <summary> 宿主在一轮写回中至少有一项真的变了之后调用一次；<paramref name="changed"/> 是真正变了的项 </summary>
+        void ParamsChanged(IReadOnlyList<ParamItem> changed);
     }
 
     /// <summary>
@@ -82,23 +97,18 @@ namespace DotNet.HalconCore
         void GenTreeNode(ITreeVisualizer tree);
     }
 
-    #endregion
-
     /// <summary>
-    /// 算法参数策略接口。
-    /// </summary>
-    /// <remarks>
-    /// 原本是 15 成员的巨型接口，同时承担参数解析、算法执行、ROI 绘制、树节点生成、
-    /// 控件双向同步和模板设置，任何策略都被迫拥有全部能力。现将可选能力拆成
-    /// <see cref="IRoiEditable"/>、<see cref="ITemplateEditable"/>、<see cref="IParaBinding"/>、
-    /// <see cref="ITreeNodeProvider"/>；本接口只保留所有策略共有的执行、输出和生命周期能力。
-    /// <para>
-    /// 宿主应按能力接口做类型判断，例如
+    /// 宿主眼中的一个工具：执行、输出、生命周期。可选能力按接口判断，例如
     /// <c>if (s is IRoiEditable roi) await roi.DrawROIAsync(...)</c>。
-    /// </para>
-    /// </remarks>
-    public interface IParaStrategy : IAlgoStrategy, IOutputProvider
+    /// </summary>
+    public interface IParaStrategy : IAlgoStrategy, IOutputProvider, IDisposable
     {
+        /// <summary> 可序列化的配置（参数类实例）；宿主做通用序列化用 </summary>
+        object Para { get; set; }
+
+        /// <summary> 本工具的数据目录（模板图等），宿主按方案设置；未设置时按 <see cref="IAlgoStrategy.Id"/> 推导 </summary>
+        string DataDir { get; set; }
+
         /// <summary> 工具页打开：申请运行期资源 </summary>
         void Init(IRoiHost host);
 
@@ -106,183 +116,276 @@ namespace DotNet.HalconCore
         void Close(IRoiHost host);
     }
 
+    #endregion
+
     /// <summary>
-    /// 策略抽象基类：自动初始化参数实例，子类只需实现 DispPara / SavePara
+    /// 策略基类：执行模板、输出声明、参数声明、状态报告、生命周期都在这里统一实现，子类只填算法本身。
     /// </summary>
-    public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding, ITreeNodeProvider where TPara : class, new()
+    /// <remarks>
+    /// <b>一个算法 = 一个类</b>：继承本类（或同族中间基类）、打上 <see cref="AlgoAttribute"/>，
+    /// 按需实现 <see cref="IRoiEditable"/> / <see cref="ITemplateEditable"/>，即可完整地加入一个算法。
+    /// <para>类内分区，各自待在固定的方法里：</para>
+    /// <list type="bullet">
+    /// <item>配置：<typeparamref name="TPara"/>（只放可序列化的配置）+ <see cref="DeclareParams"/>；</item>
+    /// <item>计算：<see cref="Execute"/>，纯计算、不碰显示，结果写到策略自己的属性上；</item>
+    /// <item>绘制：<see cref="Render"/>，只读结果去画；状态文本由基类统一画；</item>
+    /// <item>声明：<see cref="DeclareOutputs"/>，一次声明同时生成变量树和解析器。</item>
+    /// </list>
+    /// </remarks>
+    public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding, ITreeNodeProvider
+        where TPara : DisplayOptions, new()
     {
-        private readonly Dictionary<string, Func<object>> _resolvers = new Dictionary<string, Func<object>>();
+        private TPara _para = new TPara();
+        private string _name;
+        private string _dataDir;
+        private List<OutputItem> _outputs;
+        private Dictionary<string, OutputItem> _outputIndex;
+        private bool _disposed;
 
-        public abstract AlgoEnum Algorithm { get; }
-        public abstract string Name { get; set; }
-        public abstract int RunIndex { get; set; }
-        public TPara inPara { get; set; } = new TPara();
-        protected void RegisterOutput(string path, Func<object> resolver) => _resolvers[path] = resolver;
-        protected void ClearResolvers() => _resolvers.Clear();
+        protected ParaStrategyBase()
+        {
+            Id = Guid.NewGuid();
+        }
+
+        /// <summary> 可序列化的配置 </summary>
+        public TPara inPara
+        {
+            get => _para;
+            set => _para = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        object IParaStrategy.Para
+        {
+            get => _para;
+            set => inPara = value as TPara ?? throw new ArgumentException($"参数类型应为 {typeof(TPara).Name}", nameof(value));
+        }
+
+        public Guid Id { get; set; }
+
+        public string Name
+        {
+            get => _name ?? (_name = AlgoAttribute.Of(GetType())?.DisplayName ?? GetType().Name);
+            set => _name = value;
+        }
+
+        public string DataDir
+        {
+            get => _dataDir ?? Path.Combine("Config", "Tools", Id.ToString("N"));
+            set => _dataDir = value;
+        }
+
+        public RunResult LastResult { get; private set; }
+
+        protected bool IsDisposed => _disposed;
+
+        #region 执行
+
         /// <summary>
-        /// 解析输出并强转. 路径不存在时 <see cref="ResolveOutput(string[])"/> 返回 null,
-        /// 若 T 是值类型 (CvCoord / Point2d ...) 直接强转会抛 NullReferenceException,
-        /// 报错信息和真实原因(路径拼错)毫无关系, 因此这里统一换成携带路径的专用异常.
+        /// 执行顺序固定：<see cref="ResetOutputs"/> → 计时 <see cref="Execute"/>（异常转成 Fail，失败再次复位）
+        /// → <see cref="Render"/> → 状态文本。
         /// </summary>
-        public T ResolveOutput<T>(string[] path)
+        public RunResult Run(RunContext context, IHDisplay display)
         {
-            var value = ResolveOutput(path);
-            if (value == null)
-                throw new AlgoOutputNotFoundException(Name, path, typeof(T));
-            if (!(value is T))
-                throw new AlgoOutputNotFoundException(Name, path, typeof(T), value.GetType());
-            return (T)value;
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            if (_disposed) throw new ObjectDisposedException(GetType().Name);
+
+            ResetOutputs();
+            var watch = Stopwatch.StartNew();
+            RunResult result;
+            try
+            {
+                context.Cancellation.ThrowIfCancellationRequested();
+                result = Execute(context) ?? RunResult.Ok();
+            }
+            catch (OperationCanceledException)
+            {
+                ResetOutputs();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                result = RunResult.Fail(ex.Message);
+                Log.Warn(GetType().Name, $"{Name} 执行失败: {ex.Message}", ex);
+            }
+            watch.Stop();
+            result.Elapsed = watch.Elapsed;
+
+            // 失败后所有输出都必须是默认值: 宿主不看返回值时, 下游也不能读到上一轮 / 半截的结果
+            if (result.Status == RunStatus.Error) ResetOutputs();
+            LastResult = result;
+
+            if (display != null)
+            {
+                try { Render(display, result); }
+                catch (Exception ex) { Log.Warn(GetType().Name, $"{Name} 绘制失败.", ex); }
+                DrawStatus(display, result);
+            }
+            return result;
         }
 
-        /// <remarks>
-        /// 返回 false 时 <paramref name="value"/> 为 <c>default</c>, 调用方不得读取 ——
-        /// 与 <c>Dictionary.TryGetValue</c> 同一契约。
-        /// </remarks>
-        public bool TryResolveOutput<T>(string[] path, out T value)
+        /// <summary> 把所有输出复位成默认值（"没有结果"）。每轮开头、失败后都会调用 </summary>
+        protected abstract void ResetOutputs();
+
+        /// <summary>
+        /// 纯计算：不碰显示，结果写到策略的属性上。可以直接抛异常，基类会转成 <see cref="RunResult.Fail"/>；
+        /// 消息里不必带工具名，状态文本会自动加上。
+        /// </summary>
+        protected abstract RunResult Execute(RunContext context);
+
+        /// <summary> 只读运行结果去画；失败时也会调用，可以画出已有的部分数据便于排查 </summary>
+        protected virtual void Render(IHDisplay display, RunResult result) { }
+
+        /// <summary>
+        /// 状态文本规则：失败 / 警告始终显示（红字）；成功只在 <see cref="DisplayOptions.DispText"/> 为 true 时显示（绿字）。
+        /// </summary>
+        private void DrawStatus(IHDisplay display, RunResult result)
         {
-            var raw = path == null ? null : ResolveOutput(path);
-            if (raw is T typed)
+            if (string.IsNullOrEmpty(result.Message)) return;
+            bool ok = result.Status == RunStatus.Ok;
+            if (ok && !inPara.DispText) return;
+            try
             {
-                value = typed;
-                return true;
+                display.DispText($"{Name} : {result.Message}", new Point2d(inPara.FontX, inPara.FontY),
+                    DrawStyle.Of(ok ? HColor.Green : HColor.Red, inPara.FontSize));
             }
-            value = default;
-            return false;
+            catch (Exception ex) { Log.Warn(GetType().Name, $"{Name} 状态文本绘制失败.", ex); }
         }
 
-        public object ResolveOutput(string[] path)
+        #endregion
+
+        #region 参数
+
+        /// <summary> 声明参数面板。"显示文本 / 字体"几项由基类自动追加到显示页 </summary>
+        protected abstract void DeclareParams(ParamBuilder p);
+
+        /// <summary>
+        /// 宿主写回参数且至少有一项真的变了之后调用（例如清空示教态）。
+        /// <paramref name="changed"/> 只含真正变了的项：只改了显示选项时，策略可以据此不动示教态。
+        /// </summary>
+        protected virtual void OnParamsChanged(IReadOnlyList<ParamItem> changed) { }
+
+        public IReadOnlyList<ParamItem> DescribeParams()
         {
-            if (path == null) return null;
-            for (int depth = path.Length; depth >= 1; depth--)
-            {
-                var key = string.Join("/", path, 0, depth);
-                if (_resolvers.TryGetValue(key, out var resolver))
-                    return resolver();
-            }
-            return null;
+            var p = new ParamBuilder();
+            DeclareParams(p);
+            p.Tab(TabPageEnum.Display)
+             .Flag("显示文本", () => inPara.DispText, v => inPara.DispText = v)
+             .Int("文本X", () => inPara.FontX, v => inPara.FontX = v, presets: new[] { 20, 50 })
+             .Int("文本Y", () => inPara.FontY, v => inPara.FontY = v, presets: new[] { 20, 50 })
+             .Int("字号", () => inPara.FontSize, v => inPara.FontSize = v, presets: new[] { 15, 30 }, min: 1);
+            return p.Items;
         }
+
+        public void ParamsChanged(IReadOnlyList<ParamItem> changed)
+        {
+            if (changed != null && changed.Count > 0) OnParamsChanged(changed);
+        }
+
+        #endregion
+
+        #region 输出
+
+        /// <summary> 声明输出；getter 每次解析时求值，直接读策略上的结果属性即可 </summary>
+        protected abstract void DeclareOutputs(OutputBuilder o);
+
+        public IReadOnlyList<OutputItem> Outputs
+        {
+            get
+            {
+                EnsureOutputs();
+                return _outputs;
+            }
+        }
+
+        public OutputItem FindOutput(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            EnsureOutputs();
+            return _outputIndex.TryGetValue(path, out var item) ? item : null;
+        }
+
+        private void EnsureOutputs()
+        {
+            if (_outputs != null) return;
+            var o = new OutputBuilder();
+            DeclareOutputs(o);
+            o.AddCommon("结果", OutEnum.Result, () => LastResult?.IsOk ?? false);
+            o.AddCommon("文本显示", OutEnum.String, () => LastResult?.Message);
+            _outputs = o.Roots.ToList();
+            _outputIndex = OutputBuilder.Index(_outputs);
+        }
+
+        public void GenTreeNode(ITreeVisualizer tree)
+        {
+            tree.Branch(Name, branch =>
+            {
+                foreach (var item in Outputs) AddNode(branch, item);
+            });
+        }
+
+        private static void AddNode(ITreeBranch branch, OutputItem item)
+        {
+            if (item.Children.Count == 0)
+                branch.Node(item.Name, item.Type);
+            else
+                branch.Node(item.Name, item.Type, child =>
+                {
+                    foreach (var c in item.Children) AddNode(child, c);
+                });
+        }
+
+        #endregion
+
+        #region 生命周期
 
         public virtual void Init(IRoiHost host) { }
+
         public virtual void Close(IRoiHost host) { }
-        public abstract void GenTreeNode(ITreeVisualizer tree);
 
-        public virtual bool Fun_action(HObject ho_Image, IHDisplay display) { return false; }
-        public abstract bool Fun_action(IHDisplay display, List<IParaStrategy> strategys);
-        public abstract void DispPara(IParaUiHost ui);
-        public abstract void SavePara(IParaUiHost ui);
+        /// <summary> 幂等。子类覆盖 <see cref="Dispose(bool)"/> 释放自己的句柄，并调用基类实现 </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
+        protected virtual void Dispose(bool disposing) { }
+
+        #endregion
+
+        public override string ToString() => $"{Name} ({GetType().Name})";
     }
 
     /// <summary>
-    /// 策略集合扩展方法：按完整路径解析输出值
+    /// 工具集合的辅助方法：按 Id 查找、拼显示名。
     /// </summary>
     public static class StrategyExtensions
     {
-        /// <summary>
-        /// 空集合单例. 供 <c>Fun_action(HObject, IHDisplay)</c> 这类没有上游策略的调用路径使用,
-        /// 替代原来的 null —— ResolveFrom 里的 foreach 遇到 null 会直接 NRE.
-        /// </summary>
-        public static readonly IReadOnlyList<IParaStrategy> Empty = new IParaStrategy[0];
-
-        /// <summary>空集合的 List 视图. 现有重载签名是 List&lt;T&gt;, 暂时需要一个可传入的实例.</summary>
-        public static List<IParaStrategy> EmptyList()
+        public static IParaStrategy FindTool(this IEnumerable<IParaStrategy> tools, Guid id)
         {
-            return new List<IParaStrategy>(0);
-        }
-
-        /// <summary>
-        /// 解析上游区域的借用句柄: 上游可能注册 <see cref="CvRegion"/> (CreateROIStrategy 等),
-        /// 也可能直接注册 <see cref="HObject"/>, 两种都接受; 解析不到返回 false.
-        /// 返回的句柄归上游所有, <b>不得</b>由调用方释放.
-        /// </summary>
-        /// <remarks>
-        /// 已释放 (null) / 未初始化 / 长度为 0 的空元组一律算解析失败: <see cref="CvRegion"/> 构造与
-        /// 各策略的 ClearResult 都会把句柄置成 <c>gen_empty_obj</c> 的空元组, 直接送进 reduce_domain
-        /// 会抛与真实原因 (上游尚未运行 / 结果已清空) 毫无关系的 HALCON 原生异常, 而 count_obj 为 0
-        /// 的区域在匹配里则会静默跑出 0 个结果. 因此把这层判断收敛在解析入口, 保证调用方拿到的
-        /// 一定是能直接交给 HALCON 算子的句柄.
-        /// <para>
-        /// 判断本身放在 <see cref="HObjectExtension.IsUsableRegion"/>: 本地配置 ROI 不走解析路径,
-        /// 各策略需自行调用同一个方法, 两条路径口径必须一致。
-        /// </para>
-        /// </remarks>
-        public static bool TryResolveRegionFrom(this IList<IParaStrategy> strategies, string fullPath, out HObject region)
-        {
-            var value = strategies.ResolveFrom(fullPath);
-            var candidate = (value as CvRegion)?.HoRegion ?? value as HObject;
-            if (!candidate.IsUsableRegion())
+            if (tools == null || id == Guid.Empty) return null;
+            foreach (var tool in tools)
             {
-                // 返回 false 时调用方不得读取 region (Try 契约), 这里只是给 out 参数一个值。
-                region = null;
-                return false;
-            }
-            region = candidate;
-            return true;
-        }
-
-        /// <summary>
-        /// 解析上游区域的借用句柄；所有权仍属于上游，调用方不得释放。
-        /// 解析不到、或句柄为空 (未运行 / 已清空) 时抛异常。
-        /// </summary>
-        public static HObject ResolveRegionFrom(this IList<IParaStrategy> strategies, string fullPath)
-        {
-            if (strategies.TryResolveRegionFrom(fullPath, out HObject region)) return region;
-            // 期望类型写 CvRegion: 本方法同时接受 CvRegion 与裸 HObject, 报 HObject 会让人误以为不收 CvRegion.
-            throw new AlgoOutputNotFoundException(fullPath, typeof(CvRegion));
-        }
-
-        public static object ResolveFrom(this IList<IParaStrategy> strategies, string fullPath, char separator = '/')
-        {
-            if (strategies == null) return null;
-            if (string.IsNullOrWhiteSpace(fullPath)) return null;
-
-            var parts = fullPath.Split(separator);
-            if (parts.Length < 2) return null;
-
-            var strategyName = parts[0];
-            var nodePath = new string[parts.Length - 1];
-            Array.Copy(parts, 1, nodePath, 0, nodePath.Length);
-
-            foreach (var s in strategies)
-            {
-                if (s != null && s.Name == strategyName)
-                    return s.ResolveOutput(nodePath);
+                if (tool != null && tool.Id == id) return tool;
             }
             return null;
         }
 
         /// <summary>
-        /// 解析并强转. 失败时抛 <see cref="AlgoOutputNotFoundException"/> 而不是 NRE / InvalidCastException,
-        /// 异常信息里带上完整路径, 便于直接定位到拼错的参数名.
+        /// 界面上显示的 "工具名/输出"；本地为 "默认"；工具不在列表里时标出"已失效"，而不是静默显示旧名字。
         /// </summary>
-        public static T ResolveFrom<T>(this IList<IParaStrategy> strategies, string fullPath, char separator = '/')
+        public static string Describe(this IEnumerable<IParaStrategy> tools, SourceRef source)
         {
-            var value = ResolveFrom(strategies, fullPath, separator);
-            if (value == null)
-                throw new AlgoOutputNotFoundException(fullPath, typeof(T));
-            if (!(value is T))
-                throw new AlgoOutputNotFoundException(fullPath, typeof(T), value.GetType());
-            return (T)value;
-        }
-
-        /// <summary>解析并强转的安全版本: 失败返回 false, 不抛异常.</summary>
-        public static bool TryResolveFrom<T>(this IList<IParaStrategy> strategies, string fullPath, out T value, char separator = '/')
-        {
-            var raw = ResolveFrom(strategies, fullPath, separator);
-            if (raw is T typed)
-            {
-                value = typed;
-                return true;
-            }
-            // 同 TryResolveOutput: 返回 false 时 value 未定义, 调用方不得读取。
-            value = default;
-            return false;
+            if (source.IsLocal) return "默认";
+            var tool = tools.FindTool(source.ToolId);
+            return tool == null ? $"<已失效>/{source.Output}" : $"{tool.Name}/{source.Output}";
         }
     }
 
-
     /// <summary>
-    /// 策略输出解析失败. 携带路径与期望类型, 避免退化成 NullReferenceException / InvalidCastException.
+    /// 策略输出解析失败。携带路径与期望类型，避免退化成 NullReferenceException / InvalidCastException。
     /// </summary>
     public class AlgoOutputNotFoundException : Exception
     {
@@ -299,25 +402,15 @@ namespace DotNet.HalconCore
         }
 
         public AlgoOutputNotFoundException(string fullPath, Type expectedType, Type actualType)
-            : base(string.Format("策略输出 '{0}' 的类型不匹配: 期望 {1}, 实际 {2}.",
-                                 fullPath, expectedType == null ? "?" : expectedType.Name,
-                                 actualType == null ? "?" : actualType.Name))
+            : base(actualType == null
+                ? string.Format("未能解析策略输出 '{0}' (期望类型 {1}): 路径不存在或上游策略尚未产出结果.",
+                                fullPath, expectedType == null ? "?" : expectedType.Name)
+                : string.Format("策略输出 '{0}' 的类型不匹配: 期望 {1}, 实际 {2}.",
+                                fullPath, expectedType == null ? "?" : expectedType.Name, actualType.Name))
         {
             Path = fullPath;
             ExpectedType = expectedType;
             ActualType = actualType;
-        }
-
-        public AlgoOutputNotFoundException(string strategyName, string[] path, Type expectedType)
-            : this(Join(strategyName, path), expectedType) { }
-
-        public AlgoOutputNotFoundException(string strategyName, string[] path, Type expectedType, Type actualType)
-            : this(Join(strategyName, path), expectedType, actualType) { }
-
-        private static string Join(string strategyName, string[] path)
-        {
-            var tail = path == null ? string.Empty : string.Join("/", path);
-            return string.IsNullOrEmpty(strategyName) ? tail : strategyName + "/" + tail;
         }
     }
 }

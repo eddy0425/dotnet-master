@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -10,39 +10,25 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace DotNet.VisionMaster.Tests
 {
     /// <summary>
-    /// <see cref="ValueForm"/>：按运行顺序生成上游输出变量树、按路径预选节点、双击时按类型过滤并返回变量路径。
+    /// <see cref="ValueForm"/>：按上游工具生成输出变量树、按来源预选节点、双击时按类型过滤并返回按 Id 定位的 <see cref="SourceRef"/>。
     /// </summary>
     /// <remarks>
-    /// <c>setValueForm</c> 以 <c>ShowDialog</c> 结尾，无法在无人值守的测试里调用；
-    /// 这里用反射分别调它里面的 <c>GenerateTree</c> / <c>Fun_setSelectNode</c>，以及双击处理方法。
+    /// <c>Pick</c> 以 <c>ShowDialog</c> 结尾；这里直接调 <c>Prepare</c> 生成树与预选，再调双击处理方法。
     /// </remarks>
     [TestClass]
     public class ValueFormTests
     {
-        /// <summary>两个上游工具：直线查找（区域 + 直线/起点/行）与模板匹配（图像 + 坐标）。</summary>
-        private static List<IParaStrategy> Strategies() => new List<IParaStrategy>
+        private static FakeStrategy Line0() => new FakeStrategy("直线查找0")
         {
-            new FakeStrategy(AlgoEnum.FitLine, "直线查找0")
-            {
-                Tree = t => t.Branch("直线查找0", b => b
-                    .Node("区域", OutEnum.Region)
-                    .Node("直线", OutEnum.Line, l => l.ReusePointStructure("起点"))
-                    .Node("角度", OutEnum.Angle)),
-            },
-            new FakeStrategy(AlgoEnum.ShapeModel, "形状匹配0")
-            {
-                Tree = t => t.Branch("形状匹配0", b => b
-                    .Node("图像", OutEnum.Image)
-                    .Node("坐标", OutEnum.Coord)
-                    .Node("分数", OutEnum.Number)),
-            },
-            new FakeStrategy(AlgoEnum.CreateROI, "当前工具")
-            {
-                Tree = t => t.Branch("当前工具", b => b.Node("区域", OutEnum.Region)),
-            },
+            Outs = o => o.Region("区域", () => null).Line("直线", () => null).Number("角度", () => 0),
         };
 
-        private static void Run(Action<ValueForm, TreeView> body) =>
+        private static FakeStrategy Match0() => new FakeStrategy("形状匹配0")
+        {
+            Outs = o => o.Image("图像", () => null).Coord("坐标", () => new DotNet.Drawing.CvCoord(), () => null).Number("分数", () => 0),
+        };
+
+        private static void Run(Action<ValueForm, TreeView, List<IParaStrategy>> body) =>
             Sta.Run(() =>
             {
                 using (var form = new ValueForm(null))
@@ -51,12 +37,10 @@ namespace DotNet.VisionMaster.Tests
                     // 双击按鼠标位置命中节点，节点的 Bounds 要有句柄才算得出来；只建句柄、不显示窗体
                     GC.KeepAlive(form.Handle);
                     GC.KeepAlive(tree.Handle);
-                    body(form, tree);
+                    var upstream = new List<IParaStrategy> { Line0(), Match0() };
+                    body(form, tree, upstream);
                 }
             });
-
-        private static void GenerateTree(ValueForm form, int index, List<IParaStrategy> strategies) =>
-            Priv.Call(form, "GenerateTree", index, strategies);
 
         private static TreeNode Find(TreeView tree, string path)
         {
@@ -67,17 +51,15 @@ namespace DotNet.VisionMaster.Tests
             return node;
         }
 
-        /// <summary>选中 <paramref name="path"/> 后双击，返回 (是否确认, StrReturn)。</summary>
-        private static Tuple<bool, string> DoubleClick(ValueForm form, TreeView tree, string path, OutEnum type)
+        /// <summary>选中 <paramref name="path"/> 后双击，返回 (是否确认, Picked)。</summary>
+        private static Tuple<bool, SourceRef> DoubleClick(ValueForm form, TreeView tree, string path)
         {
             form.DialogResult = DialogResult.None;
-            form.ValueType = type;
-            form.StrReturn = "旧值";
             var node = Find(tree, path);
             tree.SelectedNode = node;
             node.EnsureVisible();
             DoubleClickAt(form, tree, Center(node.Bounds));
-            return Tuple.Create(form.DialogResult == DialogResult.OK, form.StrReturn);
+            return Tuple.Create(form.DialogResult == DialogResult.OK, form.Picked);
         }
 
         private static Point Center(Rectangle r) => new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
@@ -85,193 +67,120 @@ namespace DotNet.VisionMaster.Tests
         private static void DoubleClickAt(ValueForm form, TreeView tree, Point location) =>
             Priv.Call(form, "treeView1_MouseDoubleClick", tree, new MouseEventArgs(MouseButtons.Left, 2, location.X, location.Y, 0));
 
-        #region GenerateTree
+        private static string[] Roots(TreeView tree) => tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray();
+
+        #region 生成树
 
         [TestMethod]
-        public void GenerateTree_ListsDefaultThenOnlyUpstreamTools()
+        public void Tree_ListsLocalThenUpstreamTools_RootsCarryToolId()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, allowLocal: true, current: SourceRef.Local);
 
-                CollectionAssert.AreEqual(new[] { "默认", "直线查找0", "形状匹配0" },
-                    tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray(),
-                    "只能引用排在当前工具之前的输出，当前工具自身不应出现");
+                CollectionAssert.AreEqual(new[] { "默认", "直线查找0", "形状匹配0" }, Roots(tree));
+                Assert.AreSame(ValueForm.LocalTag, tree.Nodes[0].Tag);
+                Assert.AreEqual(upstream[0].Id, tree.Nodes[1].Tag, "工具根节点记 Id, 选择结果按 Id 定位");
             });
         }
 
         [TestMethod]
-        public void GenerateTree_FirstTool_OnlyDefault()
+        public void Tree_NoLocalForTypesWithoutLocalMeaning()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 0, Strategies());
+                form.Prepare(upstream, OutEnum.Line, allowLocal: false, current: SourceRef.Local);
 
-                Assert.AreEqual(1, tree.Nodes.Count);
-                Assert.AreEqual("默认", tree.Nodes[0].Text);
+                CollectionAssert.AreEqual(new[] { "直线查找0", "形状匹配0" }, Roots(tree));
             });
         }
 
         [TestMethod]
-        public void GenerateTree_IndexOutOfRange_OnlyDefault()
+        public void Tree_PreparedAgain_ReplacesPreviousTree()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 99, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
+                form.Prepare(upstream.Take(1).ToList(), OutEnum.Region, true, SourceRef.Local);
 
-                Assert.AreEqual(1, tree.Nodes.Count);
+                CollectionAssert.AreEqual(new[] { "默认", "直线查找0" }, Roots(tree), "同一窗体被 ParaForm 复用，每次打开都要重建");
             });
         }
 
         [TestMethod]
-        public void GenerateTree_CalledAgain_ReplacesPreviousTree()
+        public void Tree_ToolOutputsIncludeDerivedChildren()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
-                GenerateTree(form, 1, Strategies());
+                form.Prepare(upstream, OutEnum.Number, true, SourceRef.Local);
 
-                CollectionAssert.AreEqual(new[] { "默认", "直线查找0" },
-                    tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray(), "同一窗体被 ParaForm 复用，每次打开都要重建");
-            });
-        }
-
-        [TestMethod]
-        public void GenerateTree_SkipsStrategiesWithoutTreeProvider()
-        {
-            Run((form, tree) =>
-            {
-                var strategies = Strategies();
-                strategies.Insert(0, new PlainStrategy());
-
-                GenerateTree(form, 2, strategies);
-
-                CollectionAssert.AreEqual(new[] { "默认", "直线查找0" }, tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray());
-            });
-        }
-
-        /// <summary>只实现 <see cref="IParaStrategy"/>、不提供输出树的策略。</summary>
-        private sealed class PlainStrategy : IParaStrategy
-        {
-            public AlgoEnum Algorithm => AlgoEnum.Undefined;
-            public string Name { get; set; }
-            public int RunIndex { get; set; }
-            public void Init(IRoiHost host) { }
-            public void Close(IRoiHost host) { }
-            public bool Fun_action(IHDisplay display, List<IParaStrategy> strategys) => true;
-            public bool Fun_action(HalconDotNet.HObject ho_Image, IHDisplay display) => true;
-            public object ResolveOutput(string[] path) => null;
-            public T ResolveOutput<T>(string[] path) => default(T);
-            public bool TryResolveOutput<T>(string[] path, out T value) { value = default(T); return false; }
-        }
-
-        #endregion
-
-        #region Fun_getText
-
-        [TestMethod]
-        public void GetText_JoinsPathFromRoot()
-        {
-            Run((form, tree) =>
-            {
-                GenerateTree(form, 2, Strategies());
-
-                Assert.AreEqual("/直线查找0/直线/起点/行", form.Fun_getText(Find(tree, "直线查找0/直线/起点/行"), ""));
-                Assert.AreEqual("/默认", form.Fun_getText(tree.Nodes[0], ""));
+                Assert.IsNotNull(Find(tree, "直线查找0/直线/起点/行"), "线段自动带出起点 / 行");
+                Assert.IsNotNull(Find(tree, "形状匹配0/坐标/原点/列"));
+                Assert.IsNotNull(Find(tree, "形状匹配0/结果"), "基类追加的公共输出");
             });
         }
 
         #endregion
 
-        #region Fun_setSelectNode
+        #region 预选
 
-        /// <summary>
-        /// 再次打开时应预选上次选中的变量。
-        /// </summary>
-        /// <remarks>
-        /// 回归：曾经遍历根节点时一遇到 "默认" 就 return，而 "默认" 总是第一个根节点，
-        /// 所以只要路径不为空，预选一律不生效。
-        /// </remarks>
+        [TestMethod]
+        public void Select_Local()
+        {
+            Run((form, tree, upstream) =>
+            {
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
+                Assert.AreSame(tree.Nodes[0], tree.SelectedNode);
+            });
+        }
+
         [DataTestMethod]
-        [DataRow("默认")]
-        [DataRow("直线查找0/区域")]
-        [DataRow("直线查找0/直线/起点/行")]
-        [DataRow("形状匹配0/坐标")]
-        public void SetSelectNode_SelectsPreviousVariable(string path)
+        [DataRow(0, "区域", "直线查找0/区域")]
+        [DataRow(0, "直线/起点/行", "直线查找0/直线/起点/行")]
+        [DataRow(1, "坐标", "形状匹配0/坐标")]
+        public void Select_PreviousOutputById(int tool, string output, string expectedPath)
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, new SourceRef(upstream[tool].Id, output));
 
-                Priv.Call(form, "Fun_setSelectNode", path);
-
-                Assert.AreSame(Find(tree, path), tree.SelectedNode);
+                Assert.AreSame(Find(tree, expectedPath), tree.SelectedNode);
             });
         }
 
-        /// <summary>路径层数不受限：此前只比较前 4 段，更深的变量只能预选到第 4 层的祖先。</summary>
+        /// <summary> 按 Id 预选：工具改了名照样选得中 </summary>
         [TestMethod]
-        public void SetSelectNode_DeeperThanFourLevels_SelectsLeaf()
+        public void Select_RenamedTool_StillFound()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                var strategies = new List<IParaStrategy>
-                {
-                    new FakeStrategy(AlgoEnum.FitLine, "深层0")
-                    {
-                        Tree = t => t.Branch("深层0", b => b
-                            .Branch("甲", x => x.Branch("乙", y => y.Branch("丙", z => z.Node("丁", OutEnum.Number))))),
-                    },
-                    new FakeStrategy(AlgoEnum.CreateROI),
-                };
-                GenerateTree(form, 1, strategies);
+                upstream[0].Name = "改了名";
+                form.Prepare(upstream, OutEnum.Region, true, new SourceRef(upstream[0].Id, "区域"));
 
-                Priv.Call(form, "Fun_setSelectNode", "深层0/甲/乙/丙/丁");
-
-                Assert.AreSame(Find(tree, "深层0/甲/乙/丙/丁"), tree.SelectedNode);
+                Assert.AreSame(Find(tree, "改了名/区域"), tree.SelectedNode);
             });
         }
 
         /// <summary>上游工具还在、只是那个输出没了：退而选中最深的现存祖先，方便用户就近重选。</summary>
         [TestMethod]
-        public void SetSelectNode_UnknownOutput_SelectsDeepestExistingAncestor()
+        public void Select_UnknownOutput_SelectsDeepestExistingAncestor()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
-
-                Priv.Call(form, "Fun_setSelectNode", "直线查找0/直线/已删除");
+                form.Prepare(upstream, OutEnum.Region, true, new SourceRef(upstream[0].Id, "直线/已删除"));
 
                 Assert.AreSame(Find(tree, "直线查找0/直线"), tree.SelectedNode);
             });
         }
 
         [TestMethod]
-        public void SetSelectNode_UnknownTool_DoesNotThrowOrSelect()
+        public void Select_UnknownTool_SelectsNothing()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
-
-                Priv.Call(form, "Fun_setSelectNode", "已删除的工具/区域");
+                form.Prepare(upstream, OutEnum.Region, true, new SourceRef(Guid.NewGuid(), "区域"));
 
                 Assert.IsNull(tree.SelectedNode, "上游工具已删除时不应选中任何节点");
-            });
-        }
-
-        [DataTestMethod]
-        [DataRow(null)]
-        [DataRow("")]
-        [DataRow("   ")]
-        public void SetSelectNode_BlankPath_KeepsSelectionEmpty(string path)
-        {
-            Run((form, tree) =>
-            {
-                GenerateTree(form, 2, Strategies());
-
-                Priv.Call(form, "Fun_setSelectNode", path);
-
-                Assert.IsNull(tree.SelectedNode);
             });
         }
 
@@ -280,173 +189,117 @@ namespace DotNet.VisionMaster.Tests
         #region 双击选择
 
         [TestMethod]
-        public void DoubleClick_MatchingType_ReturnsPathWithoutLeadingSeparator()
+        public void DoubleClick_MatchingType_ReturnsRefById()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
 
-                var r = DoubleClick(form, tree, "直线查找0/区域", OutEnum.Region);
+                var r = DoubleClick(form, tree, "直线查找0/区域");
 
                 Assert.IsTrue(r.Item1);
-                Assert.AreEqual("直线查找0/区域", r.Item2);
+                Assert.AreEqual(new SourceRef(upstream[0].Id, "区域"), r.Item2);
             });
         }
 
         [TestMethod]
-        public void DoubleClick_NestedNumber_ReturnsFullPath()
+        public void DoubleClick_NestedNumber_ReturnsFullOutputPath()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Number, true, SourceRef.Local);
 
-                var r = DoubleClick(form, tree, "直线查找0/直线/起点/行", OutEnum.Number);
+                var r = DoubleClick(form, tree, "直线查找0/直线/起点/行");
 
                 Assert.IsTrue(r.Item1);
-                Assert.AreEqual("直线查找0/直线/起点/行", r.Item2);
+                Assert.AreEqual("直线/起点/行", r.Item2.Output);
             });
         }
 
         [TestMethod]
         public void DoubleClick_MismatchedType_Rejected()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
 
-                var r = DoubleClick(form, tree, "直线查找0/直线", OutEnum.Region);
-
-                Assert.IsFalse(r.Item1, "要区域却选了直线，不应确认");
-                Assert.AreEqual("", r.Item2, "拒绝时清空返回值，调用方只在 OK 时读取");
+                Assert.IsFalse(DoubleClick(form, tree, "直线查找0/直线").Item1, "要区域却选了直线，不应确认");
             });
         }
 
-        [DataTestMethod]
-        [DataRow(OutEnum.Image)]
-        [DataRow(OutEnum.Region)]
-        [DataRow(OutEnum.Coord)]
-        public void DoubleClick_Default_AcceptedForImageRegionCoord(OutEnum type)
+        /// <summary> 图像来源不再接受区域（原规则允许，但区域当图像用必然在后续算子里出错） </summary>
+        [TestMethod]
+        public void DoubleClick_ImageTarget_RejectsRegion()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Image, true, SourceRef.Local);
 
-                var r = DoubleClick(form, tree, "默认", type);
+                Assert.IsFalse(DoubleClick(form, tree, "直线查找0/区域").Item1);
+            });
+            Run((form, tree, upstream) =>
+            {
+                form.Prepare(upstream, OutEnum.Image, true, SourceRef.Local);
+
+                Assert.IsTrue(DoubleClick(form, tree, "形状匹配0/图像").Item1);
+            });
+        }
+
+        [TestMethod]
+        public void DoubleClick_Local_AcceptedWhenAllowed()
+        {
+            Run((form, tree, upstream) =>
+            {
+                form.Prepare(upstream, OutEnum.Coord, true, new SourceRef(upstream[1].Id, "坐标"));
+
+                var r = DoubleClick(form, tree, "默认");
 
                 Assert.IsTrue(r.Item1);
-                Assert.AreEqual("默认", r.Item2);
-            });
-        }
-
-        [DataTestMethod]
-        [DataRow(OutEnum.Line)]
-        [DataRow(OutEnum.Number)]
-        [DataRow(OutEnum.String)]
-        public void DoubleClick_Default_RejectedForOtherTypes(OutEnum type)
-        {
-            Run((form, tree) =>
-            {
-                GenerateTree(form, 2, Strategies());
-
-                Assert.IsFalse(DoubleClick(form, tree, "默认", type).Item1);
+                Assert.AreEqual(SourceRef.Local, r.Item2);
             });
         }
 
         [TestMethod]
         public void DoubleClick_ToolRootNode_Rejected()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
 
-                Assert.IsFalse(DoubleClick(form, tree, "直线查找0", OutEnum.Region).Item1, "工具分组节点本身不是变量");
-            });
-        }
-
-        [TestMethod]
-        public void DoubleClick_NothingSelected_Ignored()
-        {
-            Run((form, tree) =>
-            {
-                GenerateTree(form, 2, Strategies());
-                form.StrReturn = "旧值";
-
-                DoubleClickAt(form, tree, Center(tree.Nodes[0].Bounds));
-
-                Assert.AreNotEqual(DialogResult.OK, form.DialogResult);
+                Assert.IsFalse(DoubleClick(form, tree, "直线查找0").Item1, "工具分组节点本身不是变量");
             });
         }
 
         [DataTestMethod]
         [DataRow("直线查找0/直线/起点/行", true)]     // Number
-        [DataRow("直线查找0/角度", true)]            // Angle
         [DataRow("直线查找0/区域", false)]           // Region
         [DataRow("形状匹配0/图像", false)]           // Image
         public void DoubleClick_StringTarget_AcceptsScalarsOnly(string path, bool accepted)
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.String, false, SourceRef.Local);
 
-                Assert.AreEqual(accepted, DoubleClick(form, tree, path, OutEnum.String).Item1);
-            });
-        }
-
-        [DataTestMethod]
-        [DataRow("直线查找0/角度", true)]
-        [DataRow("形状匹配0/分数", true)]
-        [DataRow("直线查找0/区域", false)]
-        [DataRow("形状匹配0/坐标", false)]
-        public void DoubleClick_CalOrOutTarget_AcceptsAngleNumberString(string path, bool accepted)
-        {
-            Run((form, tree) =>
-            {
-                GenerateTree(form, 2, Strategies());
-
-                Assert.AreEqual(accepted, DoubleClick(form, tree, path, OutEnum.CalOrOut).Item1);
-            });
-        }
-
-        /// <remarks>
-        /// 每种情况单独一个窗体：确认时 <c>Close()</c> 一个没以 <c>ShowDialog</c> 显示的窗体会把它 Dispose 掉，
-        /// 不能在同一个窗体上接着双击。
-        /// </remarks>
-        [DataTestMethod]
-        [DataRow("形状匹配0/图像", true)]
-        [DataRow("直线查找0/区域", true)]     // 现有规则：图像输入也可以引用区域
-        [DataRow("直线查找0/直线", false)]
-        public void DoubleClick_ImageTarget_AlsoAcceptsRegion(string path, bool accepted)
-        {
-            Run((form, tree) =>
-            {
-                GenerateTree(form, 2, Strategies());
-
-                Assert.AreEqual(accepted, DoubleClick(form, tree, path, OutEnum.Image).Item1);
+                Assert.AreEqual(accepted, DoubleClick(form, tree, path).Item1);
             });
         }
 
         /// <summary>
-        /// 双击树的空白处不算选择。
+        /// 双击树的空白处不算选择：左键点空白不会改变选中项，若直接取选中项会把上一次单击的节点确认掉。
         /// </summary>
-        /// <remarks>
-        /// 回归：此前取的是 <c>SelectedNode</c>，左键点空白又不会改变选中项，
-        /// 于是双击空白会把上一次单击选中的节点当成结果确认掉。
-        /// </remarks>
         [TestMethod]
         public void DoubleClick_BlankArea_Ignored()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
                 tree.SelectedNode = Find(tree, "直线查找0/区域");
                 form.DialogResult = DialogResult.None;
-                form.ValueType = OutEnum.Region;
-                form.StrReturn = "旧值";
 
                 DoubleClickAt(form, tree, new Point(5, tree.ClientSize.Height - 5));
 
                 Assert.AreNotEqual(DialogResult.OK, form.DialogResult);
-                Assert.AreEqual("旧值", form.StrReturn, "没选到东西就不该动返回值");
+                Assert.AreEqual(SourceRef.Local, form.Picked, "没选到东西就不该动结果");
             });
         }
 
@@ -459,42 +312,36 @@ namespace DotNet.VisionMaster.Tests
 
         private const int WM_KEYDOWN = 0x0100, WM_KEYUP = 0x0101;
 
-        /// <summary>
-        /// 焦点在树上时按 Esc 关闭引用窗。
-        /// </summary>
-        /// <remarks>
-        /// 回归：Esc 挂在窗体的 KeyUp 上，但窗体里能拿焦点的只有树，
-        /// 不开 <c>KeyPreview</c> 的话窗体永远收不到按键，Esc 形同虚设。
-        /// </remarks>
+        /// <summary>焦点在树上时按 Esc 关闭引用窗；取消时 <see cref="ValueForm.Pick"/> 返回 null。</summary>
         [TestMethod]
-        public void Escape_WhileTreeFocused_ClosesDialog()
+        public void Escape_WhileTreeFocused_CancelsPick()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
-                bool closed = false;
+                SourceRef s = SourceRef.Local;
+                var param = (SourceParam)new ParamBuilder().Source("区域", () => s, v => s = v, OutEnum.Region).Items[0];
+                SourceRef? picked = new SourceRef(Guid.NewGuid(), "x");
 
                 using (WindowHost.RespondWhenShown(form, () =>
                 {
                     tree.Focus();
                     SendMessage(tree.Handle, WM_KEYDOWN, (IntPtr)Keys.Escape, IntPtr.Zero);
                     SendMessage(tree.Handle, WM_KEYUP, (IntPtr)Keys.Escape, IntPtr.Zero);
-                    closed = form.DialogResult == DialogResult.Cancel;
                 }))
                 {
-                    form.ShowDialog();
+                    picked = form.Pick(upstream, param);
                 }
 
-                Assert.IsTrue(closed);
+                Assert.IsNull(picked);
             });
         }
 
         [TestMethod]
         public void ContextMenu_ExpandAll_ThenCollapseAll()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Number, true, SourceRef.Local);
                 var point = Find(tree, "直线查找0/直线/起点");
 
                 Priv.Click(form, "全部展开ToolStripMenuItem_Click");
@@ -508,9 +355,9 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void MouseDown_LeftSelectsNodeUnderCursor_RightAttachesContextMenu()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
-                GenerateTree(form, 2, Strategies());
+                form.Prepare(upstream, OutEnum.Region, true, SourceRef.Local);
                 var target = Find(tree, "形状匹配0");
                 var at = Center(target.Bounds);
 
@@ -536,10 +383,7 @@ namespace DotNet.VisionMaster.Tests
                 DialogPlacement.Beside(new Rectangle(100, 100, 800, 600), DialogSize, WorkArea));
         }
 
-        /// <summary>
-        /// 主窗靠右、靠下或在屏幕外时，引用窗不能跑出屏幕。
-        /// </summary>
-        /// <remarks>回归：此前总是贴在主窗右侧；主窗贴右边时引用窗整个落在屏幕外，而它是置顶的模态窗，看起来就像程序卡死。</remarks>
+        /// <summary>主窗靠右、靠下或在屏幕外时，引用窗不能跑出屏幕。</summary>
         [DataTestMethod]
         [DataRow(1200, 100, 1697, 100)]    // 右侧放不下：贴屏幕右缘
         [DataRow(100, 800, 900, 469)]      // 下方放不下：贴屏幕下缘
@@ -577,14 +421,12 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
-        /// <summary>真实窗体走的是 <see cref="Form"/> 重载：取主窗所在屏幕的工作区，结果必须落在工作区内。</summary>
         [TestMethod]
         public void Placement_OwnerForm_StaysInsideOwnersScreen()
         {
             Sta.Run(() =>
             {
                 var area = Screen.PrimaryScreen.WorkingArea;
-                // 主窗整个在主屏内、右缘贴屏幕右缘；伸出屏幕的话多显示器下 FromControl 可能选到别的屏
                 using (var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(area.Right - 400, area.Top, 400, 300) })
                 {
                     var at = DialogPlacement.Beside(owner, DialogSize);
@@ -598,7 +440,7 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void Shown_WithOwner_PlacedBesideOwner()
         {
-            Run((form, tree) =>
+            Run((form, tree, upstream) =>
             {
                 using (var owner = new Form { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(100, 100, 400, 300), ShowInTaskbar = false })
                 {

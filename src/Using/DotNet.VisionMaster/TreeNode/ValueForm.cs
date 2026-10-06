@@ -1,68 +1,109 @@
-﻿using Sunny.UI;
+using Sunny.UI;
 using System;
 using DotNet.HalconUI;
 using DotNet.HalconCore;
-using DotNet.HalconAlgo;
 using System.Windows.Forms;
 using System.Collections.Generic;
-using System.Drawing;
 
 
 namespace DotNet.VisionMaster
 {
+    /// <summary>
+    /// 来源选择窗：列出当前工具之前各工具的输出变量树，用户双击选中一个输出。
+    /// </summary>
+    /// <remarks>
+    /// 树的根节点是工具，<see cref="TreeNode.Tag"/> 存工具的 <see cref="IAlgoStrategy.Id"/>：
+    /// 选中结果按 Id 定位（<see cref="SourceRef"/>），重名、改名都不会选错工具。
+    /// "默认"根节点只在该来源有本地含义（图像 / 区域 / 坐标系）时出现。
+    /// </remarks>
     public partial class ValueForm : UIForm
     {
-        int _runIndex;
-        public string StrReturn;
-        public OutEnum ValueType;
+        /// <summary> "默认"根节点的标记 </summary>
+        internal static readonly object LocalTag = new object();
 
-        char varSplit = '/';
-
-        IWin32Window _owner;
+        private const char Split = '/';
+        private readonly IWin32Window _owner;
 
         public ValueForm(IWin32Window owner)
         {
             InitializeComponent();
             _owner = owner;
         }
-        public void setValueForm(int runIndex, List<IParaStrategy> _strategys, string strOrg, OutEnum type)
-        {
-            _runIndex = runIndex;
-            StrReturn = strOrg;
-            ValueType = type;
 
-            GenerateTree(runIndex, _strategys);
-            Fun_setSelectNode(StrReturn);
-            this.ShowDialog(_owner);
-        }
+        /// <summary> 要选的输出类型 </summary>
+        public OutEnum ValueType { get; private set; }
+
+        /// <summary> 是否允许选"默认"（本地） </summary>
+        public bool AllowLocal { get; private set; }
+
+        /// <summary> 最近一次确认的选择 </summary>
+        public SourceRef Picked { get; private set; }
+
         /// <summary>
-        /// 按上次选中的变量路径预选节点。
+        /// 弹出选择窗。确认返回选中的来源，取消返回 null。
         /// </summary>
-        /// <remarks>
-        /// 逐段往下找，找不到的那一段就停在最深的现存祖先上，方便用户就近重选；
-        /// 连根节点(上游工具)都没有时不选任何节点。路径层数不受限 —— 此前只比较前 4 段。
-        /// "默认" 总是第一个根节点，不能遇到它就 return，否则任何路径都预选不上。
-        /// </remarks>
-        private void Fun_setSelectNode(string strIn)      //更新程序树选中节点
+        /// <param name="upstream">当前工具之前的工具（只有它们的输出可选）。</param>
+        public SourceRef? Pick(IReadOnlyList<IParaStrategy> upstream, SourceParam param)
         {
-            if (string.IsNullOrWhiteSpace(strIn)) return;
+            Prepare(upstream, param.SourceType, param.AllowsLocal, param.Value);
+            DialogResult = DialogResult.None;
+            ShowDialog(_owner);
+            return DialogResult == DialogResult.OK ? Picked : (SourceRef?)null;
+        }
 
-            TreeNode node = null;
-            TreeNodeCollection level = treeView1.Nodes;
-            foreach (string part in strIn.Split(varSplit))
+        /// <summary> 生成树并预选当前值（不弹窗） </summary>
+        internal void Prepare(IReadOnlyList<IParaStrategy> upstream, OutEnum type, bool allowLocal, SourceRef current)
+        {
+            ValueType = type;
+            AllowLocal = allowLocal;
+            Picked = current;
+            GenerateTree(upstream, allowLocal);
+            SelectSource(current);
+        }
+
+        internal void GenerateTree(IReadOnlyList<IParaStrategy> upstream, bool allowLocal)
+        {
+            treeView1.Nodes.Clear();
+            if (allowLocal) treeView1.Nodes.Add(new TreeNode("默认") { Tag = LocalTag });
+            if (upstream == null) return;
+
+            var visualizer = new TreeVisualizer(treeView1);
+            foreach (var tool in upstream)
             {
-                TreeNode next = null;
-                foreach (TreeNode item in level)
+                if (!(tool is ITreeNodeProvider provider)) continue;
+                int before = treeView1.Nodes.Count;
+                provider.GenTreeNode(visualizer);
+                // 工具根节点记下 Id: 选中结果按 Id 定位, 不按可重名 / 可改名的显示名
+                for (int i = before; i < treeView1.Nodes.Count; i++) treeView1.Nodes[i].Tag = tool.Id;
+            }
+        }
+
+        /// <summary>
+        /// 按当前值预选节点：逐段往下找，找不到的那一段就停在最深的现存祖先上，方便用户就近重选。
+        /// </summary>
+        internal void SelectSource(SourceRef source)
+        {
+            TreeNode node = null;
+            foreach (TreeNode root in treeView1.Nodes)
+            {
+                if (source.IsLocal ? ReferenceEquals(root.Tag, LocalTag) : root.Tag is Guid id && id == source.ToolId)
                 {
-                    if (item.Text == part)
-                    {
-                        next = item;
-                        break;
-                    }
+                    node = root;
+                    break;
                 }
-                if (next == null) break;
-                node = next;
-                level = node.Nodes;
+            }
+            if (node != null && !source.IsLocal && !string.IsNullOrEmpty(source.Output))
+            {
+                foreach (string part in source.Output.Split(Split))
+                {
+                    TreeNode next = null;
+                    foreach (TreeNode child in node.Nodes)
+                    {
+                        if (child.Text == part) { next = child; break; }
+                    }
+                    if (next == null) break;
+                    node = next;
+                }
             }
 
             if (node == null) return;
@@ -70,28 +111,45 @@ namespace DotNet.VisionMaster
             node.EnsureVisible();
         }
 
-        private void GenerateTree(int index, List<IParaStrategy> paraStrategies)    //生成输出变量节点
+        /// <summary> 节点能否作为结果：类型必须与 <see cref="ValueType"/> 相符 </summary>
+        internal bool TryAccept(TreeNode node, out SourceRef picked)
         {
-            treeView1.Nodes.Clear();
-            treeView1.Nodes.Add(new TreeNode("默认"));
+            picked = SourceRef.Local;
+            if (node == null) return false;
 
-            if(index >= paraStrategies.Count) return;
-            TreeVisualizer treeVisualizer = new TreeVisualizer(treeView1);
-            for (int i = 0; i < index; i++)
+            if (node.Level == 0)
+                return ReferenceEquals(node.Tag, LocalTag) && AllowLocal;   // 工具根节点本身不是输出
+
+            if (!Matches(node.Name)) return false;
+
+            var root = node;
+            while (root.Parent != null) root = root.Parent;
+            if (!(root.Tag is Guid toolId)) return false;
+            picked = new SourceRef(toolId, PathOf(node));
+            return true;
+        }
+
+        private bool Matches(string nodeType)
+        {
+            if (nodeType == ValueType.ToString()) return true;
+            switch (ValueType)
             {
-                if (paraStrategies[i] is ITreeNodeProvider provider)
-                    provider.GenTreeNode(treeVisualizer);
+                case OutEnum.String:
+                    return nodeType != nameof(OutEnum.HTuple) && nodeType != nameof(OutEnum.Outline) &&
+                           nodeType != nameof(OutEnum.Image) && nodeType != nameof(OutEnum.Region);
+                case OutEnum.CalOrOut:
+                    return nodeType == nameof(OutEnum.Angle) || nodeType == nameof(OutEnum.Number) || nodeType == nameof(OutEnum.String);
+                default:
+                    return false;
             }
         }
- 
-        public string Fun_getText(TreeNode node, string str)
+
+        /// <summary> 工具根节点之下的路径，例如 <c>坐标系/原点</c> </summary>
+        private static string PathOf(TreeNode node)
         {
-            str = varSplit + node.Text + str;
-            if (node.Level > 0)
-            {
-                return Fun_getText(node.Parent, str);  // 递归处理父节点
-            }
-            return str;  // 返回最终结果
+            var parts = new Stack<string>();
+            for (var n = node; n.Parent != null; n = n.Parent) parts.Push(n.Text);
+            return string.Join(Split.ToString(), parts);
         }
 
         private void 全部展开ToolStripMenuItem_Click(object sender, EventArgs e)
@@ -102,112 +160,45 @@ namespace DotNet.VisionMaster
         {
             treeView1.CollapseAll();
         }
-        private void treeView1_MouseDown(object sender, MouseEventArgs e)  //当鼠标指针在组件上方并按下鼠标按钮时发生
+        private void treeView1_MouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left)  //鼠标左键获取选的节点
+            if (e.Button == MouseButtons.Left)
             {
-                TreeNode SelectedNode = treeView1.GetNodeAt(e.Location);
-
-                if (SelectedNode is TreeNode)  //判断是否为节点
-                {
-                    treeView1.SelectedNode = SelectedNode;
-                }
+                TreeNode node = treeView1.GetNodeAt(e.Location);
+                if (node != null) treeView1.SelectedNode = node;
             }
-            else if (e.Button == MouseButtons.Right) //鼠标右键获取选的节点
+            else if (e.Button == MouseButtons.Right)
             {
-                treeView1.ContextMenuStrip = contextMenuStrip1;// 添加右键菜单             
+                treeView1.ContextMenuStrip = contextMenuStrip1;
             }
         }
-        private void treeView1_DrawNode(object sender, DrawTreeNodeEventArgs e)  //当需要绘制节点时，在所有者描述模式下发生
+        private void treeView1_DrawNode(object sender, DrawTreeNodeEventArgs e)
         {
-            ////绘制文字      
-            //int cmdIndex = schemePara.defaultJob.ToolInfos.FindIndex(item => item.Text.Equals(e.Node.Text));
-            //string text = (e.Node.Level == 0 && e.Node.Text != "默认") ? cmdIndex.ToString() + ". " + e.Node.Text : e.Node.Text;
-            //e.Graphics.DrawString(text, treeView1.Font, new SolidBrush(Color.Black), e.Node.Bounds.X, e.Node.Bounds.Top + (e.Node.Bounds.Height - treeView1.Font.Height) / 2);
+            e.DrawDefault = true;
         }
-        private void treeView1_BeforeExpand(object sender, TreeViewCancelEventArgs e) //在将要展开节点时发生
+        private void treeView1_BeforeExpand(object sender, TreeViewCancelEventArgs e)
         {
             treeView1.Invalidate();
         }
-        private void treeView1_MouseDoubleClick(object sender, MouseEventArgs e)  //用鼠标双击控件时发生 //来源 chatgpt
+        private void treeView1_MouseDoubleClick(object sender, MouseEventArgs e)
         {
-            // 只认双击落在的那个节点: 左键点空白不会改变 SelectedNode, 若直接取 SelectedNode,
-            // 双击空白会把上一次单击选中的节点当成结果确认掉。没选到东西就不动 StrReturn。
-            TreeNode currentNode = treeView1.GetNodeAt(e.Location);
-            if (currentNode == null || currentNode != treeView1.SelectedNode) return;
-            StrReturn = "";
+            // 只认双击落在的那个节点: 双击空白不能把上一次单击选中的节点当成结果确认掉
+            TreeNode node = treeView1.GetNodeAt(e.Location);
+            if (node == null || node != treeView1.SelectedNode) return;
+            if (!TryAccept(node, out SourceRef picked)) return;
 
-            // 检查根节点及类型
-            if (currentNode.Level == 0)
-            {
-                if (currentNode != treeView1.Nodes[0]) return;
-                if (ValueType != OutEnum.Image && ValueType != OutEnum.Region && ValueType != OutEnum.Coord) return;
-            }
-
-            // 检查节点名称和类型匹配
-            if (currentNode.Name != ValueType.ToString() && currentNode != treeView1.Nodes[0])
-            {
-                switch (ValueType)
-                {
-                    case OutEnum.String:
-                        if (currentNode.Name == nameof(OutEnum.HTuple) ||
-                            currentNode.Name == nameof(OutEnum.Outline) ||
-                            currentNode.Name == nameof(OutEnum.Image) ||
-                            currentNode.Name == nameof(OutEnum.Region)) return;
-                        break;
-
-                    case OutEnum.CalOrOut:
-                        if (currentNode.Name != nameof(OutEnum.Angle) &&
-                            currentNode.Name != nameof(OutEnum.Number) &&
-                            currentNode.Name != nameof(OutEnum.String)) return;
-                        break;
-
-                    case OutEnum.Angle:
-                        if (currentNode.Name != nameof(OutEnum.CalOrOut)) return;
-                        break;
-
-                    case OutEnum.Array:
-                        if (currentNode.Name != nameof(OutEnum.Array)) return;
-                        break;
-
-                    case OutEnum.Image:
-                        if (currentNode.Name != nameof(OutEnum.Region)) return;
-                        break;
-
-                    default:
-                        return;
-                }
-            }
-
-            // 获取节点文本并关闭窗口
-            StrReturn = Fun_getText(currentNode, StrReturn).Substring(1);
-            this.DialogResult = DialogResult.OK;
-            this.Close();
+            Picked = picked;
+            DialogResult = DialogResult.OK;
+            Close();
         }
 
-        private void ValueForm_KeyUp(object sender, KeyEventArgs e)  //在释放时发生
+        private void ValueForm_KeyUp(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape)
-            {
-                this.Close();
-            }
+            if (e.KeyCode == Keys.Escape) Close();
         }
         private void ValueForm_VisibleChanged(object sender, EventArgs e)
         {
-            if (this.Visible)
-            {
-                this.Location = DialogPlacement.Beside(this.Owner, this.Size);
-            }
+            if (Visible) Location = DialogPlacement.Beside(Owner, Size);
         }
-        private void ValueForm_ExtendBoxClick(object sender, EventArgs e)
-        {
-            //TopMost = !TopMost;
-
-            //if (TopMost)
-            //    ExtendSymbol = 61475;
-            //else
-            //    ExtendSymbol = 61758;
-        }
-
     }
 }

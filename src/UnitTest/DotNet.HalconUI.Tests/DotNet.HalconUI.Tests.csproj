@@ -65,9 +65,6 @@
     <Compile Include="Infrastructure\Fakes.cs" />
     <Compile Include="Infrastructure\Mouse.cs" />
     <Compile Include="Infrastructure\Sta.cs" />
-    <Compile Include="Infrastructure\ParaPanelForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
     <Compile Include="Infrastructure\WindowHost.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -77,10 +74,6 @@
     <Compile Include="DrawHelperTests.cs" />
     <Compile Include="DrawSafeTests.cs" />
     <Compile Include="MouseHandlerTests.cs" />
-    <Compile Include="VsControlModelTests.cs" />
-    <Compile Include="VsControlFactoryTests.cs" />
-    <Compile Include="VsControlBindingTests.cs" />
-    <Compile Include="WinFormsParaUiHostTests.cs" />
     <Compile Include="TreeVisualizerTests.cs" />
     <Compile Include="MiscTypeTests.cs" />
     <Compile Include="HDisplayTests.cs" />
@@ -90,6 +83,7 @@
     <Compile Include="HWindowFontTests.cs" />
     <Compile Include="HWindowImageTests.cs" />
     <Compile Include="HWindowMouseTests.cs" />
+    <Compile Include="ParamPanelTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Using\DotNet.Drawing\DotNet.Drawing.csproj">

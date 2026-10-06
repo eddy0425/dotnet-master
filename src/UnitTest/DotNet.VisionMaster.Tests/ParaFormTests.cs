@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -14,7 +15,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace DotNet.VisionMaster.Tests
 {
     /// <summary>
-    /// <see cref="ParaForm"/>：4 个绘制入口的类型/参数选择、同一时刻只允许一条绘制在飞的闸门、销毁时释放游离窗体。
+    /// <see cref="ParaForm"/>：按声明生成参数页、来源选择、绘制入口的类型选择与重入闸门、模板编辑窗、销毁时释放游离窗体。
     /// </summary>
     /// <remarks>
     /// 绘制入口都是 <c>async void</c>；<see cref="FakeStrategy"/> 返回的任务由测试决定何时完成，
@@ -33,10 +34,11 @@ namespace DotNet.VisionMaster.Tests
             public PromptLog Prompts;
         }
 
-        private static void Run(AlgoEnum algorithm, Action<Ctx> body) => Run(new FakeStrategy(algorithm), body);
+        private static void Run(Action<Ctx> body) => Run(new FakeStrategy(), body);
 
-        /// <param name="strategy">当前工具；null 表示宿主还没选过任何工具（不调 <c>SelectPara</c>）。</param>
-        private static void Run(IParaStrategy strategy, Action<Ctx> body) =>
+        /// <param name="tool">当前工具；null 表示宿主还没选过任何工具。</param>
+        /// <param name="flow">整个流程；默认只有当前工具。</param>
+        private static void Run(IParaStrategy tool, Action<Ctx> body, IReadOnlyList<IParaStrategy> flow = null) =>
             Sta.Run(() =>
             {
                 var display = new HDisplayUI();
@@ -44,9 +46,8 @@ namespace DotNet.VisionMaster.Tests
                 using (var prompts = new PromptLog())
                 using (var host = WindowHost.ShowOffscreen(display, para))
                 {
-                    if (strategy != null)
-                        para.SelectPara(0, new List<IParaStrategy> { strategy });
-                    var fake = strategy as FakeStrategy;
+                    if (tool != null) para.ShowTool(tool, flow ?? new[] { tool });
+                    var fake = tool as FakeStrategy;
                     var ctx = new Ctx { Display = display, Para = para, Host = host, Strategy = fake, Prompts = prompts };
                     try { body(ctx); }
                     finally
@@ -54,6 +55,7 @@ namespace DotNet.VisionMaster.Tests
                         // 不收尾的话，挂起的 async void 续体会在窗体销毁后才跑
                         fake?.FinishDraw();
                         WindowHost.Pump();
+                        foreach (var t in flow ?? (tool == null ? new IParaStrategy[0] : new[] { tool })) t.Dispose();
                     }
                 }
             });
@@ -64,46 +66,172 @@ namespace DotNet.VisionMaster.Tests
             WindowHost.PumpUntil(() => !ctx.Para.IsDrawBusy);
         }
 
+        private static string[] Tabs(Ctx ctx)
+            => Priv.Get<TabControl>(ctx.Para, "tabControl1").TabPages.Cast<TabPage>().Select(p => p.Text).ToArray();
+
         [TestMethod]
         public void IsDrawBusy_InitiallyFalse()
         {
-            Run(AlgoEnum.CreateROI, ctx => Assert.IsFalse(ctx.Para.IsDrawBusy));
+            Run(ctx => Assert.IsFalse(ctx.Para.IsDrawBusy));
         }
+
+        #region 参数页
+
+        /// <summary> 宿主只认识能力接口与参数声明：标签页由"声明了哪些页 + 实现了哪些能力"决定，不按算法分支 </summary>
+        [DataTestMethod]
+        [DataRow(typeof(FileImageStrategy), "文件图像|显示输出")]
+        [DataRow(typeof(CreateROIStrategy), "区域设置|显示输出")]
+        [DataRow(typeof(MergeRegionStrategy), "基本参数|显示输出")]
+        [DataRow(typeof(FitLineStrategy), "基本参数|区域设置|显示输出")]
+        [DataRow(typeof(ShapeModelStrategy), "基本参数|区域设置|模版设置|显示输出")]
+        public void ShowTool_TabsFollowDeclarationsAndCapabilities(Type type, string expected)
+        {
+            Run((IParaStrategy)Activator.CreateInstance(type), ctx => CollectionAssert.AreEqual(expected.Split('|'), Tabs(ctx)));
+        }
+
+        [TestMethod]
+        public void ShowTool_EachPanelGetsItsTabsItems()
+        {
+            Run(ctx =>
+            {
+                CollectionAssert.AreEqual(new[] { "图像来源" }, ctx.Para.PanelOf(TabPageEnum.Parameter).Items.Select(i => i.Label).ToArray());
+                CollectionAssert.AreEqual(new[] { "跟随坐标" }, ctx.Para.PanelOf(TabPageEnum.Region).Items.Select(i => i.Label).ToArray());
+                CollectionAssert.AreEqual(new[] { "开关", "显示文本", "文本X", "文本Y", "字号" },
+                    ctx.Para.PanelOf(TabPageEnum.Display).Items.Select(i => i.Label).ToArray());
+            });
+        }
+
+        [TestMethod]
+        public void ShowTool_ShowsRoiOfRoiTools()
+        {
+            Run(ctx => Assert.AreEqual(1, ctx.Strategy.DispRoiCount));
+        }
+
+        /// <summary> 面板写回后通知策略 —— 只通知真的变了的项 </summary>
+        [TestMethod]
+        public void PanelCommit_ForwardsChangedItemsToTool()
+        {
+            Run(ctx =>
+            {
+                var panel = ctx.Para.PanelOf(TabPageEnum.Display);
+                var flag = panel.Items.Single(i => i.Label == "开关");
+
+                ((CheckBox)panel.EditorOf(flag)).Checked = true;
+
+                Assert.IsTrue(ctx.Strategy.inPara.Flag);
+                CollectionAssert.AreEqual(new[] { "开关" }, ctx.Strategy.ChangedLabels);
+            });
+        }
+
+        /// <summary> 验收：宿主的参数页里没有任何算法槽位控件 </summary>
+        [TestMethod]
+        public void NoSlotControls()
+        {
+            var slots = typeof(ParaForm).GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Where(f => f.Name.StartsWith("cmb_1") || f.Name.StartsWith("btn_1") || f.Name.StartsWith("lbl_1") ||
+                            f.Name.StartsWith("ckb_disp") || f.Name.StartsWith("CB_Font"))
+                .Select(f => f.Name).ToArray();
+            CollectionAssert.AreEqual(new string[0], slots);
+        }
+
+        #endregion
+
+        #region 来源选择
+
+        /// <summary>
+        /// 点来源按钮：弹出变量树，只列出本工具之前的工具，按来源类型过滤；选中后按 Id 写回并通知策略。
+        /// </summary>
+        [TestMethod]
+        public void Source_PicksUpstreamOutputById()
+        {
+            var upstream = new FakeStrategy("上游") { Outs = o => o.Image("图像", () => null) };
+            var current = new FakeStrategy("当前");
+            var downstream = new FakeStrategy("下游") { Outs = o => o.Image("图像", () => null) };
+
+            Run(current, ctx =>
+            {
+                var panel = ctx.Para.PanelOf(TabPageEnum.Parameter);
+                var item = panel.Items.Single(i => i.Label == "图像来源");
+                var dialog = Priv.Get<ValueForm>(ctx.Para, "_valueForm");
+                string[] roots = null;
+                OutEnum seenType = OutEnum.Undefined;
+
+                using (WindowHost.RespondWhenShown(dialog, () =>
+                {
+                    var tree = Priv.Get<TreeView>(dialog, "treeView1");
+                    roots = tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray();
+                    seenType = dialog.ValueType;
+                    var node = tree.Nodes[1].Nodes.Cast<TreeNode>().Single(n => n.Text == "图像");
+                    tree.SelectedNode = node;
+                    var at = new Point(node.Bounds.X + node.Bounds.Width / 2, node.Bounds.Y + node.Bounds.Height / 2);
+                    Priv.Call(dialog, "treeView1_MouseDoubleClick", tree, new MouseEventArgs(MouseButtons.Left, 2, at.X, at.Y, 0));
+                }))
+                {
+                    panel.ButtonOf(item).PerformClick();
+                }
+
+                CollectionAssert.AreEqual(new[] { "默认", "上游" }, roots, "只能引用排在当前工具之前的输出");
+                Assert.AreEqual(OutEnum.Image, seenType);
+                Assert.AreEqual(upstream.Ref("图像"), current.inPara.Image);
+                Assert.AreEqual("上游/图像", panel.EditorOf(item).Text, "界面显示的名字按当前工具列表拼出");
+                CollectionAssert.AreEqual(new[] { "图像来源" }, current.ChangedLabels);
+            }, new IParaStrategy[] { upstream, current, downstream });
+        }
+
+        [TestMethod]
+        public void Source_Cancelled_KeepsValue()
+        {
+            Run(ctx =>
+            {
+                var panel = ctx.Para.PanelOf(TabPageEnum.Parameter);
+                var item = panel.Items.Single(i => i.Label == "图像来源");
+                var dialog = Priv.Get<ValueForm>(ctx.Para, "_valueForm");
+
+                using (WindowHost.RespondWhenShown(dialog, () => dialog.DialogResult = DialogResult.Cancel))
+                {
+                    panel.ButtonOf(item).PerformClick();
+                }
+
+                Assert.AreEqual(SourceRef.Local, ctx.Strategy.inPara.Image);
+                Assert.AreEqual(0, ctx.Strategy.ChangedLabels.Count);
+            });
+        }
+
+        #endregion
 
         #region 绘制类型与参数
 
-        [DataTestMethod]
-        [DataRow(AlgoEnum.FitLine, RectEnum.AffRect)]
-        [DataRow(AlgoEnum.FitArcMidpoint, RectEnum.AffRect)]
-        [DataRow(AlgoEnum.CreateROI, RectEnum.Rectangle)]
-        [DataRow(AlgoEnum.ShapeModel, RectEnum.Rectangle)]
-        public void DrawRegion_PicksTypeByAlgorithm_AndRequestsNewRoi(AlgoEnum algorithm, RectEnum expected)
+        /// <summary> 新建 ROI 的默认形状由算法自己声明（[Algo(DefaultRoi = ...)]），宿主不按算法分支 </summary>
+        [TestMethod]
+        public void DrawRegion_UsesDeclaredDefaultShape()
         {
-            Run(algorithm, ctx =>
+            Run(new FakeAffStrategy(), ctx =>
             {
                 Priv.Click(ctx.Para, "btn_drawRegion_Click");
 
-                Assert.AreEqual(1, ctx.Strategy.RoiDraws.Count);
-                Assert.AreEqual(expected, ctx.Strategy.RoiDraws[0].Item1);
-                Assert.IsTrue(ctx.Strategy.RoiDraws[0].Item2, "新建 ROI");
+                Assert.AreEqual(Tuple.Create(RectEnum.AffRect, true), ctx.Strategy.RoiDraws.Single());
                 Assert.IsTrue(ctx.Para.IsDrawBusy);
-
                 Finish(ctx);
                 Assert.IsFalse(ctx.Para.IsDrawBusy);
+            });
+            Run(ctx =>
+            {
+                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Assert.AreEqual(Tuple.Create(RectEnum.Rectangle, true), ctx.Strategy.RoiDraws.Single());
+                Finish(ctx);
             });
         }
 
         [TestMethod]
         public void EditRegion_KeepsCheckedType_AndEditsExistingRoi()
         {
-            Run(AlgoEnum.FitLine, ctx =>
+            Run(new FakeAffStrategy(), ctx =>
             {
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");   // 拟合直线会把单选切到仿射矩形
+                Priv.Click(ctx.Para, "btn_drawRegion_Click");   // 默认形状把单选切到仿射矩形
                 Finish(ctx);
 
                 Priv.Click(ctx.Para, "but_editRegion_Click");
 
-                Assert.AreEqual(2, ctx.Strategy.RoiDraws.Count);
                 Assert.AreEqual(Tuple.Create(RectEnum.AffRect, false), ctx.Strategy.RoiDraws[1]);
                 Finish(ctx);
             });
@@ -112,7 +240,7 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void NewModel_And_ModifyModel_UseCheckedModelType()
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
                 Priv.Get<RadioButton>(ctx.Para, "btn_modelCircle").Checked = true;
 
@@ -130,6 +258,22 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
+        [TestMethod]
+        public void RoiShown_FillsGeometryReadouts()
+        {
+            Run(ctx =>
+            {
+                using (var region = new CvRegion { Bounds = new Rect2d(10.0, 20.0, 30.0, 40.0) })
+                {
+                    ctx.Display.SetRectPara(region);
+                }
+
+                Assert.AreEqual("30.00", Priv.Get<TextBox>(ctx.Para, "txt_Width").Text);
+                Assert.AreEqual("40.00", Priv.Get<TextBox>(ctx.Para, "txt_Height").Text);
+                Assert.AreEqual("25.00;40.00", Priv.Get<TextBox>(ctx.Para, "txt_Center").Text, "读数由宿主自己填, 策略不碰控件");
+            });
+        }
+
         #endregion
 
         #region 重入闸门
@@ -141,7 +285,7 @@ namespace DotNet.VisionMaster.Tests
         [DataRow("but_modifyModel_Click")]
         public void AnyDrawEntry_WhileBusy_IsIgnored(string first)
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
                 Priv.Click(ctx.Para, first);
                 Assert.IsTrue(ctx.Para.IsDrawBusy);
@@ -159,7 +303,7 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void DrawEntry_AfterPreviousFinished_IsAllowedAgain()
         {
-            Run(AlgoEnum.CreateROI, ctx =>
+            Run(ctx =>
             {
                 Priv.Click(ctx.Para, "btn_drawRegion_Click");
                 Finish(ctx);
@@ -175,7 +319,7 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void DrawEntry_EachRoundBumpsEpoch()
         {
-            Run(AlgoEnum.CreateROI, ctx =>
+            Run(ctx =>
             {
                 int before = Priv.Get<int>(ctx.Para, "_drawEpoch");
 
@@ -187,9 +331,7 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
-        /// <summary>
-        /// 绘制失败时把原因告诉用户，并且放开闸门 —— 不然之后所有绘制入口都点不动了。
-        /// </summary>
+        /// <summary>绘制失败时把原因告诉用户，并且放开闸门 —— 不然之后所有绘制入口都点不动了。</summary>
         [DataTestMethod]
         [DataRow("btn_drawRegion_Click")]
         [DataRow("but_editRegion_Click")]
@@ -197,7 +339,7 @@ namespace DotNet.VisionMaster.Tests
         [DataRow("but_modifyModel_Click")]
         public void DrawEntry_Failure_PromptsReason_AndReleasesGate(string entry)
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
                 ctx.Strategy.DrawError = new InvalidOperationException("绘制失败原因");
 
@@ -208,20 +350,30 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
+        /// <summary> 没有对应能力的工具点到绘制按钮：什么也不做（按钮只是不在可见页上） </summary>
+        [TestMethod]
+        public void DrawEntries_ToolWithoutCapability_DoNothing()
+        {
+            Run(new MergeRegionStrategy(), ctx =>
+            {
+                foreach (var entry in new[] { "btn_drawRegion_Click", "but_editRegion_Click", "btn_newModel_Click", "but_modifyModel_Click", "but_editModel_Click" })
+                    Priv.Click(ctx.Para, entry);
+                WindowHost.PumpUntil(() => !ctx.Para.IsDrawBusy);
+
+                CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
+            });
+        }
+
         #endregion
 
         #region 尚未选择工具
 
         private static readonly string[] AllHandlers =
         {
-            "btn_100_Click", "btn_101_Click", "btn_coordSource_Click", "btn_setCoordIn_Click",
             "btn_drawRegion_Click", "but_editRegion_Click", "btn_newModel_Click", "but_modifyModel_Click", "but_editModel_Click",
         };
 
-        /// <summary>
-        /// 宿主启动后并不会自动选中一个工具，参数页的按钮在此之前就能点。
-        /// </summary>
-        /// <remarks>回归：此前一律 NRE，被各自的 catch 弹成"未将对象引用设置到对象的实例"。</remarks>
+        /// <summary>宿主启动后并不会自动选中一个工具，参数页的按钮在此之前就能点。</summary>
         [TestMethod]
         public void Handlers_BeforeAnyToolSelected_DoNothing()
         {
@@ -229,114 +381,12 @@ namespace DotNet.VisionMaster.Tests
             {
                 foreach (var handler in AllHandlers)
                     Priv.Click(ctx.Para, handler);
-                Priv.Click(ctx.Para, "btn_regionSource_Click", Priv.Get<Button>(ctx.Para, "btn_102"));
                 Priv.Call(ctx.Para, "DrawDoneEvent", ctx.Display, new DrawModelUIArgs("", null, null, default(ModelResult)));
                 WindowHost.Pump();
 
                 CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
                 Assert.IsFalse(ctx.Para.IsDrawBusy);
-            });
-        }
-
-        [TestMethod]
-        public void Handlers_IndexOutOfRange_DoNothing()
-        {
-            Run(AlgoEnum.ShapeModel, ctx =>
-            {
-                ctx.Para.SelectPara(5, new List<IParaStrategy> { ctx.Strategy });
-
-                foreach (var handler in AllHandlers)
-                    Priv.Click(ctx.Para, handler);
-                WindowHost.Pump();
-
-                CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
-                Assert.AreEqual(0, ctx.Strategy.RoiDraws.Count + ctx.Strategy.TemplateDraws.Count);
-            });
-        }
-
-        #endregion
-
-        #region 引用上游输出（ValueForm）
-
-        private const string Picked = "上游0/输出";
-
-        /// <summary>点一个"引用"按钮，应答弹出的 <see cref="ValueForm"/>；没弹出时返回 null。</summary>
-        /// <returns>(弹窗要求的类型, 弹窗拿到的初始值)</returns>
-        private static Tuple<OutEnum, string> ClickValueSource(Ctx ctx, string handler, string senderName, bool accept)
-        {
-            var dialog = Priv.Get<ValueForm>(ctx.Para, "_form_Value");
-            Tuple<OutEnum, string> seen = null;
-            using (WindowHost.RespondWhenShown(dialog, () =>
-            {
-                seen = Tuple.Create(dialog.ValueType, dialog.StrReturn);
-                dialog.StrReturn = Picked;
-                dialog.DialogResult = accept ? DialogResult.OK : DialogResult.Cancel;
-            }))
-            {
-                Priv.Click(ctx.Para, handler, senderName == null ? null : Priv.Get<Button>(ctx.Para, senderName));
-            }
-            return seen;
-        }
-
-        [DataTestMethod]
-        [DataRow(AlgoEnum.ShapeModel, "btn_100_Click", null, "cmb_100", OutEnum.Image)]
-        [DataRow(AlgoEnum.FitLine, "btn_100_Click", null, "cmb_100", OutEnum.Image)]
-        [DataRow(AlgoEnum.RotateImage, "btn_100_Click", null, "cmb_100", OutEnum.Image)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_100_Click", null, "cmb_100", OutEnum.Region)]
-        [DataRow(AlgoEnum.NccModel, "btn_101_Click", null, "cmb_101", OutEnum.Region)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_101_Click", null, "cmb_101", OutEnum.Region)]
-        [DataRow(AlgoEnum.LineRotImage, "btn_101_Click", null, "cmb_101", OutEnum.Line)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_regionSource_Click", "btn_102", "cmb_102", OutEnum.Region)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_regionSource_Click", "btn_103", "cmb_103", OutEnum.Region)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_regionSource_Click", "btn_104", "cmb_104", OutEnum.Region)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_regionSource_Click", "btn_105", "cmb_105", OutEnum.Region)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_coordSource_Click", null, "cmb_110", OutEnum.Coord)]
-        [DataRow(AlgoEnum.CreateROI, "btn_setCoordIn_Click", null, "cmb_CoordIn", OutEnum.Coord)]
-        [DataRow(AlgoEnum.FitArcMidpoint, "btn_setCoordIn_Click", null, "cmb_CoordIn", OutEnum.Coord)]
-        public void ValueSource_AsksForMatchingType_AndWritesBackOnOk(AlgoEnum algorithm, string handler, string sender, string combo, OutEnum expected)
-        {
-            Run(algorithm, ctx =>
-            {
-                var target = Priv.Get<ComboBox>(ctx.Para, combo);
-                target.Text = "上次的值";
-
-                var seen = ClickValueSource(ctx, handler, sender, accept: true);
-
-                Assert.IsNotNull(seen, "应弹出引用窗");
-                Assert.AreEqual(expected, seen.Item1);
-                Assert.AreEqual("上次的值", seen.Item2, "引用窗要拿当前值去预选节点");
-                Assert.AreEqual(Picked, target.Text);
-                CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
-            });
-        }
-
-        [TestMethod]
-        public void ValueSource_Cancelled_KeepsOriginalText()
-        {
-            Run(AlgoEnum.ShapeModel, ctx =>
-            {
-                var target = Priv.Get<ComboBox>(ctx.Para, "cmb_100");
-                target.Text = "上次的值";
-
-                Assert.IsNotNull(ClickValueSource(ctx, "btn_100_Click", null, accept: false));
-
-                Assert.AreEqual("上次的值", target.Text);
-            });
-        }
-
-        /// <summary>按钮被隐藏只是不可见，不适用的算法点到了也不能弹窗。</summary>
-        [DataTestMethod]
-        [DataRow(AlgoEnum.CreateROI, "btn_100_Click", null)]
-        [DataRow(AlgoEnum.FileImage, "btn_101_Click", null)]
-        [DataRow(AlgoEnum.ShapeModel, "btn_regionSource_Click", "btn_102")]
-        [DataRow(AlgoEnum.FitLine, "btn_coordSource_Click", null)]
-        [DataRow(AlgoEnum.MergeRegion, "btn_setCoordIn_Click", null)]
-        public void ValueSource_NotApplicableToAlgorithm_DoesNotOpen(AlgoEnum algorithm, string handler, string sender)
-        {
-            Run(algorithm, ctx =>
-            {
-                Assert.IsNull(ClickValueSource(ctx, handler, sender, accept: true));
-                CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
+                Assert.AreEqual(0, Priv.Get<TabControl>(ctx.Para, "tabControl1").TabPages.Count);
             });
         }
 
@@ -349,7 +399,7 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void EditModel_WhileDrawing_PromptsAndDoesNotOpen()
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
                 Priv.Click(ctx.Para, "btn_newModel_Click");
 
@@ -365,7 +415,7 @@ namespace DotNet.VisionMaster.Tests
         [TestMethod]
         public void EditModel_WhileEditWindowDrawing_PromptsAndDoesNotReload()
         {
-            Run(new ShapeModelStrategy(), ctx =>
+            Run(ctx =>
             {
                 Priv.Set(EditModelWindow(ctx), "_drawBusy", true);
                 try { Priv.Click(ctx.Para, "but_editModel_Click"); }
@@ -376,29 +426,11 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
-        private static IParaStrategy NewStrategy(Type type, string modelPath = null)
+        /// <summary>还没建过模板就点"编辑模板"，应提示先建模板（而不是"索引超出范围"）。</summary>
+        [TestMethod]
+        public void EditModel_NoTemplateYet_PromptsToCreateOne()
         {
-            var strategy = (IParaStrategy)Activator.CreateInstance(type);
-            if (modelPath != null)
-            {
-                var inPara = strategy.GetType().GetProperty("inPara").GetValue(strategy);
-                inPara.GetType().GetProperty("ModelPath").SetValue(inPara, modelPath);
-            }
-            return strategy;
-        }
-
-        /// <summary>
-        /// 还没建过模板就点"编辑模板"，应提示先建模板。
-        /// </summary>
-        /// <remarks>回归：此前直接取 <c>Results[0]</c>，弹出的是"索引超出范围"。</remarks>
-        [DataTestMethod]
-        [DataRow(typeof(ShapeModelStrategy))]
-        [DataRow(typeof(NccModelStrategy))]
-        [DataRow(typeof(ScaledModelStrategy))]
-        [DataRow(typeof(GenericModelStrategy))]
-        public void EditModel_NoTemplateYet_PromptsToCreateOne(Type type)
-        {
-            Run(NewStrategy(type), ctx =>
+            Run(ctx =>
             {
                 Priv.Click(ctx.Para, "but_editModel_Click");
 
@@ -408,18 +440,12 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
-        /// <summary>
-        /// 模板建过、但最近一次运行没匹配上（<c>Results</c> 被清空），应提示先匹配成功。
-        /// </summary>
-        /// <remarks>编辑窗要拿 <c>Results[0]</c> 的位姿把模板区域摆回模板图上，没有结果就无从摆放。</remarks>
-        [DataTestMethod]
-        [DataRow(typeof(ShapeModelStrategy))]
-        [DataRow(typeof(NccModelStrategy))]
-        [DataRow(typeof(ScaledModelStrategy))]
-        [DataRow(typeof(GenericModelStrategy))]
-        public void EditModel_NoMatchResult_PromptsToRunFirst(Type type)
+        /// <summary>模板建过、但最近一次运行没匹配上，应提示先匹配成功：编辑窗要拿最佳匹配的位姿摆放模板区域。</summary>
+        [TestMethod]
+        public void EditModel_NoMatchResult_PromptsToRunFirst()
         {
-            Run(NewStrategy(type, modelPath: typeof(ParaFormTests).Assembly.Location), ctx =>
+            var fake = new FakeStrategy { View = new TemplateView(typeof(ParaFormTests).Assembly.Location, null, null, null) };
+            Run(fake, ctx =>
             {
                 Priv.Click(ctx.Para, "but_editModel_Click");
 
@@ -429,16 +455,9 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
-        /// <summary>
-        /// 模板图在、也有匹配结果：打开编辑窗，不提示。
-        /// </summary>
-        /// <remarks>上面两条提示的反面 —— 闸门不能把正常情况也拦掉。</remarks>
-        [DataTestMethod]
-        [DataRow(typeof(ShapeModelStrategy))]
-        [DataRow(typeof(NccModelStrategy))]
-        [DataRow(typeof(ScaledModelStrategy))]
-        [DataRow(typeof(GenericModelStrategy))]
-        public void EditModel_TemplateAndMatchResult_OpensEditWindow(Type type)
+        /// <summary>模板图在、也有匹配结果：打开编辑窗，不提示。</summary>
+        [TestMethod]
+        public void EditModel_TemplateAndMatchResult_OpensEditWindow()
         {
             string modelPath = Path.Combine(Path.GetTempPath(), "VisionMasterTests_" + Guid.NewGuid().ToString("N") + ".png");
             HOperatorSet.GenImageConst(out HObject image, "byte", 64, 64);
@@ -447,11 +466,8 @@ namespace DotNet.VisionMaster.Tests
 
             try
             {
-                var strategy = NewStrategy(type, modelPath);
-                var inPara = strategy.GetType().GetProperty("inPara").GetValue(strategy);
-                inPara.GetType().GetProperty("Results").SetValue(inPara, new List<ModelResult> { new ModelResult(32, 32, 0, 1) });
-
-                Run(strategy, ctx =>
+                var fake = new FakeStrategy { View = new TemplateView(modelPath, null, null, new ModelResult(32, 32, 0, 1)) };
+                Run(fake, ctx =>
                 {
                     Priv.Click(ctx.Para, "but_editModel_Click");
 
@@ -464,21 +480,9 @@ namespace DotNet.VisionMaster.Tests
         }
 
         [TestMethod]
-        public void EditModel_NonModelAlgorithm_DoesNothing()
+        public void DrawDone_NonTemplateTool_Ignored()
         {
-            Run(AlgoEnum.FitLine, ctx =>
-            {
-                Priv.Click(ctx.Para, "but_editModel_Click");
-
-                CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
-                Assert.IsFalse(EditModelWindow(ctx).Visible);
-            });
-        }
-
-        [TestMethod]
-        public void DrawDone_NonModelAlgorithm_Ignored()
-        {
-            Run(AlgoEnum.CreateROI, ctx =>
+            Run(new CreateROIStrategy(), ctx =>
             {
                 ctx.Display.DrawDone("", null, null, default(ModelResult));
 
@@ -488,81 +492,61 @@ namespace DotNet.VisionMaster.Tests
 
         #endregion
 
-        #region 图像目录
-
-        [TestMethod]
-        public void OpenPath_MissingFolder_PromptsReason()
-        {
-            Run(AlgoEnum.FileImage, ctx =>
-            {
-                Priv.Get<ComboBox>(ctx.Para, "cmb_ImageFolder").Text =
-                    Path.Combine(Path.GetTempPath(), "VisionMasterTests_missing_" + Guid.NewGuid().ToString("N"));
-
-                Priv.Click(ctx.Para, "btn_openPath_Click", Priv.Get<Button>(ctx.Para, "btn_openPath"));
-
-                Assert.AreEqual(1, ctx.Prompts.Messages.Count, "打不开目录要告诉用户，而不是静默失败");
-            });
-        }
-
-        #endregion
-
         #region 释放
 
-        private static IEnumerable<Delegate> DrawDoneSubscribers(HDisplayUI display)
+        private static IEnumerable<Delegate> Subscribers(HDisplayUI display, string eventName)
         {
             var handler = (Delegate)typeof(HDisplayUI)
-                .GetField(nameof(HDisplayUI.DrawDoneEvent), BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetField(eventName, BindingFlags.Instance | BindingFlags.NonPublic)
                 .GetValue(display);
             return handler?.GetInvocationList() ?? Enumerable.Empty<Delegate>();
         }
 
         [TestMethod]
-        public void Load_SubscribesDrawDone()
+        public void Construct_SubscribesDisplayEvents()
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
-                Assert.IsTrue(DrawDoneSubscribers(ctx.Display).Any(d => d.Target == ctx.Para));
+                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.DrawDoneEvent)).Any(d => d.Target == ctx.Para));
+                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
             });
         }
 
         [TestMethod]
-        public void Dispose_ReleasesDetachedForms_AndUnsubscribesDrawDone()
+        public void Dispose_ReleasesDetachedForms_AndUnsubscribes()
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
-                var valueForm = Priv.Get<Form>(ctx.Para, "_form_Value");
+                var valueForm = Priv.Get<Form>(ctx.Para, "_valueForm");
                 var editModel = Priv.Get<Form>(ctx.Para, "_editModel");
 
                 ctx.Para.Dispose();
 
-                Assert.IsTrue(valueForm.IsDisposed, "_form_Value 没有父容器，只能由 ParaForm 释放");
+                Assert.IsTrue(valueForm.IsDisposed, "_valueForm 没有父容器，只能由 ParaForm 释放");
                 Assert.IsTrue(editModel.IsDisposed, "_editModel 没有父容器，只能由 ParaForm 释放");
-                Assert.IsFalse(DrawDoneSubscribers(ctx.Display).Any(d => d.Target == ctx.Para),
+                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.DrawDoneEvent)).Any(d => d.Target == ctx.Para),
                     "不退订的话 HDisplayUI 会一直引着已销毁的 ParaForm");
+                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
             });
         }
 
         /// <summary>
         /// 句柄重建（控件仍存活）时 HandleDestroyed 也会发，此时不能释放游离窗体。
+        /// 直接在控件存活时调 handler，验证的正是它开头那道 <c>Disposing</c> 判据。
         /// </summary>
-        /// <remarks>
-        /// 不用改 <c>RightToLeft</c> 真去重建句柄：那会连带重建 HModelUI 里的 HWindowControl，
-        /// 重建途中 HALCON 的 get_window_extents 抛 #5154，被 WinForms 弹成模态框卡住测试。
-        /// 这里直接在控件存活时调 handler，验证的正是它开头那道 <c>Disposing</c> 判据。
-        /// </remarks>
         [TestMethod]
         public void HandleDestroyed_WhileAlive_DoesNotReleaseDetachedForms()
         {
-            Run(AlgoEnum.ShapeModel, ctx =>
+            Run(ctx =>
             {
-                var valueForm = Priv.Get<Form>(ctx.Para, "_form_Value");
+                var valueForm = Priv.Get<Form>(ctx.Para, "_valueForm");
                 var editModel = Priv.Get<Form>(ctx.Para, "_editModel");
 
                 Priv.Click(ctx.Para, "ParaForm_HandleDestroyed", ctx.Para);
 
                 Assert.IsFalse(valueForm.IsDisposed);
                 Assert.IsFalse(editModel.IsDisposed);
-                Assert.IsTrue(DrawDoneSubscribers(ctx.Display).Any(d => d.Target == ctx.Para));
+                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.DrawDoneEvent)).Any(d => d.Target == ctx.Para));
             });
         }
 

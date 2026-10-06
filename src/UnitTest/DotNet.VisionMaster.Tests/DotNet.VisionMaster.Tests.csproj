@@ -101,6 +101,12 @@
       <Project>{61B8513D-A49F-451E-B525-A7DB5692CD32}</Project>
       <Name>DotNet.Logging</Name>
     </ProjectReference>
+    <!-- 只为保证构建顺序: 插件 dll 由测试在运行时复制进临时 plugins 目录加载, 不作为普通引用 -->
+    <ProjectReference Include="..\DotNet.SamplePlugin\DotNet.SamplePlugin.csproj">
+      <Project>{6e4b0c1a-3f7d-4a52-9c8e-2b1d5f0a7e31}</Project>
+      <Name>DotNet.SamplePlugin</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

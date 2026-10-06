@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using DotNet.Drawing;
 using DotNet.HalconCore;
@@ -27,8 +27,9 @@ namespace DotNet.HalconAlgo.Tests
 
             _strategy = new FitArcMidpointStrategy();
             // 圆盘右侧弧段：沿列从内（亮）向外（暗）测量，行 70..130 共 7 个测量矩形
+            _strategy.inPara.HoRect.Dispose();
             _strategy.inPara.HoRect = NewAffRect(new Point2d(150, 100), 40, 60);
-            _strategy.inPara.Transition = "由白到黑";
+            _strategy.inPara.Transition = Transition.Negative;
         }
 
         [TestCleanup]
@@ -41,16 +42,18 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Identity()
         {
-            Assert.AreEqual(AlgoEnum.FitArcMidpoint, _strategy.Algorithm);
+            var info = AlgoInfo.Of(_strategy);
+            Assert.AreEqual("fit.arc-midpoint", info.Key);
+            Assert.AreEqual(RectEnum.AffRect, info.DefaultRoi, "新建 ROI 默认带角度的矩形");
             Assert.AreEqual("圆弧中点", _strategy.Name);
         }
 
         [TestMethod]
         public void FindsMidpointOfRightArc()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            var mid = _strategy.inPara.ArcMidpoint;
+            var mid = _strategy.ArcMidpoint;
             Assert.AreEqual(150, mid.X, 1.0);
             Assert.AreEqual(100, mid.Y, 1.0);
         }
@@ -58,44 +61,61 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Overlay_IsDrawnAndReleased()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            Assert.IsNull(_strategy.TakeRenderData(), "Fun_action 画完叠加层后应立即释放，不留待取数据");
+            Assert.IsNull(_strategy.TakeRenderData(), "画完叠加层后应立即释放，不留待取数据");
             Assert.AreEqual(1, _display.Points.Count(p => p.ColorName == HColor.OrangeRed.Name), "中点");
             Assert.AreEqual(5, _display.Points.Count(p => p.ColorName == HColor.Green.Name), "7 点裁首尾后剩 5 点");
             Assert.AreEqual(2, _display.Points.Count(p => p.ColorName == HColor.Red.Name));
             StringAssert.Contains(_display.LastText, "圆弧中点 : 中点:(");
             StringAssert.Contains(_display.LastText, "用点:5");
+            Assert.AreEqual(1, _display.Texts.Count, "结果文本只由基类画一次");
             Assert.IsTrue(_display.Texts.All(t => t.ColorName == HColor.Green.Name));
         }
 
+        /// <summary> 无界面运行：显示数据留在槽里，机台可在任意线程取走绘制 </summary>
         [TestMethod]
-        public void ImageOverload_SetsDisplayImage()
+        public void Headless_LeavesRenderDataForTaking()
+        {
+            Assert.IsTrue(_strategy.Run(RunContext.ForImage(_image), null).IsOk);
+
+            using (var data = _strategy.TakeRenderData())
+            {
+                Assert.IsNotNull(data);
+                Assert.IsTrue(data.HasMidpoint);
+                Assert.AreEqual(_strategy.ArcMidpoint, data.Midpoint);
+            }
+            Assert.IsNull(_strategy.TakeRenderData(), "取走后槽为空");
+        }
+
+        [TestMethod]
+        public void ImageOverload_UsesGivenImage()
         {
             var display = new FakeDisplay();
-            Assert.IsTrue(_strategy.Fun_action(_image, display));
-            Assert.AreSame(_image, display.HoImage);
-            Assert.AreEqual(150, _strategy.inPara.ArcMidpoint.X, 1.0);
+            Assert.IsTrue(_strategy.OnImage(_image, display).IsOk);
+            Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
             Assert.IsNull(_strategy.TakeRenderData());
         }
 
         [TestMethod]
-        public void NoEdge_Throws_ButStillDrawsPartialOverlay()
+        public void NoEdge_Fails_ButStillDrawsPartialOverlay()
         {
-            _strategy.inPara.Transition = "由黑到白";
+            _strategy.inPara.Transition = Transition.Positive;
             _strategy.inPara.DispFixRegion = true;
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
+            var result = _strategy.On(_display);
 
-            StringAssert.Contains(ex.Message, "未找到足够的轮廓点");
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "未找到足够的轮廓点");
             Assert.AreEqual(1, _display.Objects.Count(o => o.ColorName == HColor.Blue.Name), "失败时仍显示查找区域便于排查");
             Assert.AreEqual(7, _display.Rect2Centers.Count, "失败时仍显示测量矩形");
-            Assert.AreEqual(0, _display.Texts.Count, "失败时没有结果文本");
+            Assert.AreEqual(1, _display.Texts.Count, "失败原因由基类统一画成红字");
+            Assert.AreEqual(HColor.Red.Name, _display.Texts[0].ColorName);
             Assert.IsNull(_strategy.TakeRenderData());
         }
 
         [TestMethod]
-        public void TooFewPoints_Throws_ButStillDrawsFoundPoints()
+        public void TooFewPoints_Fails_ButStillDrawsFoundPoints()
         {
             // 行 60..114 右半圆涂黑: 测量矩形在行 70..130 每 10 行一个, 只有行 120 / 130 仍有边缘, 共 2 点 < 3
             using (var mask = Rectangle1(60, 100, 114, Size - 1))
@@ -103,9 +123,9 @@ namespace DotNet.HalconAlgo.Tests
             {
                 _display.SetImage(masked);
 
-                var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-
-                StringAssert.Contains(ex.Message, "未找到足够的轮廓点");
+                var result = _strategy.On(_display);
+                Assert.AreEqual(RunStatus.Error, result.Status);
+                StringAssert.Contains(result.Message, "未找到足够的轮廓点");
             }
 
             // 点不足恰恰最需要看点落在哪: 已找到的点在失败时也要画出来
@@ -127,9 +147,9 @@ namespace DotNet.HalconAlgo.Tests
             _strategy.inPara.HoRect.Dispose();
             _strategy.inPara.HoRect = NewAffRect(new Point2d(x, y), 40, 60, phiDeg * Math.PI / 180);
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            var mid = _strategy.inPara.ArcMidpoint;
+            var mid = _strategy.ArcMidpoint;
             Assert.AreEqual(x, mid.X, 1.0);
             Assert.AreEqual(y, mid.Y, 1.0);
         }
@@ -146,12 +166,12 @@ namespace DotNet.HalconAlgo.Tests
                 _display.SetImage(bumped);
                 _strategy.inPara.HoRect.Dispose();
                 _strategy.inPara.HoRect = NewAffRect(new Point2d(150, 100), 60, 60);
-                _strategy.inPara.TrimEnds = "否";
+                _strategy.inPara.TrimEnds = false;
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+                Assert.IsTrue(_strategy.On(_display).IsOk);
             }
 
-            var mid = _strategy.inPara.ArcMidpoint;
+            var mid = _strategy.ArcMidpoint;
             Assert.AreEqual(150, mid.X, 1.0);
             Assert.AreEqual(100, mid.Y, 1.0);
 
@@ -163,7 +183,7 @@ namespace DotNet.HalconAlgo.Tests
         }
 
         [TestMethod]
-        public void NotEnoughPoints_Throws_StillDrawsFoundPoints()
+        public void NotEnoughPoints_Fails_StillDrawsFoundPoints()
         {
             // 3 个测量矩形(行 90/100/110), 把行 110 附近涂暗后只剩 2 个边缘点 < 最少 3 点
             using (var mask = Rectangle1(105, 100, 115, Size - 1))
@@ -173,96 +193,91 @@ namespace DotNet.HalconAlgo.Tests
                 _strategy.inPara.HoRect.Dispose();
                 _strategy.inPara.HoRect = NewAffRect(new Point2d(150, 100), 40, 20);
 
-                var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-                StringAssert.Contains(ex.Message, "未找到足够的轮廓点");
+                var result = _strategy.On(_display);
+                Assert.AreEqual(RunStatus.Error, result.Status);
+                StringAssert.Contains(result.Message, "未找到足够的轮廓点");
             }
 
-            // 原先点集只在拟合成功后才挂到显示数据上, 恰恰是点不够时最需要看点落在哪
             Assert.AreEqual(2, _display.Points.Count(p => p.ColorName == HColor.Green.Name), "失败时仍显示已找到的点");
             Assert.AreEqual(0, _display.Points.Count(p => p.ColorName == HColor.OrangeRed.Name), "失败时没有中点");
-            Assert.AreEqual(0, _display.Texts.Count);
         }
 
         [TestMethod]
-        public void RoiNotDrawn_Throws()
+        public void RoiNotDrawn_Fails()
         {
+            _strategy.inPara.HoRect.Dispose();
             _strategy.inPara.HoRect = new CvRegion { Type = RectEnum.AffRect };
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-            StringAssert.Contains(ex.Message, "尚未绘制 ROI");
+            var result = _strategy.On(_display);
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "尚未绘制 ROI");
         }
 
         [TestMethod]
-        public void NoImage_Throws()
+        public void NoImage_Fails()
         {
-            Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(new FakeDisplay(), Strategies.Of()));
+            var result = _strategy.On(new FakeDisplay());
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "图像来源为空");
         }
 
         [TestMethod]
         public void Failure_ResetsPreviousMidpoint()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
-            Assert.AreNotEqual(default(Point2d), _strategy.inPara.ArcMidpoint);
+            Assert.IsTrue(_strategy.On(_display).IsOk);
+            Assert.AreNotEqual(default(Point2d), _strategy.ArcMidpoint);
 
-            _strategy.inPara.Transition = "由黑到白";
-            Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
+            _strategy.inPara.Transition = Transition.Positive;
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display).Status);
 
-            // 宿主吞掉异常后下游照跑: 不能继续拿到上一轮的中点
-            Assert.AreEqual(default(Point2d), _strategy.inPara.ArcMidpoint);
+            // 宿主不看结果时下游照跑: 不能继续拿到上一轮的中点
+            Assert.AreEqual(default(Point2d), _strategy.ArcMidpoint);
         }
 
         [TestMethod]
-        public void ImageOverload_Failure_ResetsPreviousMidpoint()
+        public void InvalidTransition_ClearError_ResetsPreviousMidpoint()
         {
-            Assert.IsTrue(_strategy.Fun_action(_image, new FakeDisplay()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            _strategy.inPara.Transition = "由黑到白";
-            Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_image, new FakeDisplay()));
+            _strategy.inPara.Transition = (Transition)99;   // 旧配置手改出来的非法值
+            var result = _strategy.On(_display);
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "过渡方向");
+            StringAssert.Contains(result.Message, "99", "报错要带出写错的原值");
+            StringAssert.StartsWith(_display.LastText, _strategy.Name + " : ", "状态文本带出工具名");
 
-            Assert.AreEqual(default(Point2d), _strategy.inPara.ArcMidpoint);
-        }
-
-        [TestMethod]
-        public void UnknownTransition_ThrowsClearError_ResetsPreviousMidpoint()
-        {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
-
-            _strategy.inPara.Transition = "未知";
-            var ex = Assert.ThrowsException<ArgumentException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-            StringAssert.Contains(ex.Message, "过渡方向");
-            StringAssert.Contains(ex.Message, "未知", "报错要带出写错的原值");
-            StringAssert.Contains(ex.Message, _strategy.Name, "报错要带出工具名");
-
-            Assert.AreEqual(default(Point2d), _strategy.inPara.ArcMidpoint);
+            Assert.AreEqual(default(Point2d), _strategy.ArcMidpoint);
         }
 
         [TestMethod]
         public void ImageIn_ResolvesUpstreamImage()
         {
-            _strategy.inPara.ImageIn = "取像/图像";
+            var camera = new StubStrategy("取像").Image("图像", () => _image);
+            _strategy.inPara.ImageIn = camera.Ref("图像");
             // 显示窗口里是全黑图, 只有上游那张有圆盘
             using (var black = ConstImage(Size, Size, 0))
             {
                 _display.SetImage(black);
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(new StubStrategy("取像").Output("图像", _image))));
+                Assert.IsTrue(_strategy.On(_display, camera).IsOk);
             }
 
-            Assert.AreEqual(150, _strategy.inPara.ArcMidpoint.X, 1.0);
-            Assert.AreEqual(100, _strategy.inPara.ArcMidpoint.Y, 1.0);
+            Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
+            Assert.AreEqual(100, _strategy.ArcMidpoint.Y, 1.0);
         }
 
         [TestMethod]
-        public void RegionIn_UpstreamRegionExcludingArc_Throws()
+        public void RegionIn_UpstreamRegionExcludingArc_Fails()
         {
-            // 圆盘右缘在列 ~150；上游区域只到列 140。原先 measure_pos 忽略定义域，区域外的弧照样拟合成功
+            // 圆盘右缘在列 ~150；上游区域只到列 140。measure_pos 忽略定义域，必须先滤掉域外点
             using (var upstreamRegion = Rectangle1(0, 0, Size - 1, 140))
             {
-                _strategy.inPara.RegionIn = "上游/区域";
-                var upstream = new StubStrategy("上游").Output("区域", upstreamRegion);
+                var upstream = new StubStrategy("上游").Region("区域", () => upstreamRegion);
+                _strategy.inPara.RegionIn = upstream.Ref("区域");
 
-                var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of(upstream)));
-                StringAssert.Contains(ex.Message, "未找到足够的轮廓点");
-                Assert.AreEqual(default(Point2d), _strategy.inPara.ArcMidpoint);
+                var result = _strategy.On(_display, upstream);
+                Assert.AreEqual(RunStatus.Error, result.Status);
+                StringAssert.Contains(result.Message, "未找到足够的轮廓点");
+                Assert.AreEqual(default(Point2d), _strategy.ArcMidpoint);
             }
         }
 
@@ -271,44 +286,45 @@ namespace DotNet.HalconAlgo.Tests
         {
             using (var upstreamRegion = Rectangle1(0, 0, Size - 1, Size - 1))
             {
-                _strategy.inPara.RegionIn = "上游/区域";
-                var upstream = new StubStrategy("上游").Output("区域", upstreamRegion);
+                var upstream = new StubStrategy("上游").Region("区域", () => upstreamRegion);
+                _strategy.inPara.RegionIn = upstream.Ref("区域");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(upstream)));
-                Assert.AreEqual(150, _strategy.inPara.ArcMidpoint.X, 1.0);
-                Assert.AreEqual(100, _strategy.inPara.ArcMidpoint.Y, 1.0);
+                Assert.IsTrue(_strategy.On(_display, upstream).IsOk);
+                Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
+                Assert.AreEqual(100, _strategy.ArcMidpoint.Y, 1.0);
+                Assert.IsTrue(upstreamRegion.IsInitialized(), "上游区域是借用的, 不能被释放");
             }
         }
 
         [TestMethod]
         public void MaxErrAndCoarseGateZero_DisableFiltering()
         {
-            // 两个门限都为 0 时粗滤门限也是 0：原先 RemoveOutliers 没有 <= 0 守卫，残差非零的点全被剔光
+            // 两个门限都为 0 时粗滤门限也是 0：RemoveOutliers 的 <= 0 守卫让它不剔点
             _strategy.inPara.MaxErr = 0;
             _strategy.inPara.CoarseGate = 0;
-            _strategy.inPara.TrimEnds = "否";
+            _strategy.inPara.TrimEnds = false;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            Assert.AreEqual(150, _strategy.inPara.ArcMidpoint.X, 1.0);
+            Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
             Assert.AreEqual(0, _display.Points.Count(p => p.ColorName == HColor.Red.Name));
             StringAssert.Contains(_display.LastText, "用点:7");
         }
 
         [TestMethod]
-        public void SigmaZero_FromUi_StillFits()
+        public void SigmaZero_StillFits()
         {
             _strategy.inPara.Sigma = 0;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
-            Assert.AreEqual(150, _strategy.inPara.ArcMidpoint.X, 1.0);
+            Assert.IsTrue(_strategy.On(_display).IsOk);
+            Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
         }
 
         [TestMethod]
-        public void RegionIn_Unresolvable_Throws()
+        public void RegionIn_Unresolvable_Fails()
         {
-            _strategy.inPara.RegionIn = "上游/区域";
-            Assert.ThrowsException<AlgoOutputNotFoundException>(() => _strategy.Fun_action(_display, Strategies.Of()));
+            _strategy.inPara.RegionIn = new StubStrategy("上游").Ref("区域");
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display).Status);
         }
 
         [TestMethod]
@@ -317,78 +333,86 @@ namespace DotNet.HalconAlgo.Tests
             using (var image = DiskImage(Size + 40, Size, new Point2d(130, 100), Radius))
             {
                 _display.SetImage(image);
-                _strategy.inPara.CoordIn = "定位/坐标系";
                 var locator = StubStrategy.Coord("定位", new Point2d(100, 100), new CvCoord(130, 100));
+                _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(locator)));
+                Assert.IsTrue(_strategy.On(_display, locator).IsOk);
 
-                Assert.AreEqual(180, _strategy.inPara.ArcMidpoint.X, 1.0);
-                Assert.AreEqual(100, _strategy.inPara.ArcMidpoint.Y, 1.0);
+                Assert.AreEqual(180, _strategy.ArcMidpoint.X, 1.0);
+                Assert.AreEqual(100, _strategy.ArcMidpoint.Y, 1.0);
             }
         }
 
         [TestMethod]
         public void CoordIn_RotatesAroundTmplPoint()
         {
-            // 坐标系绕圆心转 -90°（HALCON 角度逆时针为正，行向下）：右侧弧段转到上方。
-            _strategy.inPara.CoordIn = "定位/坐标系";
+            // 坐标系绕圆心转 90°（HALCON 角度逆时针为正，行向下）：右侧弧段转到上方。
             var locator = StubStrategy.Coord("定位", DiskCenter, CvCoord.FromDegrees(100, 100, 90));
+            _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(locator)));
+            Assert.IsTrue(_strategy.On(_display, locator).IsOk);
 
-            var mid = _strategy.inPara.ArcMidpoint;
+            var mid = _strategy.ArcMidpoint;
             Assert.AreEqual(100, mid.X, 1.0);
             Assert.AreEqual(50, mid.Y, 1.0, "逆时针 90° 后右侧 (150,100) 转到顶部 (100,50)");
         }
 
         [TestMethod]
-        public void Outputs_AfterGenTreeNode()
+        public void Outputs_TreeAndResolution()
         {
             var tree = new FakeTree();
             _strategy.GenTreeNode(tree);
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
             CollectionAssert.IsSubsetOf(new[] { "圆弧中点/中点", "圆弧中点/中点/行", "圆弧中点/中点/列" }, tree.Paths);
+            Assert.AreEqual(OutEnum.Point, tree.Types["圆弧中点/中点"]);
 
-            var mid = _strategy.inPara.ArcMidpoint;
-            Assert.AreEqual(mid, Strategies.Of(_strategy).ResolveFrom<Point2d>("圆弧中点/中点"));
-            Assert.AreEqual(mid.Y, _strategy.ResolveOutput<double>(new[] { "中点", "行" }));
-            Assert.AreEqual(mid.X, _strategy.ResolveOutput<double>(new[] { "中点", "列" }));
+            var mid = _strategy.ArcMidpoint;
+            var ctx = new RunContext(null, new IParaStrategy[] { _strategy });
+            Assert.AreEqual(mid, ctx.Resolve<Point2d>(_strategy.Ref("中点")));
+            Assert.AreEqual(mid.Y, ctx.Resolve<double>(_strategy.Ref("中点/行")));
+            Assert.AreEqual(mid.X, ctx.Resolve<double>(_strategy.Ref("中点/列")));
         }
 
         [TestMethod]
-        public void SavePara_CoarseGate_FallsBackTo15()
+        public void Params_Declared()
         {
-            var ui = new FakeUiHost();
-            _strategy.inPara.CoarseGate = 30;
-            _strategy.DispPara(ui);
-            ui.Values.Remove("cmb_114");
-
-            _strategy.SavePara(ui);
-
-            Assert.AreEqual(15.0, _strategy.inPara.CoarseGate, "读不到粗滤阈值时回落到默认 15");
-        }
-
-        [TestMethod]
-        public void ParaRoundTrip()
-        {
-            var p = _strategy.inPara;
-            p.CoarseGate = 30;
-            p.MaxErr = 3;
-            p.ContourType = "第二条边";
-            p.DispFixRegion = true;
-
-            var ui = new FakeUiHost();
-            _strategy.DispPara(ui);
-            using (var other = new FitArcMidpointStrategy())
+            var labels = _strategy.Labels(TabPageEnum.Parameter);
+            CollectionAssert.AreEqual(new[]
             {
-                other.SavePara(ui);
-                Assert.AreEqual(30.0, other.inPara.CoarseGate);
-                Assert.AreEqual(3, other.inPara.MaxErr);
-                Assert.AreEqual("第二条边", other.inPara.ContourType);
-                Assert.AreEqual("由白到黑", other.inPara.Transition);
-                Assert.IsTrue(other.inPara.DispFixRegion);
-            }
+                "图像来源", "区域来源", "过渡方向", "选择", "滤波", "阈值", "步距", "步宽", "最大偏差", "裁剪首尾", "粗滤阈值",
+            }, labels);
+            CollectionAssert.AreEqual(new[] { "跟随坐标" }, _strategy.Labels(TabPageEnum.Region));
+            CollectionAssert.IsSubsetOf(new[] { "查找区域", "拟合区域", "拟合点", "显示结果", "点大小", "显示文本" },
+                _strategy.Labels(TabPageEnum.Display));
+        }
+
+        [TestMethod]
+        public void Params_WriteBackValuesNotTexts()
+        {
+            Assert.IsTrue(_strategy.SetParam("粗滤阈值", 30.0));
+            Assert.IsTrue(_strategy.SetParam("最大偏差", 3));
+            Assert.IsTrue(_strategy.SetParam("选择", EdgeSelect.Second));
+            Assert.IsTrue(_strategy.SetParam("拟合区域", true));
+
+            Assert.AreEqual(30.0, _strategy.inPara.CoarseGate);
+            Assert.AreEqual(3, _strategy.inPara.MaxErr);
+            Assert.AreEqual(EdgeSelect.Second, _strategy.inPara.ContourType);
+            Assert.IsTrue(_strategy.inPara.DispFixRegion);
+
+            var choice = (ChoiceParam)_strategy.Param("过渡方向");
+            Assert.AreEqual("由白到黑", choice.Options[choice.SelectedIndex].Text, "界面文字只出现在选项声明里");
+        }
+
+        [TestMethod]
+        public void Params_NumberValidation()
+        {
+            var threshold = (NumberParam)_strategy.Param("阈值");
+            Assert.IsFalse(threshold.TryParse("-1", out _, out string error));
+            StringAssert.Contains(error, "不能小于");
+            Assert.IsFalse(threshold.TryParse("abc", out _, out _));
+            Assert.IsTrue(threshold.TryParse("30", out object value, out _));
+            Assert.AreEqual(30, value);
         }
 
         [TestMethod]

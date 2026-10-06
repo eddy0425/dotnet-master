@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.VisionMaster", "Usin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.Drawing", "Using\DotNet.Drawing\DotNet.Drawing.csproj", "{CE09ACC5-0E8D-4D7D-AA2B-D47B837F2CD2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.SamplePlugin", "UnitTest\DotNet.SamplePlugin\DotNet.SamplePlugin.csproj", "{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -107,6 +109,10 @@ Global
 		{CE09ACC5-0E8D-4D7D-AA2B-D47B837F2CD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CE09ACC5-0E8D-4D7D-AA2B-D47B837F2CD2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CE09ACC5-0E8D-4D7D-AA2B-D47B837F2CD2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -127,6 +133,7 @@ Global
 		{F64662FA-E352-43AE-9B06-2E1ECFB1F205} = {C3853247-25A3-492D-87FA-AC25EDCB5934}
 		{05DB6968-170A-4786-8DF3-FC401E406EDD} = {C3853247-25A3-492D-87FA-AC25EDCB5934}
 		{CE09ACC5-0E8D-4D7D-AA2B-D47B837F2CD2} = {C3853247-25A3-492D-87FA-AC25EDCB5934}
+		{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {85015248-7E70-49E3-B9EE-6AD3B0689B2B}

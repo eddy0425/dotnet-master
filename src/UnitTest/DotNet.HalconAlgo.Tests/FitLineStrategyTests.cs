@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using DotNet.Drawing;
@@ -26,6 +26,7 @@ namespace DotNet.HalconAlgo.Tests
 
             _strategy = new FitLineStrategy();
             // 沿列测量 60 宽，沿行步进 120 高：步数 6 → 13 个测量矩形，行 40..160
+            _strategy.inPara.HoRect.Dispose();
             _strategy.inPara.HoRect = NewAffRect(new Point2d(100, 100), 60, 120);
         }
 
@@ -39,16 +40,17 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Identity()
         {
-            Assert.AreEqual(AlgoEnum.FitLine, _strategy.Algorithm);
+            Assert.AreEqual("fit.line", AlgoInfo.Of(_strategy).Key);
+            Assert.AreEqual(RectEnum.AffRect, AlgoInfo.Of(_strategy).DefaultRoi);
             Assert.AreEqual("拟合直线", _strategy.Name);
         }
 
         [TestMethod]
         public void FitsVerticalEdge_WithTrimEnds()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            var line = _strategy.inPara.Line;
+            var line = _strategy.Line;
             Assert.AreEqual(99.5, line.Start.X, 0.5);
             Assert.AreEqual(99.5, line.End.X, 0.5);
             // 首尾各裁掉一个点：剩余 11 点，行 50..150
@@ -65,11 +67,11 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void TrimEndsOff_UsesAllPoints()
         {
-            _strategy.inPara.TrimEnds = "否";
+            _strategy.inPara.TrimEnds = false;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            var line = _strategy.inPara.Line;
+            var line = _strategy.Line;
             Assert.AreEqual(40, Math.Min(line.Start.Y, line.End.Y), 0.5);
             Assert.AreEqual(160, Math.Max(line.Start.Y, line.End.Y), 0.5);
             Assert.AreEqual(0, _display.Points.Count(p => p.ColorName == HColor.Red.Name));
@@ -85,7 +87,7 @@ namespace DotNet.HalconAlgo.Tests
             _strategy.inPara.DispText = false;
             _strategy.inPara.DispFixRegion = true;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
             Assert.AreEqual(0, _display.Objects.Count);
             Assert.AreEqual(0, _display.Points.Count);
@@ -94,26 +96,19 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(13, _display.Rect2Centers.Count, "拟合区域：每个测量矩形各画一次");
         }
 
+        /// <summary> 单图验证没有上游：本地图像来源就是给的那张图 </summary>
         [TestMethod]
-        public void ImageOverload_SetsDisplayImage()
+        public void ImageOverload_UsesGivenImage()
         {
-            var display = new FakeDisplay();
-            Assert.IsTrue(_strategy.Fun_action(_image, display));
-            Assert.AreSame(_image, display.HoImage);
-            Assert.AreEqual(99.5, _strategy.inPara.Line.Start.X, 0.5);
+            Assert.IsTrue(_strategy.OnImage(_image, new FakeDisplay()).IsOk);
+            Assert.AreEqual(99.5, _strategy.Line.Start.X, 0.5);
         }
 
         [TestMethod]
-        public void ImageOverload_IgnoresImageIn_UsesGivenImage()
+        public void Headless_Computes()
         {
-            // 单图重载没有上游: 原先转到另一重载按 ImageIn 取图, 明明给了图却抛 AlgoOutputNotFoundException
-            _strategy.inPara.ImageIn = "上游/图像";
-            var display = new FakeDisplay();
-
-            Assert.IsTrue(_strategy.Fun_action(_image, display));
-
-            Assert.AreSame(_image, display.HoImage);
-            Assert.AreEqual(99.5, _strategy.inPara.Line.Start.X, 0.5);
+            Assert.IsTrue(_strategy.Run(RunContext.ForImage(_image), null).IsOk);
+            Assert.AreEqual(99.5, _strategy.Line.Start.X, 0.5);
         }
 
         [TestMethod]
@@ -124,12 +119,12 @@ namespace DotNet.HalconAlgo.Tests
             using (var notched = Paint(_image, notch, 0))
             {
                 _display.SetImage(notched);
-                _strategy.inPara.TrimEnds = "否";
+                _strategy.inPara.TrimEnds = false;
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+                Assert.IsTrue(_strategy.On(_display).IsOk);
             }
 
-            var line = _strategy.inPara.Line;
+            var line = _strategy.Line;
             Assert.AreEqual(99.5, line.Start.X, 0.5, "离群点被剔除后直线回到真实边缘");
             Assert.AreEqual(99.5, line.End.X, 0.5);
 
@@ -147,10 +142,10 @@ namespace DotNet.HalconAlgo.Tests
             using (var notched = Paint(_image, notch, 0))
             {
                 _display.SetImage(notched);
-                _strategy.inPara.TrimEnds = "否";
+                _strategy.inPara.TrimEnds = false;
                 _strategy.inPara.MaxErr = 100;
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+                Assert.IsTrue(_strategy.On(_display).IsOk);
             }
 
             Assert.AreEqual(0, _display.Points.Count(p => p.ColorName == HColor.Red.Name));
@@ -158,9 +153,9 @@ namespace DotNet.HalconAlgo.Tests
         }
 
         [DataTestMethod]
-        [DataRow("第一条边", 99.5)]
-        [DataRow("第二条边", 129.5)]
-        public void ContourType_SelectsEdge(string contourType, double expectedX)
+        [DataRow(EdgeSelect.First, 99.5)]
+        [DataRow(EdgeSelect.Second, 129.5)]
+        public void ContourType_SelectsEdge(EdgeSelect contourType, double expectedX)
         {
             // 亮带 100..119、暗带 120..129、其后再亮: 由黑到白的边缘在 99.5 与 129.5 各一条
             using (var dark = Rectangle1(0, 120, Size - 1, 129))
@@ -171,74 +166,81 @@ namespace DotNet.HalconAlgo.Tests
                 _strategy.inPara.HoRect = NewAffRect(new Point2d(110, 100), 80, 120);
                 _strategy.inPara.ContourType = contourType;
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+                Assert.IsTrue(_strategy.On(_display).IsOk);
             }
 
-            Assert.AreEqual(expectedX, _strategy.inPara.Line.Start.X, 0.5);
-            Assert.AreEqual(expectedX, _strategy.inPara.Line.End.X, 0.5);
+            Assert.AreEqual(expectedX, _strategy.Line.Start.X, 0.5);
+            Assert.AreEqual(expectedX, _strategy.Line.End.X, 0.5);
         }
 
         [TestMethod]
-        public void NoImage_Throws()
+        public void NoImage_Fails_WithToolNameInStatus()
         {
-            var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(new FakeDisplay(), Strategies.Of()));
-            StringAssert.Contains(ex.Message, "拟合直线");
+            var display = new FakeDisplay();
+            var result = _strategy.On(display);
+
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "图像来源为空");
+            StringAssert.StartsWith(display.LastText, "拟合直线 : ");
         }
 
         [TestMethod]
-        public void RoiNotDrawn_Throws()
+        public void RoiNotDrawn_Fails()
         {
+            _strategy.inPara.HoRect.Dispose();
             _strategy.inPara.HoRect = new CvRegion { Type = RectEnum.AffRect };
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-            StringAssert.Contains(ex.Message, "尚未绘制 ROI");
+            var result = _strategy.On(_display);
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "尚未绘制 ROI");
         }
 
         [TestMethod]
-        public void NoEdge_Throws()
+        public void NoEdge_Fails()
         {
-            _strategy.inPara.Transition = "由白到黑";
+            _strategy.inPara.Transition = Transition.Negative;
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-            StringAssert.Contains(ex.Message, "未找到足够的轮廓点");
+            var result = _strategy.On(_display);
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "未找到足够的轮廓点");
         }
 
         [TestMethod]
         public void Failure_ResetsPreviousLine()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
-            Assert.IsFalse(_strategy.inPara.Line.IsDegenerate);
+            Assert.IsTrue(_strategy.On(_display).IsOk);
+            Assert.IsFalse(_strategy.Line.IsDegenerate);
 
-            _strategy.inPara.Transition = "由白到黑";
-            Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of()));
+            _strategy.inPara.Transition = Transition.Negative;
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display).Status);
 
-            // 宿主吞掉异常后下游照跑: 此时必须拿到退化直线(下游会明确报错), 而不是上一轮的旧直线
-            Assert.IsTrue(_strategy.inPara.Line.IsDegenerate);
+            // 下游照跑时必须拿到退化直线(下游会明确报错), 而不是上一轮的旧直线
+            Assert.IsTrue(_strategy.Line.IsDegenerate);
         }
 
         [TestMethod]
-        public void UnknownTransition_ThrowsClearError_ResetsPreviousLine()
+        public void InvalidTransition_ClearError_ResetsPreviousLine()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            // job 文件里手改 / 旧版本留下的非法值: 必须报出配置错误, 而不是 HALCON 原生异常
-            _strategy.inPara.Transition = "未知";
-            var ex = Assert.ThrowsException<ArgumentException>(() => _strategy.Fun_action(_display, Strategies.Of()));
-            StringAssert.Contains(ex.Message, "过渡方向");
-            StringAssert.Contains(ex.Message, "未知", "报错要带出写错的原值");
-            StringAssert.Contains(ex.Message, _strategy.Name, "报错要带出工具名");
+            // 配置文件里手改出来的非法值: 必须报出配置错误, 而不是 HALCON 原生异常
+            _strategy.inPara.Transition = (Transition)99;
+            var result = _strategy.On(_display);
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "过渡方向");
+            StringAssert.Contains(result.Message, "99", "报错要带出写错的原值");
 
-            Assert.IsTrue(_strategy.inPara.Line.IsDegenerate);
+            Assert.IsTrue(_strategy.Line.IsDegenerate);
         }
 
         [TestMethod]
         public void NoImage_ResetsPreviousLine()
         {
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(new FakeDisplay(), Strategies.Of()));
+            Assert.AreEqual(RunStatus.Error, _strategy.On(new FakeDisplay()).Status);
 
-            Assert.IsTrue(_strategy.inPara.Line.IsDegenerate);
+            Assert.IsTrue(_strategy.Line.IsDegenerate);
         }
 
         [TestMethod]
@@ -246,11 +248,11 @@ namespace DotNet.HalconAlgo.Tests
         {
             using (var shifted = VerticalStepImage(Size, Size, 110))
             {
-                _strategy.inPara.ImageIn = "取像/图像";
-                var upstream = new StubStrategy("取像").Output("图像", shifted);
+                var upstream = new StubStrategy("取像").Image("图像", () => shifted);
+                _strategy.inPara.ImageIn = upstream.Ref("图像");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(upstream)));
-                Assert.AreEqual(109.5, _strategy.inPara.Line.Start.X, 0.5, "应使用上游图像而不是窗口图像");
+                Assert.IsTrue(_strategy.On(_display, upstream).IsOk);
+                Assert.AreEqual(109.5, _strategy.Line.Start.X, 0.5, "应使用上游图像而不是窗口图像");
             }
         }
 
@@ -259,27 +261,30 @@ namespace DotNet.HalconAlgo.Tests
         {
             using (var upstreamRegion = Rectangle1(0, 0, Size - 1, Size - 1))
             {
-                _strategy.inPara.RegionIn = "区域源/区域";
-                var upstream = new StubStrategy("区域源").Output("区域", upstreamRegion);
+                var upstream = new StubStrategy("区域源").Region("区域", () => upstreamRegion);
+                _strategy.inPara.RegionIn = upstream.Ref("区域");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(upstream)));
-                Assert.AreEqual(99.5, _strategy.inPara.Line.Start.X, 0.5);
-                Assert.AreSame(upstreamRegion, _display.Objects.Single().Item, "显示的查找区域就是上游区域");
+                Assert.IsTrue(_strategy.On(_display, upstream).IsOk);
+                Assert.AreEqual(99.5, _strategy.Line.Start.X, 0.5);
+                var shown = _display.Objects.Single().Item;
+                Assert.AreEqual(AreaCenter(upstreamRegion, out _), AreaCenter(shown, out _), "显示的查找区域就是上游区域");
+                Assert.IsTrue(upstreamRegion.IsInitialized(), "上游区域是借用的");
             }
         }
 
         [TestMethod]
-        public void RegionIn_UpstreamRegionExcludingEdge_Throws()
+        public void RegionIn_UpstreamRegionExcludingEdge_Fails()
         {
-            // measure_pos 忽略定义域：原先上游区域只影响显示，区域外的边照样被找到并拟合成功
+            // measure_pos 忽略定义域：必须先滤掉域外点，否则区域外的边照样被找到并拟合成功
             using (var upstreamRegion = Rectangle1(0, 0, Size - 1, 90))
             {
-                _strategy.inPara.RegionIn = "区域源/区域";
-                var upstream = new StubStrategy("区域源").Output("区域", upstreamRegion);
+                var upstream = new StubStrategy("区域源").Region("区域", () => upstreamRegion);
+                _strategy.inPara.RegionIn = upstream.Ref("区域");
 
-                var ex = Assert.ThrowsException<InvalidOperationException>(() => _strategy.Fun_action(_display, Strategies.Of(upstream)));
-                StringAssert.Contains(ex.Message, "未找到足够的轮廓点");
-                Assert.IsTrue(_strategy.inPara.Line.IsDegenerate);
+                var result = _strategy.On(_display, upstream);
+                Assert.AreEqual(RunStatus.Error, result.Status);
+                StringAssert.Contains(result.Message, "未找到足够的轮廓点");
+                Assert.IsTrue(_strategy.Line.IsDegenerate);
             }
         }
 
@@ -289,12 +294,12 @@ namespace DotNet.HalconAlgo.Tests
             // 上游区域只覆盖行 0..100：测量矩形行 40..100 共 7 个有点，裁剪首尾后行 50..90
             using (var upstreamRegion = Rectangle1(0, 0, 100, Size - 1))
             {
-                _strategy.inPara.RegionIn = "区域源/区域";
-                var upstream = new StubStrategy("区域源").Output("区域", upstreamRegion);
+                var upstream = new StubStrategy("区域源").Region("区域", () => upstreamRegion);
+                _strategy.inPara.RegionIn = upstream.Ref("区域");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(upstream)));
+                Assert.IsTrue(_strategy.On(_display, upstream).IsOk);
 
-                var line = _strategy.inPara.Line;
+                var line = _strategy.Line;
                 Assert.AreEqual(50, Math.Min(line.Start.Y, line.End.Y), 0.5);
                 Assert.AreEqual(90, Math.Max(line.Start.Y, line.End.Y), 0.5);
                 StringAssert.Contains(_display.LastText, "用点:5");
@@ -302,31 +307,31 @@ namespace DotNet.HalconAlgo.Tests
         }
 
         [TestMethod]
-        public void SigmaZero_FromUi_StillFits()
+        public void SigmaZero_StillFits()
         {
-            // "滤波"下拉提供 0：原先直接传给 measure_pos 抛 HALCON #1302
+            // "滤波"常用值里有 0：直接传给 measure_pos 会抛 HALCON #1302，管线里钳到 0.4
             _strategy.inPara.Sigma = 0;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
-            Assert.AreEqual(99.5, _strategy.inPara.Line.Start.X, 0.5);
+            Assert.IsTrue(_strategy.On(_display).IsOk);
+            Assert.AreEqual(99.5, _strategy.Line.Start.X, 0.5);
         }
 
         [TestMethod]
         public void MaxErrZero_DisablesRefinement()
         {
             _strategy.inPara.MaxErr = 0;
-            _strategy.inPara.TrimEnds = "否";
+            _strategy.inPara.TrimEnds = false;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
             StringAssert.Contains(_display.LastText, "用点:13");
             Assert.AreEqual(0, _display.Points.Count(p => p.ColorName == HColor.Red.Name));
         }
 
         [TestMethod]
-        public void RegionIn_Unresolvable_Throws()
+        public void RegionIn_Unresolvable_Fails()
         {
-            _strategy.inPara.RegionIn = "区域源/区域";
-            Assert.ThrowsException<AlgoOutputNotFoundException>(() => _strategy.Fun_action(_display, Strategies.Of()));
+            _strategy.inPara.RegionIn = new StubStrategy("区域源").Ref("区域");
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display).Status);
         }
 
         [TestMethod]
@@ -335,13 +340,13 @@ namespace DotNet.HalconAlgo.Tests
             using (var image = VerticalStepImage(Size, Size, 130))
             {
                 _display.SetImage(image);
-                _strategy.inPara.CoordIn = "定位/坐标系";
                 var locator = StubStrategy.Coord("定位", new Point2d(100, 100), new CvCoord(130, 100));
+                _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(locator)));
+                Assert.IsTrue(_strategy.On(_display, locator).IsOk);
 
-                Assert.AreEqual(129.5, _strategy.inPara.Line.Start.X, 0.5, "ROI 应随坐标系平移 +30 列");
-                Assert.AreEqual(129.5, _strategy.inPara.Line.End.X, 0.5);
+                Assert.AreEqual(129.5, _strategy.Line.Start.X, 0.5, "ROI 应随坐标系平移 +30 列");
+                Assert.AreEqual(129.5, _strategy.Line.End.X, 0.5);
             }
         }
 
@@ -354,13 +359,13 @@ namespace DotNet.HalconAlgo.Tests
             using (var image = Paint(dark, bottom, 255))
             {
                 _display.SetImage(image);
-                _strategy.inPara.Transition = "全部";
-                _strategy.inPara.CoordIn = "定位/坐标系";
+                _strategy.inPara.Transition = Transition.All;
                 var locator = StubStrategy.Coord("定位", new Point2d(100, 100), CvCoord.FromDegrees(100, 100, 90));
+                _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(locator)));
+                Assert.IsTrue(_strategy.On(_display, locator).IsOk);
 
-                var line = _strategy.inPara.Line;
+                var line = _strategy.Line;
                 Assert.AreEqual(99.5, line.Start.Y, 0.5);
                 Assert.AreEqual(99.5, line.End.Y, 0.5);
                 Assert.AreEqual(100, Math.Abs(line.End.X - line.Start.X), 1, "11 个点沿列展开 100 像素");
@@ -377,13 +382,13 @@ namespace DotNet.HalconAlgo.Tests
             using (var image = Paint(dark, bottom, 255))
             {
                 _display.SetImage(image);
-                _strategy.inPara.Transition = "全部";
-                _strategy.inPara.CoordIn = "定位/坐标系";
+                _strategy.inPara.Transition = Transition.All;
                 var locator = StubStrategy.Coord("定位", new Point2d(100, 100), CvCoord.FromDegrees(130, 120, 90));
+                _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-                Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(locator)));
+                Assert.IsTrue(_strategy.On(_display, locator).IsOk);
 
-                var line = _strategy.inPara.Line;
+                var line = _strategy.Line;
                 Assert.AreEqual(119.5, line.Start.Y, 0.5);
                 Assert.AreEqual(119.5, line.End.Y, 0.5);
                 Assert.AreEqual(130, (line.Start.X + line.End.X) / 2, 1, "点沿列以跟随后的中心 130 对称展开");
@@ -392,92 +397,84 @@ namespace DotNet.HalconAlgo.Tests
         }
 
         [TestMethod]
-        public void CoordIn_MissingTmplPoint_Throws()
+        public void CoordIn_NotTaught_Fails()
         {
-            _strategy.inPara.CoordIn = "定位/坐标系";
-            var locator = new StubStrategy("定位").Output("坐标系", new CvCoord(130, 100));
+            var locator = StubStrategy.Coord("定位", null, new CvCoord(130, 100));
+            _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-            Assert.ThrowsException<AlgoOutputNotFoundException>(() => _strategy.Fun_action(_display, Strategies.Of(locator)));
+            var result = _strategy.On(_display, locator);
+            Assert.AreEqual(RunStatus.Error, result.Status);
+            StringAssert.Contains(result.Message, "示教");
         }
 
         [TestMethod]
-        public void Outputs_AfterGenTreeNode()
+        public void Outputs_TreeAndResolution()
         {
             var tree = new FakeTree();
             _strategy.GenTreeNode(tree);
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of()));
+            Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            CollectionAssert.IsSubsetOf(new[] { "拟合直线", "拟合直线/直线", "拟合直线/直线/起点/行", "拟合直线/直线/终点/列" }, tree.Paths);
+            CollectionAssert.IsSubsetOf(new[] { "拟合直线", "拟合直线/直线", "拟合直线/直线/起点/行", "拟合直线/直线/终点/列", "拟合直线/结果" }, tree.Paths);
+            Assert.AreEqual(OutEnum.Line, tree.Types["拟合直线/直线"]);
+            Assert.AreEqual(OutEnum.Point, tree.Types["拟合直线/直线/起点"]);
 
-            var line = _strategy.ResolveOutput<CvLine>(new[] { "直线" });
-            Assert.AreEqual(line.Start, _strategy.ResolveOutput<Point2d>(new[] { "直线", "起点" }));
-            Assert.AreEqual(line.End, _strategy.ResolveOutput<Point2d>(new[] { "直线", "终点" }));
-            Assert.AreEqual(line.Start.Y, _strategy.ResolveOutput<double>(new[] { "直线", "起点", "行" }));
-            Assert.AreEqual(line.Start.X, _strategy.ResolveOutput<double>(new[] { "直线", "起点", "列" }));
-            Assert.AreEqual(line.End.Y, _strategy.ResolveOutput<double>(new[] { "直线", "终点", "行" }));
-            Assert.AreEqual(line.End.X, _strategy.ResolveOutput<double>(new[] { "直线", "终点", "列" }));
+            var ctx = new RunContext(null, new IParaStrategy[] { _strategy });
+            var line = ctx.Resolve<CvLine>(_strategy.Ref("直线"));
+            Assert.AreEqual(_strategy.Line, line);
+            Assert.AreEqual(line.Start, ctx.Resolve<Point2d>(_strategy.Ref("直线/起点")));
+            Assert.AreEqual(line.End, ctx.Resolve<Point2d>(_strategy.Ref("直线/终点")));
+            Assert.AreEqual(line.Start.Y, ctx.Resolve<double>(_strategy.Ref("直线/起点/行")));
+            Assert.AreEqual(line.Start.X, ctx.Resolve<double>(_strategy.Ref("直线/起点/列")));
+            Assert.AreEqual(line.End.Y, ctx.Resolve<double>(_strategy.Ref("直线/终点/行")));
+            Assert.AreEqual(line.End.X, ctx.Resolve<double>(_strategy.Ref("直线/终点/列")));
+        }
 
-            // 下游经 ResolveFrom 取到同一条线
-            Assert.AreEqual(line, Strategies.Of(_strategy).ResolveFrom<CvLine>("拟合直线/直线"));
+        /// <summary> 输出是声明出来的，不再依赖"先生成过变量树才登记解析器" </summary>
+        [TestMethod]
+        public void Outputs_AvailableWithoutTree()
+        {
+            Assert.IsNotNull(_strategy.FindOutput("直线"));
+            Assert.IsTrue(((CvLine)_strategy.FindOutput("直线").GetValue()).IsDegenerate, "未运行时是退化线段");
+            Assert.IsNull(_strategy.FindOutput("不存在"));
         }
 
         [TestMethod]
-        public void Outputs_BeforeGenTreeNode_AreNotRegistered()
+        public void Params_RoundTripThroughDeclaration()
         {
-            Assert.IsNull(_strategy.ResolveOutput(new[] { "直线" }));
-        }
+            var upstream = StubStrategy.Coord("定位", new Point2d(), new CvCoord());
+            Assert.IsTrue(_strategy.SetParam("跟随坐标", upstream.Ref("坐标系")));
+            Assert.IsTrue(_strategy.SetParam("过渡方向", Transition.All));
+            Assert.IsTrue(_strategy.SetParam("选择", EdgeSelect.Last));
+            Assert.IsTrue(_strategy.SetParam("滤波", 2));
+            Assert.IsTrue(_strategy.SetParam("阈值", 33));
+            Assert.IsTrue(_strategy.SetParam("步距", 7));
+            Assert.IsTrue(_strategy.SetParam("步宽", 3));
+            Assert.IsTrue(_strategy.SetParam("最大偏差", 9));
+            Assert.IsTrue(_strategy.SetParam("裁剪首尾", false));
+            Assert.IsTrue(_strategy.SetParam("显示文本", false));
+            Assert.IsTrue(_strategy.SetParam("拟合区域", true));
+            Assert.IsTrue(_strategy.SetParam("文本X", 20));
 
-        [TestMethod]
-        public void ParaRoundTrip()
-        {
             var p = _strategy.inPara;
-            p.CoordIn = "定位/坐标系";
-            p.ImageIn = "取像/图像";
-            p.RegionIn = "区域源/区域";
-            p.Transition = "全部";
-            p.ContourType = "最后一条";
-            p.Sigma = 2;
-            p.Threshold = 33;
-            p.StepPace = 7;
-            p.StepWidth = 3;
-            p.MaxErr = 9;
-            p.TrimEnds = "否";
-            p.DispText = false;
-            p.DispRegion = false;
-            p.DispFixRegion = true;
-            p.DispFixPoint = false;
-            p.DispResult = false;
-            p.FontX = 20;
-            p.FontY = 21;
-            p.FontSize = 30;
+            Assert.AreEqual(upstream.Ref("坐标系"), p.CoordIn);
+            Assert.AreEqual(Transition.All, p.Transition);
+            Assert.AreEqual(EdgeSelect.Last, p.ContourType);
+            Assert.AreEqual(2, p.Sigma);
+            Assert.AreEqual(33, p.Threshold);
+            Assert.AreEqual(7, p.StepPace);
+            Assert.AreEqual(3, p.StepWidth);
+            Assert.AreEqual(9, p.MaxErr);
+            Assert.IsFalse(p.TrimEnds);
+            Assert.IsFalse(p.DispText);
+            Assert.IsTrue(p.DispFixRegion);
+            Assert.AreEqual(20, p.FontX);
 
-            var ui = new FakeUiHost();
-            _strategy.DispPara(ui);
-            CollectionAssert.AreEqual(new[] { TabPageEnum.Parameter, TabPageEnum.Region, TabPageEnum.Display }, ui.Tabs);
-
-            var other = new FitLineStrategy();
-            other.SavePara(ui);
-            var q = other.inPara;
-            Assert.AreEqual(p.CoordIn, q.CoordIn);
-            Assert.AreEqual(p.ImageIn, q.ImageIn);
-            Assert.AreEqual(p.RegionIn, q.RegionIn);
-            Assert.AreEqual(p.Transition, q.Transition);
-            Assert.AreEqual(p.ContourType, q.ContourType);
-            Assert.AreEqual(p.Sigma, q.Sigma);
-            Assert.AreEqual(p.Threshold, q.Threshold);
-            Assert.AreEqual(p.StepPace, q.StepPace);
-            Assert.AreEqual(p.StepWidth, q.StepWidth);
-            Assert.AreEqual(p.MaxErr, q.MaxErr);
-            Assert.AreEqual(p.TrimEnds, q.TrimEnds);
-            Assert.AreEqual(p.DispText, q.DispText);
-            Assert.AreEqual(p.DispRegion, q.DispRegion);
-            Assert.AreEqual(p.DispFixRegion, q.DispFixRegion);
-            Assert.AreEqual(p.DispFixPoint, q.DispFixPoint);
-            Assert.AreEqual(p.DispResult, q.DispResult);
-            Assert.AreEqual(p.FontX, q.FontX);
-            Assert.AreEqual(p.FontY, q.FontY);
-            Assert.AreEqual(p.FontSize, q.FontSize);
-            other.Dispose();
+            // 参数类序列化后读回, 来源与枚举都还在
+            var back = Newtonsoft.Json.JsonConvert.DeserializeObject<FitLine>(Newtonsoft.Json.JsonConvert.SerializeObject(p));
+            Assert.AreEqual(p.CoordIn, back.CoordIn);
+            Assert.AreEqual(Transition.All, back.Transition);
+            Assert.AreEqual(EdgeSelect.Last, back.ContourType);
+            back.HoRect.Dispose();
         }
 
         [TestMethod]
@@ -516,15 +513,16 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(RectEnum.AffRect, _strategy.inPara.HoRect.Type, "修改模式不改 Type");
         }
 
+        /// <summary> 显示 ROI 不能顺手改配置（原来每次选中工具都把类型强改成仿射矩形） </summary>
         [TestMethod]
-        public void DispROI_ForcesAffRect()
+        public void DispROI_DoesNotMutateConfig()
         {
             _strategy.inPara.HoRect.Type = RectEnum.Circle;
             var host = new FakeRoiHost();
 
             _strategy.DispROI(host);
 
-            Assert.AreEqual(RectEnum.AffRect, _strategy.inPara.HoRect.Type);
+            Assert.AreEqual(RectEnum.Circle, _strategy.inPara.HoRect.Type);
             Assert.AreEqual(1, host.SetRectParaCount);
         }
 

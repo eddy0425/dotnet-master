@@ -99,16 +99,11 @@
     <Compile Include="HEditModelUI.Designer.cs">
       <DependentUpon>HEditModelUI.cs</DependentUpon>
     </Compile>
-    <Compile Include="HModel\ModelExtension.cs" />
-    <Compile Include="HModel\ModelType.cs" />
     <Compile Include="HWindows\HMouse\Handlers\NoneMouse.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TreeNode\TreeVisualizer.cs" />
-    <Compile Include="VsControl\VsControlBindingStrategy.cs" />
-    <Compile Include="VsControl\WinFormsParaUiHost.cs" />
-    <Compile Include="VsControl\VsControlFactory.cs" />
-    <Compile Include="VsControl\VsControlModel.cs" />
     <Compile Include="HWindows\HFont\HWindowFonts.cs" />
+    <Compile Include="Param\ParamPanel.cs" />
     <EmbeddedResource Include="HModelUI.resx">
       <DependentUpon>HModelUI.cs</DependentUpon>
     </EmbeddedResource>

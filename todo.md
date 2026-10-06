@@ -392,60 +392,60 @@ plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
 
 **1a. 注册与身份**
 
-- [ ] 新增 `AlgoAttribute`、`AlgoInfo`、`AlgoCatalog`（含 `plugins\` 目录扫描和启动校验），给现有 11 个策略打上特性，确定稳定键。
-- [ ] MainForm 改为由 `AlgoCatalog` 生成工具箱，删除手写 `new` 和 8 个 `buttonN_Click`。顺带解决了漏注册的问题。
-- [ ] 基类增加 `Id`、`Name` 默认实现；删除 `RunIndex`，模板目录暂时改为按 `Id` 计算。
+- [x] 新增 `AlgoAttribute`、`AlgoInfo`、`AlgoCatalog`（含 `plugins\` 目录扫描和启动校验），给现有 11 个策略打上特性，确定稳定键。（稳定键见各策略的 `[Algo]`；插件目录里带共享程序集副本、非 .NET dll、Core 主版本不符都在启动时报错）
+- [x] MainForm 改为由 `AlgoCatalog` 生成工具箱，删除手写 `new` 和 8 个 `buttonN_Click`。顺带解决了漏注册的问题。
+- [x] 基类增加 `Id`、`Name` 默认实现；删除 `RunIndex`，模板目录暂时改为按 `Id` 计算。（数据目录为 `DataDir`，默认按 `Id`，方案保存时迁到 `Scheme/<方案>/<Id>/`）
 
 **1b. 声明式参数面板**
 
-- [ ] Core 新增 `ParamBuilder`、`ParamItem`；基类新增 `DeclareParams`、`OnParamsChanged`，并基于它们实现 `IParaBinding.DispPara/SavePara`（迁移期：子类没覆盖 `DeclareParams` 时，仍走旧的 `DispPara/SavePara`）。
-- [ ] HalconUI 新增 `ParamPanel`：按 `ParamItem` 在 `TableLayoutPanel` 里生成控件，复用 VsControl 的绑定；`Source` 项统一弹出 `ValueForm` 并按 `OutEnum` 过滤；`When` 在任一值变化后重新求值。
-- [ ] ParaForm 的参数页、显示页改为承载 `ParamPanel`；Region 页、Matching 页仍是固定布局，由宿主根据 `IRoiEditable` / `ITemplateEditable` 决定是否显示，几何读数由宿主在 `SetRectPara` 时自己填。
-- [ ] 逐个策略把 `DispPara` + `SavePara` 改写为 `DeclareParams`。顺序：FileImage → CreateROI → LineRot → Rotate（验证 `When`）→ MergeRegion（验证 `OnParamsChanged`，删除 `SameConfig`）→ FitLine → FitArc → 4 个匹配。
-- [ ] 删除 ParaForm.Designer 里的 `lbl/cmb/btn_100..115`、`ckb_disp0..4`、`CB_Font*` 以及对应的 5 个来源 handler。
+- [x] Core 新增 `ParamBuilder`、`ParamItem`；基类新增 `DeclareParams`、`OnParamsChanged`，并基于它们实现 `IParaBinding.DispPara/SavePara`（迁移期：子类没覆盖 `DeclareParams` 时，仍走旧的 `DispPara/SavePara`）。（未保留迁移期双路径：11 个策略一次迁完，`IParaBinding` 直接改为 `DescribeParams()` + `ParamsChanged(changed)`；`OnParamsChanged` 带上真正变了的项，MergeRegion 据此只在来源变化时清示教点）
+- [x] HalconUI 新增 `ParamPanel`：按 `ParamItem` 在 `TableLayoutPanel` 里生成控件，复用 VsControl 的绑定；`Source` 项统一弹出 `ValueForm` 并按 `OutEnum` 过滤；`When` 在任一值变化后重新求值。（没有复用 VsControl：VsControl 靠私有字段名反射查找控件，动态生成的控件用不上；ParamPanel 自己持有控件并直接绑定。VsControl、`IParaUiHost`、`WinFormsParaUiHost` 已删除）
+- [x] ParaForm 的参数页、显示页改为承载 `ParamPanel`；Region 页、Matching 页仍是固定布局，由宿主根据 `IRoiEditable` / `ITemplateEditable` 决定是否显示，几何读数由宿主在 `SetRectPara` 时自己填。（五个页都承载 ParamPanel；Region / Matching 页的固定工具栏保留，几何读数由宿主订阅 `HDisplayUI.RoiShown` 填写）
+- [x] 逐个策略把 `DispPara` + `SavePara` 改写为 `DeclareParams`。顺序：FileImage → CreateROI → LineRot → Rotate（验证 `When`）→ MergeRegion（验证 `OnParamsChanged`，删除 `SameConfig`）→ FitLine → FitArc → 4 个匹配。
+- [x] 删除 ParaForm.Designer 里的 `lbl/cmb/btn_100..115`、`ckb_disp0..4`、`CB_Font*` 以及对应的 5 个来源 handler。（Designer 重写，1591 行 → 约 500 行）
 
 **1c. 其余宿主分支**
 
-- [ ] ROI 默认形状改读 `AlgoInfo.DefaultRoi`；删除 `ParaForm.cs:364-373` 的 switch。
-- [ ] `ITemplateEditable` 增加 `GetTemplateView()`，4 个匹配类实现它；删除 `ParaForm` 里的两处类型 switch 和具体类型下转。
-- [ ] 基类实现 `IDisposable`（`Dispose(bool)` 模式），宿主改为对所有策略统一释放。`FileImage` 和 4 个匹配类补上各自的释放逻辑。
-- [ ] 上面全部完成后，**删除 `AlgoEnum` 和所有 `Algorithm` 属性**。
+- [x] ROI 默认形状改读 `AlgoInfo.DefaultRoi`；删除 `ParaForm.cs:364-373` 的 switch。
+- [x] `ITemplateEditable` 增加 `GetTemplateView()`，4 个匹配类实现它；删除 `ParaForm` 里的两处类型 switch 和具体类型下转。
+- [x] 基类实现 `IDisposable`（`Dispose(bool)` 模式），宿主改为对所有策略统一释放。`FileImage` 和 4 个匹配类补上各自的释放逻辑。（`IParaStrategy : IDisposable`；配置 ROI 也随工具一起释放，宿主先保存再释放）
+- [x] 上面全部完成后，**删除 `AlgoEnum` 和所有 `Algorithm` 属性**。
 
 **验收**
 
-- [ ] `ParaForm`、`MainForm` 里搜不到任何具体策略类型名、`AlgoEnum`、`cmb_1xx`。
-- [ ] 在测试项目里写一个只引用 HalconCore 的假算法，编译成 dll 放进 `plugins\`，启动后出现在工具箱里，参数面板、来源选择、运行都能用。
+- [x] `ParaForm`、`MainForm` 里搜不到任何具体策略类型名、`AlgoEnum`、`cmb_1xx`。（ParaFormTests.NoSlotControls 守住）
+- [x] 在测试项目里写一个只引用 HalconCore 的假算法，编译成 dll 放进 `plugins\`，启动后出现在工具箱里，参数面板、来源选择、运行都能用。（`UnitTest/DotNet.SamplePlugin`，测试把它复制进临时 plugins 目录加载）
 
 ### 阶段 2：基类承担执行流程（1 周，逐个策略迁移）
 
-- [ ] Core 新增 `RunContext`、`RunResult`、`SourceRef`；基类新增 `ResetOutputs`、`Execute(RunContext)`、`Render(IHDisplay, RunResult)` 模板方法和统一的状态文本绘制。迁移期两个 `Fun_action` 仍是 virtual，由基类适配到新的 `Run`；没迁移的策略照常覆盖它们。
-- [ ] 基类新增 `DeclareOutputs(OutputBuilder)`，由它同时生成变量树和解析器；迁移期 `GenTreeNode` 仍是 virtual。
-- [ ] `AlgoFont` 下沉到 Core，改名 `DisplayOptions`；「显示文本 / 字体」三项由基类自动追加到参数声明里。
-- [ ] 逐个策略迁移：
+- [x] Core 新增 `RunContext`、`RunResult`、`SourceRef`；基类新增 `ResetOutputs`、`Execute(RunContext)`、`Render(IHDisplay, RunResult)` 模板方法和统一的状态文本绘制。迁移期两个 `Fun_action` 仍是 virtual，由基类适配到新的 `Run`；没迁移的策略照常覆盖它们。（与阶段 1 合并实施，没有保留 `Fun_action` 的迁移期适配；取消 (`OperationCanceledException`) 会向外传播，其余异常一律转成 Fail）
+- [x] 基类新增 `DeclareOutputs(OutputBuilder)`，由它同时生成变量树和解析器；迁移期 `GenTreeNode` 仍是 virtual。（另外由基类追加"结果 / 文本显示"两个公共输出，原来的 `CommonNodes` 只有树节点没有值）
+- [x] `AlgoFont` 下沉到 Core，改名 `DisplayOptions`；「显示文本 / 字体」三项由基类自动追加到参数声明里。
+- [x] 逐个策略迁移：
   - 把运行结果从 `inPara` 挪到策略类的属性上；
   - 把计算和绘制拆成 `Execute`、`Render` 两个方法，删除各策略里自己画的红字；
   - 参数类里的 `HTuple` 改为 `double`、`int`，界面文字（「由黑到白」「是 / 否」）改为枚举或 `bool`，文字只出现在 `Choice` 声明里；
   - 来源字段从 `string` 改为 `SourceRef`（此时 `SourceRef` 先按「工具名 + 路径」解析，阶段 4 再切到 `Id`）。
-- [ ] 每迁移一个策略，补齐无界面运行的单元测试：直接调用 `Execute`，不需要显示窗口；并断言 `Execute` 失败后所有输出都是默认值。
-- [ ] 全部迁移完成后，删除两个 `Fun_action` 和 `GenTreeNode` 的 virtual 入口，`IAlgoStrategy` 只保留 `Run`。
+- [x] 每迁移一个策略，补齐无界面运行的单元测试：直接调用 `Execute`，不需要显示窗口；并断言 `Execute` 失败后所有输出都是默认值。
+- [x] 全部迁移完成后，删除两个 `Fun_action` 和 `GenTreeNode` 的 virtual 入口，`IAlgoStrategy` 只保留 `Run`。
 
 ### 阶段 3：同族去重（1 周）
 
-- [ ] `MatchStrategyBase<TPara>` 和 `MatchParaBase`：把 4 个匹配类的公共部分收进来。模板事务保留现有的严谨实现，只搬到基类里。
-- [ ] `RotateStrategyBase<TPara>`：消除 `RunWithReset` 的重复。
-- [ ] `OutputBuilder.Coord` + `RunContext.ResolveCoord`：消除 FitLine、FitArc、MergeRegion 里复制的坐标系跟随逻辑，删除 `ToTmplPoint()` 和单独的 `TmplPoint` 输出。
-- [ ] 模板图路径改为由策略实例的 `Id` 或方案目录决定，不再读静态 `AlgoPaths`。
+- [x] `MatchStrategyBase<TPara>` 和 `MatchParaBase`：把 4 个匹配类的公共部分收进来。模板事务保留现有的严谨实现，只搬到基类里。（另外：模型句柄不再放进参数，模型文件随模板一起写进数据目录、`Init` 时读回；匹配 0 个结果改为 Fail）
+- [x] `RotateStrategyBase<TPara>`：消除 `RunWithReset` 的重复。（另加 `EdgeFitStrategyBase<TPara>` 收拢 FitLine / FitArc 的参数、ROI 与测量前端）
+- [x] `OutputBuilder.Coord` + `RunContext.ResolveCoord`：消除 FitLine、FitArc、MergeRegion 里复制的坐标系跟随逻辑，删除 `ToTmplPoint()` 和单独的 `TmplPoint` 输出。
+- [x] 模板图路径改为由策略实例的 `Id` 或方案目录决定，不再读静态 `AlgoPaths`。（`AlgoPaths` 已删除）
 
 ### 阶段 4：流程运行和方案持久化（1 周）
 
 这些都写在宿主或 Core 里，**算法类不需要为此增加任何代码**。
 
-- [ ] `FlowRunner`：按顺序执行整个流程，支持单步执行、从某个工具开始执行；为每个工具构造只含上游的 `RunContext`；收集每个工具的 `RunResult`（含耗时），失败时按策略决定停止或继续。
-- [ ] `SourceRef` 切换为按 `ToolId` 解析；界面显示的「工具名/路径」在运行时拼出来，不存储。重命名工具不会断开引用。
-- [ ] 运行前校验：用参数声明里的 `Source` 项检查每个引用的工具存在、排在前面、输出类型匹配；不满足的工具在工具树上标红。
-- [ ] 方案序列化：每个工具存 `{ AlgoKey, Id, Name, Para }`。加载时用 `AlgoCatalog.Create(AlgoKey)` 创建实例；找不到键（插件缺失）时保留原始 JSON 并在界面上标出，再次保存时原样写回，不丢配置。模板图和模型文件存放在 `Scheme/<方案>/<Id>/`。
-- [ ] 实现工具树（目前 `ToolForm` 是空壳）：支持增删、排序、重命名。可添加的工具列表来自 `AlgoCatalog`，按 `Group`、`Order` 排列。
-- [ ] 补集成测试：多工具串联执行；保存后重新加载，结果一致。
+- [x] `FlowRunner`：按顺序执行整个流程，支持单步执行、从某个工具开始执行；为每个工具构造只含上游的 `RunContext`；收集每个工具的 `RunResult`（含耗时），失败时按策略决定停止或继续。（"当前图像"随 `IImageProducer` 前进，取代原来读显示窗口里的图）
+- [x] `SourceRef` 切换为按 `ToolId` 解析；界面显示的「工具名/路径」在运行时拼出来，不存储。重命名工具不会断开引用。（与阶段 1 合并：没有经过"工具名 + 路径"的过渡形态）
+- [x] 运行前校验：用参数声明里的 `Source` 项检查每个引用的工具存在、排在前面、输出类型匹配；不满足的工具在工具树上标红。（工具列表里标红，并在状态栏给出第一条问题）
+- [x] 方案序列化：每个工具存 `{ AlgoKey, Id, Name, Para }`。加载时用 `AlgoCatalog.Create(AlgoKey)` 创建实例；找不到键（插件缺失）时保留原始 JSON 并在界面上标出，再次保存时原样写回，不丢配置。模板图和模型文件存放在 `Scheme/<方案>/<Id>/`。（`FlowScheme` + `MissingTool` 占位）
+- [x] 实现工具树（目前 `ToolForm` 是空壳）：支持增删、排序、重命名。可添加的工具列表来自 `AlgoCatalog`，按 `Group`、`Order` 排列。（流程是线性的，做成主窗右侧的工具列表 + "添加"菜单，没有另开窗体）
+- [x] 补集成测试：多工具串联执行；保存后重新加载，结果一致。
 
 ### 阶段 5：UI 层内部整理（1～2 周，可以和阶段 2～4 并行）
 
@@ -460,8 +460,8 @@ plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
 - [ ] 鼠标模式改成显式的状态机：同一时刻只有一个活动模式，平移和缩放作为默认模式。`DrawType` 不再公开可写。
 - [ ] 去掉绘制子系统中的静态状态：`DrawSession` 注册表改为每个窗口一个实例；`Timeout` 改为参数传入；`autodraw` 的保存和还原按窗口隔离。
 - [ ] 让 Shape 状态机可以脱离 Halcon 测试：`DrawRenderer` 抽出 `IDrawCanvas` 接口，Shape 改用自有的 `MouseInput` 结构，代替 `HMouseEventArgs`。
-- [ ] VsControl 改为显式注册控件，取代按私有字段名反射（阶段 1 的 `ParamPanel` 生成的控件已经是显式注册的，这里处理剩下的 Region、Matching 页）。
-- [ ] ParaForm 里 4 个重复的 async 绘制入口合并为一个。
+- [x] VsControl 改为显式注册控件，取代按私有字段名反射（阶段 1 的 `ParamPanel` 生成的控件已经是显式注册的，这里处理剩下的 Region、Matching 页）。（VsControl 已整体删除：参数页由 ParamPanel 生成，Region / Matching 页的固定控件由 ParaForm 直接持有，不再有按名字反射的地方）
+- [x] ParaForm 里 4 个重复的 async 绘制入口合并为一个。（`RunDraw`）
 - [ ] 显示入口统一切回 UI 线程，为将来接入相机做准备。
 - [ ] 删除死代码 `ModelExtension`、`ModelType`；`ZoomImage` 构造函数的默认分辨率 1248x2200 不再写死（`HWindowImage` 的 `zoomInfo` 已改为 0x0，只有 `getInfo` 还在沿用这个默认值）。
 
@@ -476,17 +476,17 @@ plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
 
 ## 4. 验收标准
 
-- [ ] **新增一个算法 = 新增一个 `.cs` 文件**（策略类 + 参数类），打上 `[Algo]`，继承 `ParaStrategyBase<TPara>`（或同族中间基类），按需实现能力接口。**不修改任何已有文件，包括 Designer。**
-- [ ] **外置插件可用**：只引用 Drawing + HalconCore 编译出的 dll 放进 `plugins\`，重启后可添加、配置、运行、保存、重新加载。
-- [ ] `MainForm`、`ParaForm` 中不出现任何具体策略类型名、`AlgoEnum` 或 `cmb_1xx` 槽位；算法类中不出现任何控件名字符串。
-- [ ] 每个参数只在 `DeclareParams` 里出现一次；每个输出只在 `DeclareOutputs` 里出现一次。
-- [ ] 每个策略的 `Execute` 可以在单元测试里无界面运行，失败原因通过 `RunResult` 返回，而不是只画在屏幕上。
+- [x] **新增一个算法 = 新增一个 `.cs` 文件**（策略类 + 参数类），打上 `[Algo]`，继承 `ParaStrategyBase<TPara>`（或同族中间基类），按需实现能力接口。**不修改任何已有文件，包括 Designer。**（样例插件即是一个文件）
+- [x] **外置插件可用**：只引用 Drawing + HalconCore 编译出的 dll 放进 `plugins\`，重启后可添加、配置、运行、保存、重新加载。
+- [x] `MainForm`、`ParaForm` 中不出现任何具体策略类型名、`AlgoEnum` 或 `cmb_1xx` 槽位；算法类中不出现任何控件名字符串。
+- [x] 每个参数只在 `DeclareParams` 里出现一次；每个输出只在 `DeclareOutputs` 里出现一次。
+- [x] 每个策略的 `Execute` 可以在单元测试里无界面运行，失败原因通过 `RunResult` 返回，而不是只画在屏幕上。
 - [ ] 每个策略都会被释放（基类实现 `IDisposable`），长时间循环运行时内存平稳，不泄漏 HObject 或 HTuple 句柄。
-- [ ] `inPara` 只包含可序列化的配置：没有运行结果、没有 Halcon 句柄、没有界面文字。
-- [ ] 方案保存后重新打开，参数、ROI、模板、工具之间的引用全部还原；重命名工具不会断开引用；插件缺失时配置不丢。
-- [ ] HalconAlgo 只引用 Drawing、HalconCore、halcondotnet 和 BCL（架构测试守住）。
-- [ ] Core 和 Algo 中没有可写的 public static 字段。
-- [ ] 现有测试全部通过，或者已迁移到新的写法。
+- [x] `inPara` 只包含可序列化的配置：没有运行结果、没有 Halcon 句柄、没有界面文字。
+- [x] 方案保存后重新打开，参数、ROI、模板、工具之间的引用全部还原；重命名工具不会断开引用；插件缺失时配置不丢。
+- [x] HalconAlgo 只引用 Drawing、HalconCore、halcondotnet 和 BCL（架构测试守住）。（`AlgoCatalogTests.HalconAlgo_ReferencesOnlyContractAndHalcon`）
+- [x] Core 和 Algo 中没有可写的 public static 字段。（`AlgoCatalogTests.CoreAndAlgo_HaveNoWritablePublicStatics`）
+- [x] 现有测试全部通过，或者已迁移到新的写法。
 
 ## 5. 风险与注意事项
 

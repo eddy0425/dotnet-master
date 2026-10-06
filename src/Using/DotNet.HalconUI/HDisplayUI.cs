@@ -230,12 +230,19 @@ namespace DotNet.HalconUI
             DrawType = DrawEnum.None;
         }
 
+        /// <summary>
+        /// ROI 被交给本控件显示 / 编辑之后触发（<see cref="SetRectPara"/>）。
+        /// 宿主据此刷新自己的几何读数，策略不再碰这些控件。
+        /// </summary>
+        public event EventHandler<CvRegion> RoiShown;
+
         public void SetRectPara(CvRegion shrRegion)
         {
             Reset();
             ReDispImage();
             DrawType = DrawEnum.DispRect;
             dispRect.SetUp(Display, shrRegion);
+            RoiShown?.Invoke(this, shrRegion);
         }
 
         public void SetModelPara(HObject shrFindMode, HObject shrContour, CvCoord shrCoord)

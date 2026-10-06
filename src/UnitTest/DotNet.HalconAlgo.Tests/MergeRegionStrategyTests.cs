@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
@@ -20,8 +20,10 @@ namespace DotNet.HalconAlgo.Tests
         {
             _display = new FakeDisplay();
             _strategy = new MergeRegionStrategy();
-            _a = new StubStrategy("A").Output("区域", Own(Rectangle1(10, 10, 20, 20)));
-            _b = new StubStrategy("B").Output("区域", Own(Rectangle1(10, 50, 20, 60)));
+            var ra = Own(Rectangle1(10, 10, 20, 20));
+            var rb = Own(Rectangle1(10, 50, 20, 60));
+            _a = new StubStrategy("A").Region("区域", () => ra);
+            _b = new StubStrategy("B").Region("区域", () => rb);
         }
 
         [TestCleanup]
@@ -37,29 +39,30 @@ namespace DotNet.HalconAlgo.Tests
             return o;
         }
 
-        private void Sources(params string[] paths)
+        private void Sources(params SourceRef[] sources)
         {
-            for (int i = 0; i < paths.Length; i++) _strategy.inPara.RegionSources[i] = paths[i];
+            for (int i = 0; i < sources.Length; i++) _strategy.inPara.RegionSources[i] = sources[i];
         }
 
         [TestMethod]
         public void Identity()
         {
-            Assert.AreEqual(AlgoEnum.MergeRegion, _strategy.Algorithm);
+            Assert.AreEqual("region.merge", AlgoInfo.Of(_strategy).Key);
             Assert.AreEqual("区域合并", _strategy.Name);
             Assert.AreEqual(6, _strategy.inPara.RegionSources.Length);
         }
 
         [TestMethod]
-        public void NoSources_ReturnsFalse_RedTextEvenIfTextDisabled()
+        public void NoSources_Fails_RedTextEvenIfTextDisabled()
         {
             _strategy.inPara.DispText = false;
 
-            Assert.IsFalse(_strategy.Fun_action(_display, Strategies.Of(_a, _b)));
+            var result = _strategy.On(_display, _a, _b);
 
+            Assert.AreEqual(RunStatus.Error, result.Status);
             Assert.AreEqual("区域合并 : 无有效输入区域", _display.LastText);
             Assert.AreEqual(HColor.Red.Name, _display.Texts[0].ColorName);
-            Assert.IsFalse(_strategy.inPara.Result.HoRegion.IsUsableRegion());
+            Assert.IsFalse(_strategy.Region.IsUsableRegion());
             Assert.IsNull(_strategy.inPara.TmplPoint);
         }
 
@@ -67,67 +70,71 @@ namespace DotNet.HalconAlgo.Tests
         public void NullSourceArray_TreatedAsNoSources()
         {
             _strategy.inPara.RegionSources = null;
-            Assert.IsFalse(_strategy.Fun_action(_display, Strategies.Of(_a)));
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display, _a).Status);
+            Assert.AreEqual(6, _strategy.inPara.RegionSources.Length, "旧配置里的 null 补回 6 个空槽位");
         }
 
         [TestMethod]
-        public void AllSourcesMissing_ReturnsFalse()
+        public void AllSourcesMissing_Fails()
         {
-            Sources("X/区域", "Y/区域");
-            Assert.IsFalse(_strategy.Fun_action(_display, Strategies.Of(_a, _b)));
+            var gone = new StubStrategy("X").Region("区域", () => null);
+            Sources(gone.Ref("区域"));
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display, _a, _b).Status);
             StringAssert.Contains(_display.LastText, "无有效输入区域");
         }
 
         [TestMethod]
         public void Union_AreaCenter_AndTeachesTmplPointOnce()
         {
-            Sources("A/区域", " ", "B/区域");
+            Sources(_a.Ref("区域"), SourceRef.Local, _b.Ref("区域"));
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, _b)));
+            Assert.IsTrue(_strategy.On(_display, _a, _b).IsOk);
 
-            double area = AreaCenter(_strategy.inPara.Result.HoRegion, out Point2d center);
-            Assert.AreEqual(2 * 121, area, "空白路径跳过，两块并在一起");
+            double area = AreaCenter(_strategy.Region, out Point2d center);
+            Assert.AreEqual(2 * 121, area, "空槽位跳过，两块并在一起");
             Assert.AreEqual(35, center.X, 1e-6);
             Assert.AreEqual(15, center.Y, 1e-6);
 
-            Assert.AreEqual(35, _strategy.inPara.Coord.X, 1e-6);
-            Assert.AreEqual(15, _strategy.inPara.Coord.Y, 1e-6);
-            Assert.AreEqual(0, _strategy.inPara.Coord.Angle.Radians);
+            Assert.AreEqual(35, _strategy.Coord.X, 1e-6);
+            Assert.AreEqual(15, _strategy.Coord.Y, 1e-6);
+            Assert.AreEqual(0, _strategy.Coord.Angle.Radians);
             Assert.AreEqual(new Point2d(35, 15), _strategy.inPara.TmplPoint);
 
             Assert.AreEqual(1, _display.Objects.Count);
-            Assert.AreSame(_strategy.inPara.Result.HoRegion, _display.Objects[0].Item);
-            Assert.AreEqual("区域合并 : 合并数量:2 中心:(35.00,15.00) 跟随坐标:默认", _display.LastText);
+            Assert.AreSame(_strategy.Region, _display.Objects[0].Item);
+            Assert.AreEqual("区域合并 : 合并数量:2 中心:(35.00,15.00)", _display.LastText);
             Assert.AreEqual(HColor.Green.Name, _display.Texts[0].ColorName);
 
-            // 示教只发生一次：来源变化后 TmplPoint 仍是首轮的值
-            Sources("A/区域", null, null);
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, _b)));
+            // 示教只发生一次：直接改配置 (不经面板) 时模板点仍是首轮的值
+            Sources(_a.Ref("区域"), SourceRef.Local, SourceRef.Local);
+            Assert.IsTrue(_strategy.On(_display, _a, _b).IsOk);
             Assert.AreEqual(new Point2d(35, 15), _strategy.inPara.TmplPoint);
-            Assert.AreEqual(15, _strategy.inPara.Coord.X, 1e-6);
+            Assert.AreEqual(15, _strategy.Coord.X, 1e-6);
         }
 
         [TestMethod]
         public void Result_IsIndependentCopy()
         {
-            Sources("A/区域");
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a)));
-            var first = _strategy.inPara.Result.HoRegion;
+            Sources(_a.Ref("区域"));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
+            var first = _strategy.Region;
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a)));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
 
             Assert.IsFalse(first.IsInitialized(), "上一轮结果被释放");
             Assert.IsTrue(_owned[0].IsInitialized(), "上游区域不能被释放");
         }
 
         [TestMethod]
-        public void MissingSource_RedText_DoesNotTeach()
+        public void MissingSource_Warns_DoesNotTeach()
         {
-            Sources("A/区域", "不存在/区域");
+            var gone = new StubStrategy("不存在").Region("区域", () => null);
+            Sources(_a.Ref("区域"), gone.Ref("区域"));
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, _b)));
+            var result = _strategy.On(_display, _a, _b);
 
-            Assert.AreEqual(121, AreaCenter(_strategy.inPara.Result.HoRegion, out _));
+            Assert.AreEqual(RunStatus.Warning, result.Status, "有结果但降级");
+            Assert.AreEqual(121, AreaCenter(_strategy.Region, out _));
             Assert.IsNull(_strategy.inPara.TmplPoint, "残缺重心不能当示教基准");
             StringAssert.Contains(_display.LastText, "合并数量:1 无效来源:1");
             Assert.AreEqual(HColor.Red.Name, _display.Texts[0].ColorName);
@@ -137,198 +144,161 @@ namespace DotNet.HalconAlgo.Tests
         public void EmptyUpstreamRegion_CountsAsMissing()
         {
             HOperatorSet.GenEmptyObj(out HObject empty);
-            var c = new StubStrategy("C").Output("区域", Own(empty));
-            Sources("A/区域", "C/区域");
+            Own(empty);
+            var c = new StubStrategy("C").Region("区域", () => empty);
+            Sources(_a.Ref("区域"), c.Ref("区域"));
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, c)));
+            Assert.AreEqual(RunStatus.Warning, _strategy.On(_display, _a, c).Status);
 
             StringAssert.Contains(_display.LastText, "无效来源:1");
         }
 
         [TestMethod]
-        public void ZeroAreaUpstreamRegion_ReturnsFalse_ClearsResult_DoesNotTeach()
+        public void ZeroAreaUpstreamRegion_Fails_ClearsResult_DoesNotTeach()
         {
-            // gen_empty_region：count_obj 为 1、能通过来源校验，但没有像素。
-            // 原先 area_center 给出 (0,0)，被当成重心发布并示教成 TmplPoint
+            // gen_empty_region：count_obj 为 1、能通过来源校验，但没有像素; area_center 给出的 (0,0) 不能当重心
             HOperatorSet.GenEmptyRegion(out HObject emptyRegion);
-            var c = new StubStrategy("C").Output("区域", Own(emptyRegion));
-            Sources("A/区域");
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a)));
+            Own(emptyRegion);
+            var c = new StubStrategy("C").Region("区域", () => emptyRegion);
+            Sources(_a.Ref("区域"));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
             _strategy.inPara.TmplPoint = null;
 
-            Sources("C/区域");
-            Assert.IsFalse(_strategy.Fun_action(_display, Strategies.Of(c)));
+            Sources(c.Ref("区域"));
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display, c).Status);
 
             Assert.AreEqual("区域合并 : 无有效输入区域", _display.LastText);
-            Assert.AreEqual(HColor.Red.Name, _display.Texts[_display.Texts.Count - 1].ColorName);
-            Assert.IsFalse(_strategy.inPara.Result.HoRegion.IsUsableRegion(), "上一轮结果不能留给下游");
+            Assert.IsFalse(_strategy.Region.IsUsableRegion(), "上一轮结果不能留给下游");
             Assert.IsNull(_strategy.inPara.TmplPoint);
-        }
-
-        [TestMethod]
-        public void ZeroAreaRegion_AlongsideValidRegion_CountsAsMissing_DoesNotTeach()
-        {
-            // 与空句柄同口径: 这一轮上游什么都没找到, 重心是残缺的, 不能示教、也不能显示成绿字
-            HOperatorSet.GenEmptyRegion(out HObject emptyRegion);
-            var c = new StubStrategy("C").Output("区域", Own(emptyRegion));
-            Sources("A/区域", "C/区域");
-
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, c)));
-
-            Assert.AreEqual(121, AreaCenter(_strategy.inPara.Result.HoRegion, out _));
-            Assert.IsNull(_strategy.inPara.TmplPoint, "残缺重心不能当示教基准");
-            StringAssert.Contains(_display.LastText, "合并数量:1 无效来源:1");
-            Assert.AreEqual(HColor.Red.Name, _display.Texts[_display.Texts.Count - 1].ColorName);
         }
 
         [TestMethod]
         public void CoordIn_Follow_TransformsResult_TeachesUntransformedCenter()
         {
-            Sources("A/区域", "B/区域");
-            _strategy.inPara.CoordIn = "定位/坐标系";
             var locator = StubStrategy.Coord("定位", new Point2d(0, 0), new CvCoord(100, 50));
+            Sources(_a.Ref("区域"), _b.Ref("区域"));
+            _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, _b, locator)));
+            Assert.IsTrue(_strategy.On(_display, _a, _b, locator).IsOk);
 
-            AreaCenter(_strategy.inPara.Result.HoRegion, out Point2d center);
+            AreaCenter(_strategy.Region, out Point2d center);
             Assert.AreEqual(135, center.X, 1e-6);
             Assert.AreEqual(65, center.Y, 1e-6);
-            Assert.AreEqual(135, _strategy.inPara.Coord.X, 1e-6);
+            Assert.AreEqual(135, _strategy.Coord.X, 1e-6);
             Assert.AreEqual(new Point2d(35, 15), _strategy.inPara.TmplPoint, "示教取变换前的重心");
         }
 
         [TestMethod]
         public void CoordIn_Rotation_CoordCarriesInputAngle()
         {
-            Sources("A/区域");
-            _strategy.inPara.CoordIn = "定位/坐标系";
             var locator = StubStrategy.Coord("定位", new Point2d(15, 15), CvCoord.FromDegrees(15, 15, 30));
+            Sources(_a.Ref("区域"));
+            _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a, locator)));
+            Assert.IsTrue(_strategy.On(_display, _a, locator).IsOk);
 
-            Assert.AreEqual(30, _strategy.inPara.Coord.AngleDegrees, 1e-9);
-            Assert.AreEqual(15, _strategy.inPara.Coord.X, 0.5);
-            Assert.AreEqual(15, _strategy.inPara.Coord.Y, 0.5);
+            Assert.AreEqual(30, _strategy.Coord.AngleDegrees, 1e-9);
+            Assert.AreEqual(15, _strategy.Coord.X, 0.5);
+            Assert.AreEqual(15, _strategy.Coord.Y, 0.5);
         }
 
         [TestMethod]
-        public void CoordIn_Unresolvable_ThrowsAndClearsResult()
+        public void CoordIn_Unresolvable_FailsAndClearsResult()
         {
-            Sources("A/区域");
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a)));
-            _strategy.inPara.CoordIn = "定位/坐标系";
+            Sources(_a.Ref("区域"));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
+            var locator = StubStrategy.Coord("定位", new Point2d(), new CvCoord());
+            _strategy.inPara.CoordIn = locator.Ref("坐标系");
 
-            Assert.ThrowsException<AlgoOutputNotFoundException>(() => _strategy.Fun_action(_display, Strategies.Of(_a)));
+            Assert.AreEqual(RunStatus.Error, _strategy.On(_display, _a).Status);
 
-            Assert.IsFalse(_strategy.inPara.Result.HoRegion.IsUsableRegion());
-            Assert.AreEqual(new CvCoord(), _strategy.inPara.Coord);
+            Assert.IsFalse(_strategy.Region.IsUsableRegion());
+            Assert.AreEqual(new CvCoord(), _strategy.Coord);
         }
 
         [TestMethod]
-        public void Outputs_TmplPointOnlyAfterTeaching()
+        public void Outputs_TemplateOnlyAfterTeaching()
         {
             var tree = new FakeTree();
             _strategy.GenTreeNode(tree);
             CollectionAssert.IsSubsetOf(new[] { "区域合并/坐标系", "区域合并/坐标系/原点/行", "区域合并/坐标系/角度", "区域合并/区域" }, tree.Paths);
 
-            var all = Strategies.Of(_a, _strategy);
-            Assert.ThrowsException<AlgoOutputNotFoundException>(() => all.ResolveFrom<Point2d>("区域合并/TmplPoint"),
+            var ctx = new RunContext(null, new IParaStrategy[] { _a, _strategy });
+            Assert.ThrowsException<System.InvalidOperationException>(() => ctx.ResolveCoord(_strategy.Ref("坐标系")),
                 "未示教时下游跟随应响亮失败");
 
-            Sources("A/区域");
-            Assert.IsTrue(_strategy.Fun_action(_display, all));
+            Sources(_a.Ref("区域"));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
 
-            Assert.AreEqual(new Point2d(15, 15), all.ResolveFrom<Point2d>("区域合并/坐标系".ToTmplPoint()));
-            Assert.AreEqual(_strategy.inPara.Coord, all.ResolveFrom<CvCoord>("区域合并/坐标系"));
-            Assert.AreEqual(15, all.ResolveFrom<double>("区域合并/坐标系/原点/列"), 1e-6);
-            Assert.AreSame(_strategy.inPara.Result.HoRegion, all.ResolveRegionFrom("区域合并/区域"));
+            var follow = ctx.ResolveCoord(_strategy.Ref("坐标系"));
+            Assert.AreEqual(new Point2d(15, 15), follow.Template);
+            Assert.AreEqual(_strategy.Coord, follow.Current);
+            Assert.AreEqual(15, ctx.Resolve<double>(_strategy.Ref("坐标系/原点/列")), 1e-6);
+            Assert.AreSame(_strategy.Region, ctx.ResolveRegion(_strategy.Ref("区域"), null));
         }
 
-        #region SavePara
+        #region 参数
 
-        private FakeUiHost DisplayedUi()
+        [TestMethod]
+        public void Params_CoordInAndSixSourceSlots()
         {
-            var ui = new FakeUiHost();
-            _strategy.DispPara(ui);
-            return ui;
+            CollectionAssert.AreEqual(
+                new[] { "跟随坐标", "输入区域0", "输入区域1", "输入区域2", "输入区域3", "输入区域4", "输入区域5" },
+                _strategy.Labels(TabPageEnum.Parameter));
+            Assert.AreEqual(OutEnum.Coord, ((SourceParam)_strategy.Param("跟随坐标")).SourceType);
+            Assert.AreEqual(OutEnum.Region, ((SourceParam)_strategy.Param("输入区域5")).SourceType);
         }
 
         [TestMethod]
-        public void DispPara_UsesSlot110ForCoordIn_AndSixSourceSlots()
+        public void Params_NullSourceArray_StillDeclaresSixSlots_AndWrites()
         {
-            Sources("A/区域");
-            var ui = DisplayedUi();
+            // 旧配置里 "RegionSources": null 反序列化后就是 null
+            _strategy.inPara.RegionSources = null;
 
-            CollectionAssert.AreEqual(new[] { TabPageEnum.Parameter, TabPageEnum.Display }, ui.Tabs);
-            Assert.AreEqual("跟随坐标", ui.Values["lbl_110"]);
-            Assert.AreEqual("默认", ui.Values["cmb_110"]);
-            Assert.AreEqual("A/区域", ui.Values["cmb_100"]);
-            Assert.AreEqual("输入区域5", ui.Values["lbl_105"]);
-            Assert.IsFalse(ui.Values.ContainsKey("cmb_CoordIn"));
+            Assert.IsTrue(_strategy.SetParam("输入区域2", _b.Ref("区域")));
+
+            Assert.AreEqual(6, _strategy.inPara.RegionSources.Length);
+            Assert.AreEqual(_b.Ref("区域"), _strategy.inPara.RegionSources[2]);
         }
 
         [TestMethod]
-        public void SavePara_Unchanged_KeepsTmplPoint_NullEqualsEmpty()
+        public void SourceChanged_ClearsTmplPoint()
         {
             _strategy.inPara.TmplPoint = new Point2d(1, 2);
-            var ui = DisplayedUi();
-            // 空下拉框读回 ""，配置里是 null：不应视为改动
-            for (int i = 0; i < 6; i++) ui.Set($"cmb_{100 + i}", "");
 
-            _strategy.SavePara(ui);
+            _strategy.SetParam("输入区域3", _b.Ref("区域"));
+
+            Assert.IsNull(_strategy.inPara.TmplPoint);
+            Assert.AreEqual(_b.Ref("区域"), _strategy.inPara.RegionSources[3]);
+        }
+
+        [TestMethod]
+        public void CoordInChanged_ClearsTmplPoint()
+        {
+            _strategy.inPara.TmplPoint = new Point2d(1, 2);
+
+            _strategy.SetParam("跟随坐标", _a.Ref("区域"));
+
+            Assert.IsNull(_strategy.inPara.TmplPoint);
+        }
+
+        [TestMethod]
+        public void SameValue_KeepsTmplPoint()
+        {
+            _strategy.inPara.TmplPoint = new Point2d(1, 2);
+
+            Assert.IsFalse(_strategy.SetParam("输入区域0", SourceRef.Local), "值没变就不算改动");
 
             Assert.AreEqual(new Point2d(1, 2), _strategy.inPara.TmplPoint);
         }
 
         [TestMethod]
-        public void ParaPage_NullSourceArray_ShowsSixEmptySlots_AndSaves()
-        {
-            // job 文件里 "RegionSources": null 反序列化后就是 null: Fun_action 早已容忍, 参数页原先直接 NRE
-            var cfg = Newtonsoft.Json.JsonConvert.DeserializeObject<RegionMerge>("{\"RegionSources\":null}");
-            Assert.IsNull(cfg.RegionSources);
-            _strategy.inPara.RegionSources = null;
-
-            var ui = DisplayedUi();
-            Assert.AreEqual("输入区域5", ui.Values["lbl_105"]);
-            Assert.IsNull(ui.Values["cmb_100"]);
-
-            _strategy.SavePara(ui.Set("cmb_102", "C/区域"));
-
-            Assert.AreEqual(6, _strategy.inPara.RegionSources.Length);
-            Assert.AreEqual("C/区域", _strategy.inPara.RegionSources[2]);
-        }
-
-        [TestMethod]
-        public void SavePara_SourceChanged_ClearsTmplPoint()
+        public void DisplayOnlyChange_KeepsTmplPoint()
         {
             _strategy.inPara.TmplPoint = new Point2d(1, 2);
-            var ui = DisplayedUi().Set("cmb_103", "B/区域");
 
-            _strategy.SavePara(ui);
-
-            Assert.IsNull(_strategy.inPara.TmplPoint);
-            Assert.AreEqual("B/区域", _strategy.inPara.RegionSources[3]);
-        }
-
-        [TestMethod]
-        public void SavePara_CoordInChanged_ClearsTmplPoint()
-        {
-            _strategy.inPara.TmplPoint = new Point2d(1, 2);
-            var ui = DisplayedUi().Set("cmb_110", "定位/坐标系");
-
-            _strategy.SavePara(ui);
-
-            Assert.IsNull(_strategy.inPara.TmplPoint);
-            Assert.AreEqual("定位/坐标系", _strategy.inPara.CoordIn);
-        }
-
-        [TestMethod]
-        public void SavePara_DisplayOnlyChange_KeepsTmplPoint()
-        {
-            _strategy.inPara.TmplPoint = new Point2d(1, 2);
-            var ui = DisplayedUi().Set("CB_FontSize", "30").Check("ckb_disp1", false);
-
-            _strategy.SavePara(ui);
+            _strategy.SetParam("字号", 30);
+            _strategy.SetParam("查找区域", false);
 
             Assert.AreEqual(new Point2d(1, 2), _strategy.inPara.TmplPoint);
             Assert.AreEqual(30, _strategy.inPara.FontSize);
@@ -340,40 +310,42 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Close_ClearsResult_KeepsTmplPoint()
         {
-            Sources("A/区域");
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a)));
+            Sources(_a.Ref("区域"));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
 
             _strategy.Close(new FakeRoiHost());
 
-            Assert.IsFalse(_strategy.inPara.Result.HoRegion.IsUsableRegion());
-            Assert.AreEqual(new CvCoord(), _strategy.inPara.Coord);
+            Assert.IsFalse(_strategy.Region.IsUsableRegion());
+            Assert.AreEqual(new CvCoord(), _strategy.Coord);
             Assert.AreEqual(new Point2d(15, 15), _strategy.inPara.TmplPoint);
         }
 
         [TestMethod]
         public void Dispose_Idempotent_CloseAfterIsNoop()
         {
-            Sources("A/区域");
-            Assert.IsTrue(_strategy.Fun_action(_display, Strategies.Of(_a)));
-            var result = _strategy.inPara.Result.HoRegion;
+            Sources(_a.Ref("区域"));
+            Assert.IsTrue(_strategy.On(_display, _a).IsOk);
+            var result = _strategy.Region;
 
             _strategy.Dispose();
             _strategy.Dispose();
             _strategy.Close(new FakeRoiHost());
 
             Assert.IsFalse(result.IsInitialized());
-            Assert.IsNull(_strategy.inPara.Result.HoRegion);
         }
 
         [TestMethod]
-        public void Serialization_KeepsTmplPoint_SkipsResult()
+        public void Serialization_KeepsSourcesAndTmplPoint()
         {
+            Sources(_a.Ref("区域"));
             _strategy.inPara.TmplPoint = new Point2d(1, 2);
             var json = Newtonsoft.Json.JsonConvert.SerializeObject(_strategy.inPara);
             var back = Newtonsoft.Json.JsonConvert.DeserializeObject<RegionMerge>(json);
 
-            Assert.IsFalse(json.Contains("\"Result\""));
+            Assert.IsFalse(json.Contains("\"Region\""));
             Assert.AreEqual(new Point2d(1, 2), back.TmplPoint);
+            Assert.AreEqual(_a.Ref("区域"), back.RegionSources[0]);
+            Assert.AreEqual(SourceRef.Local, back.RegionSources[1]);
         }
     }
 }

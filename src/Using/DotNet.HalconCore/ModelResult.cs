@@ -19,16 +19,12 @@ namespace DotNet.HalconCore
         /// <summary> 分数 </summary>
         public double Score { get; set; }
 
-        /// <summary> 通用模版 ResultID </summary>
-        public HTuple ResultID { get; set; }
-
         public ModelResult(double row, double column, double angle, double score)
         {
             Row = row;
             Column = column;
             Angle = angle;
             Score = score;
-            ResultID = new HTuple();
         }
 
         [JsonIgnore]

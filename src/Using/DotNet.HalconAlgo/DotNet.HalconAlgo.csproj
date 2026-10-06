@@ -40,9 +40,6 @@
     <Reference Include="halcondotnet">
       <HintPath>$(DotNetDllDir)\Halcon\halcondotnet.dll</HintPath>
     </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(DotNetDllDir)\Newtonsoft.Json\Newtonsoft.Json.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -55,8 +52,6 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AlgoPaths.cs" />
-    <Compile Include="AlgoFont.cs" />
     <Compile Include="contour\FitArcMidpointRender.cs" />
     <Compile Include="region\CreateROIStrategy.cs" />
     <Compile Include="image\FileImageStrategy.cs" />
@@ -73,6 +68,11 @@
     <Compile Include="matching\ScaledModelStrategy.cs" />
     <Compile Include="matching\ShapeModelStrategy.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="common\ParamEnums.cs" />
+    <Compile Include="common\RoiEditing.cs" />
+    <Compile Include="contour\EdgeFitStrategyBase.cs" />
+    <Compile Include="image\RotateStrategyBase.cs" />
+    <Compile Include="matching\MatchStrategyBase.cs" />
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>

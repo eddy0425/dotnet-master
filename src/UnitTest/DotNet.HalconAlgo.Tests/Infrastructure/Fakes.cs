@@ -138,46 +138,11 @@ namespace DotNet.HalconAlgo.Tests
         }
     }
 
-    /// <summary>字典驱动的 <see cref="IParaUiHost"/>：Show* 写入控件值，Get* 从同一字典读回。</summary>
-    internal sealed class FakeUiHost : IParaUiHost
-    {
-        public readonly Dictionary<string, string> Values = new Dictionary<string, string>();
-        public readonly Dictionary<string, bool> Checks = new Dictionary<string, bool>();
-        public readonly Dictionary<string, string[]> Items = new Dictionary<string, string[]>();
-        public TabPageEnum[] Tabs = new TabPageEnum[0];
-
-        public FakeUiHost Set(string name, string value) { Values[name] = value; return this; }
-        public FakeUiHost Check(string name, bool value) { Checks[name] = value; return this; }
-
-        public void ShowTabs(params TabPageEnum[] tabsToShow) => Tabs = tabsToShow;
-        public void ClearAll() { Values.Clear(); Checks.Clear(); Items.Clear(); }
-
-        public void ShowLabel(string name, string text) => Values[name] = text;
-        public void ShowButton(string name, bool visible) { }
-        public void ShowTextBox(string name, string text) => Values[name] = text;
-        public void ShowComboBox(string name, string text, bool enabled) => Values[name] = text;
-        public void ShowComboBoxList(string name, string text, string[] items) { Values[name] = text; Items[name] = items; }
-        public void ShowComboBoxDropDown(string name, string text, string[] items) { Values[name] = text; Items[name] = items; }
-        public void ShowCheckBox(string name, string text, bool isChecked) => Checks[name] = isChecked;
-        public void ShowGroupBox(string name) { }
-        public void ShowRadioButton(string name, string text, bool visible, bool isChecked) => Checks[name] = isChecked;
-        public void ShowTrackBar(string name, int value) => Values[name] = value.ToString();
-        public void ShowTabPage(string name, string text, bool visible) { }
-
-        public string GetString(string name) => Values.TryGetValue(name, out var v) ? v : null;
-        public string GetString(string name, string fallback) => Values.TryGetValue(name, out var v) ? v : fallback;
-        public bool GetBool(string name) => Checks.TryGetValue(name, out var v) && v;
-        public bool GetBool(string name, bool fallback) => Checks.TryGetValue(name, out var v) ? v : fallback;
-        public int GetInt(string name) => int.Parse(GetString(name));
-        public int GetInt(string name, int fallback) => int.TryParse(GetString(name), out var v) ? v : fallback;
-        public double GetDouble(string name) => double.Parse(GetString(name));
-        public double GetDouble(string name, double fallback) => double.TryParse(GetString(name), out var v) ? v : fallback;
-    }
-
     /// <summary>把树结构拍平成 "策略/节点/子节点" 路径，便于断言。</summary>
     internal sealed class FakeTree : ITreeVisualizer
     {
         public readonly List<string> Paths = new List<string>();
+        public readonly Dictionary<string, OutEnum> Types = new Dictionary<string, OutEnum>();
 
         public ITreeVisualizer Branch(string text, Action<ITreeBranch> config)
         {
@@ -203,7 +168,11 @@ namespace DotNet.HalconAlgo.Tests
                 _prefix = prefix;
             }
 
-            public ITreeBranch Node(string text, OutEnum type, Action<ITreeBranch> config = null) => Branch(text, config);
+            public ITreeBranch Node(string text, OutEnum type, Action<ITreeBranch> config = null)
+            {
+                _tree.Types[_prefix + "/" + text] = type;
+                return Branch(text, config);
+            }
 
             public ITreeBranch Branch(string text, Action<ITreeBranch> config)
             {
@@ -219,31 +188,72 @@ namespace DotNet.HalconAlgo.Tests
         }
     }
 
-    /// <summary>上游策略替身：按路径直接登记输出值。</summary>
-    internal sealed class StubStrategy : ParaStrategyBase<object>
+    internal sealed class StubPara : DisplayOptions { }
+
+    /// <summary>上游策略替身：按名字声明输出，值由委托提供（每次解析时求值）。</summary>
+    internal sealed class StubStrategy : ParaStrategyBase<StubPara>
     {
+        private readonly List<Action<OutputBuilder>> _outputs = new List<Action<OutputBuilder>>();
+
         public StubStrategy(string name) { Name = name; }
 
-        public override AlgoEnum Algorithm => AlgoEnum.Undefined;
-        public override string Name { get; set; }
-        public override int RunIndex { get; set; }
-
-        public StubStrategy Output(string path, object value)
+        public StubStrategy Image(string name, Func<HObject> get) { _outputs.Add(o => o.Image(name, get)); return this; }
+        public StubStrategy Region(string name, Func<HObject> get) { _outputs.Add(o => o.Region(name, get)); return this; }
+        public StubStrategy Line(string name, Func<CvLine> get) { _outputs.Add(o => o.Line(name, get)); return this; }
+        public StubStrategy Point(string name, Func<Point2d> get) { _outputs.Add(o => o.Point(name, get)); return this; }
+        public StubStrategy Number(string name, Func<double> get) { _outputs.Add(o => o.Number(name, get)); return this; }
+        public StubStrategy CoordOut(string name, Func<CvCoord> current, Func<Point2d?> template)
         {
-            RegisterOutput(path, () => value);
+            _outputs.Add(o => o.Coord(name, current, template));
             return this;
         }
 
-        public override void GenTreeNode(ITreeVisualizer tree) { }
-        public override bool Fun_action(IHDisplay display, List<IParaStrategy> strategys) => true;
-        public override void DispPara(IParaUiHost ui) { }
-        public override void SavePara(IParaUiHost ui) { }
-
         /// <summary>
-        /// 模拟一个「坐标系」上游：TmplPoint 为示教原点，坐标系为当前位姿。
+        /// 模拟一个「坐标系」上游：输出 "坐标系"，模板点为示教原点，当前值为当前位姿。
         /// </summary>
-        public static StubStrategy Coord(string name, Point2d tmplPoint, CvCoord current)
-            => new StubStrategy(name).Output("TmplPoint", tmplPoint).Output("坐标系", current);
+        public static StubStrategy Coord(string name, Point2d? tmplPoint, CvCoord current)
+            => new StubStrategy(name).CoordOut("坐标系", () => current, () => tmplPoint);
+
+        protected override void DeclareParams(ParamBuilder p) { }
+        protected override void DeclareOutputs(OutputBuilder o) { foreach (var declare in _outputs) declare(o); }
+        protected override void ResetOutputs() { }
+        protected override RunResult Execute(RunContext context) => RunResult.Ok();
+    }
+
+    internal static class Run
+    {
+        /// <summary> 某个工具某个输出的引用 </summary>
+        public static SourceRef Ref(this IAlgoStrategy tool, string output) => SourceRef.To(tool, output);
+
+        /// <summary> 以显示窗口里的图作为当前图像执行一次（相当于原来的 Fun_action(display, strategys)） </summary>
+        public static RunResult On(this IAlgoStrategy strategy, FakeDisplay display, params IParaStrategy[] upstream)
+            => strategy.Run(new RunContext(display.HoImage, upstream), display);
+
+        /// <summary> 单图验证：没有上游（相当于原来的 Fun_action(image, display)） </summary>
+        public static RunResult OnImage(this IAlgoStrategy strategy, HObject image, FakeDisplay display)
+            => strategy.Run(RunContext.ForImage(image), display);
+    }
+
+    internal static class Params
+    {
+        public static ParamItem Param(this IParaBinding binding, string label, TabPageEnum? tab = null)
+        {
+            var found = binding.DescribeParams().Where(i => i.Label == label && (tab == null || i.Tab == tab)).ToList();
+            if (found.Count != 1) throw new InvalidOperationException($"参数 '{label}' 找到 {found.Count} 个");
+            return found[0];
+        }
+
+        /// <summary> 像面板一样写回一项：值变了才调用 setter 并通知策略 </summary>
+        public static bool SetParam(this IParaBinding binding, string label, object value, TabPageEnum? tab = null)
+        {
+            var item = binding.Param(label, tab);
+            bool changed = item.TrySetValue(value);
+            if (changed) binding.ParamsChanged(new[] { item });
+            return changed;
+        }
+
+        public static string[] Labels(this IParaBinding binding, TabPageEnum tab)
+            => binding.DescribeParams().Where(i => i.Tab == tab).Select(i => i.Label).ToArray();
     }
 
     /// <summary>捕获 <see cref="Log"/> 输出；Dispose 时恢复原 logger。</summary>
