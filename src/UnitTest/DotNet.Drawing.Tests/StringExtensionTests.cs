@@ -35,11 +35,5 @@ namespace DotNet.Drawing.Tests
         {
             Assert.AreEqual(expected, input.ExtractNumberAsString());
         }
-
-        [TestMethod]
-        public void ToTmplPoint_ReplacesLastSegment()
-        {
-            Assert.AreEqual("a/b/TmplPoint", "a/b/c".ToTmplPoint());
-        }
     }
 }

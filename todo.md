@@ -469,8 +469,8 @@ plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
 
 - [ ] 纯几何类型拆到一个不引用 halcondotnet 的 AnyCPU 项目；`Rect2d(HTuple)` 构造函数改为 Halcon 侧的扩展方法。
 - [ ] 拆 `HalconController`：目录排序、仿射变换、存图分别归位。
-- [ ] `StringExtension.ToTmplPoint` 在阶段 3 后已无调用方，直接删除。`ExtractNumber` 与 `DotNet.Extension` 里的版本合并成一份。注意 Drawing 版修复了「⑫ 这类大于 9 的带圈数字被截成首位」的 bug，Library 版（`DotNet.Extension/StringExtension.cs:154`）还没修，所以**要以 Drawing 版为准**。
-- [ ] `Rect`、`Point2f`、`Rect2f`、`Size2f`、`TransExpV2`、`SerializeConvert` 只有测试在用，决定删除还是保留。
+- [x] `StringExtension.ToTmplPoint` 在阶段 3 后已无调用方，直接删除。`ExtractNumber` 与 `DotNet.Extension` 里的版本合并成一份。注意 Drawing 版修复了「⑫ 这类大于 9 的带圈数字被截成首位」的 bug，Library 版（`DotNet.Extension/StringExtension.cs:154`）还没修，所以**要以 Drawing 版为准**。（`ToTmplPoint` 已删；`ExtractNumber` 没有跨项目合并 —— Library 与 Drawing 互不引用，让 Drawing（插件契约的一部分）依赖 Library 不划算，改为把 Drawing 版的修复移植到 Library 版，两份行为一致）
+- [x] `Rect`、`Point2f`、`Rect2f`、`Size2f`、`TransExpV2`、`SerializeConvert` 只有测试在用，决定删除还是保留。（全部删除，连同各自的测试；`SerializeConvert.NewtonsoftJsonFirst` 这个可写静态开关随之消失）
 
 ---
 

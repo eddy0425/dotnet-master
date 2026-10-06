@@ -69,11 +69,8 @@
     <Compile Include="CvCoordTests.cs" />
     <Compile Include="StringExtensionTests.cs" />
     <Compile Include="CvArrowTests.cs" />
-    <Compile Include="InteropStructTests.cs" />
     <Compile Include="HColorTests.cs" />
     <Compile Include="LogTests.cs" />
-    <Compile Include="SerializeConvertTests.cs" />
-    <Compile Include="TransExpV2Tests.cs" />
     <Compile Include="HashCodeTests.cs" />
     <Compile Include="HalconBoundaryTests.cs" />
     <Compile Include="HalconRuntimeTests.cs" />

@@ -9,11 +9,6 @@ namespace DotNet.Drawing
 {
     public static class StringExtension
     {
-        public static string ToTmplPoint(this string strategyOutputKey)
-        {
-            return strategyOutputKey.Substring(0, strategyOutputKey.LastIndexOf('/') + 1) + "TmplPoint";
-        }
-
         #region 数字处理
         private static readonly Regex _digitRegex = new Regex(@"\p{N}", RegexOptions.Compiled);
 

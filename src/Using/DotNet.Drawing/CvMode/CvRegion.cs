@@ -209,7 +209,7 @@ namespace DotNet.Drawing
         /// 深拷贝：几何参数逐项复制，<see cref="HoRegion"/> 通过 <c>CopyObj</c> 生成独立句柄。
         /// </summary>
         /// <remarks>
-        /// <b>不能</b>用 <see cref="TransExpV2{TIn,TOut}"/> 实现：它是浅拷贝，<see cref="HoRegion"/> 会被复制成同一个句柄，
+        /// <b>不能</b>用表达式树之类的通用浅拷贝实现：<see cref="HoRegion"/> 会被复制成同一个句柄，
         /// 原件与克隆任一方 Dispose 都会让另一方持有已释放的对象。
         /// <para>
         /// <b>所有权</b>：返回的实例独立持有一份 Halcon 句柄，由调用方负责 <see cref="Dispose"/>。
