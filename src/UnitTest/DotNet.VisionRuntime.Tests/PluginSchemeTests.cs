@@ -199,6 +199,37 @@ namespace DotNet.VisionRuntime.Tests
             finally { DisposeAll(back); }
         }
 
+        /// <summary>
+        /// Runtime 不需要任何界面就能跑完整流程：从磁盘加载方案（含外置插件）→ 无绘制运行 → 读结果
+        /// </summary>
+        [TestMethod]
+        public void Headless_LoadSchemeRunAndReadResults()
+        {
+            var catalog = Catalog();
+            var roi = (CreateROIStrategy)catalog.Create("region.create-roi");
+            roi.inPara.HoRect.Dispose();
+            roi.inPara.HoRect = NewRegion(RectEnum.Rectangle, 0, 0, 10, 20);
+            var area = catalog.Create(Key);
+            ((IParaBinding)area).DescribeParams().Single(p => p.Label == "区域来源").TrySetValue(SourceRef.To(roi, "区域"));
+            var tools = new IParaStrategy[] { roi, area };
+            try { FlowScheme.Save(_scheme, tools); }
+            finally { DisposeAll(tools); }
+
+            var loaded = FlowScheme.Load(_scheme, Catalog());
+            try
+            {
+                foreach (var tool in loaded) tool.Init(null);
+                using (var result = new FlowRunner(loaded) { Render = false }.Run(null))
+                {
+                    Assert.IsTrue(result.AllOk, result.FirstError?.Result.Message);
+                    Assert.IsTrue(result.Steps.All(s => s.Overlay == null), "无界面运行不生成叠加层");
+                    var areaOut = loaded[1].FindOutput("面积").GetValue();
+                    Assert.AreEqual(11.0 * 21.0, (double)areaOut, 1e-6, "读得到插件的计算结果");
+                }
+            }
+            finally { DisposeAll(loaded); }
+        }
+
         [TestMethod]
         public void Catalog_ExposesParaVersion_BuiltInsDefaultToOne()
         {

@@ -26,5 +26,22 @@ namespace DotNet.VisionRuntime.Tests
             CollectionAssert.DoesNotContain(actual, "System.Windows.Forms");
             CollectionAssert.DoesNotContain(actual, "DotNet.HalconAlgo");
         }
+
+        /// <summary> 外置插件只看到 SDK 这一层：Core、Drawing、HALCON（可选 HalconKit、Newtonsoft），看不到 Runtime 与界面 </summary>
+        [TestMethod]
+        public void ExternalPlugin_ReferencesOnlySdk()
+        {
+            var allowed = new[]
+            {
+                "mscorlib", "System", "System.Core",
+                "DotNet.Drawing", "DotNet.HalconCore", "DotNet.HalconKit", "halcondotnet", "Newtonsoft.Json",
+            };
+            var actual = AssemblyNameOf(AlgoCatalogTests.SamplePluginDll());
+
+            CollectionAssert.IsSubsetOf(actual, allowed, "实际引用: " + string.Join(", ", actual));
+        }
+
+        private static string[] AssemblyNameOf(string path)
+            => Assembly.LoadFrom(path).GetReferencedAssemblies().Select(a => a.Name).ToArray();
     }
 }
