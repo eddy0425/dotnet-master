@@ -1,13 +1,18 @@
 using DotNet.HalconCore;
 using HalconDotNet;
+using Newtonsoft.Json.Linq;
 
 namespace DotNet.SamplePlugin
 {
     /// <summary>
     /// 外置插件样例：统计上游区域的面积。整个算法就是这一个文件 —— 一个策略类 + 一个参数类，
     /// 只依赖 DotNet.HalconCore（与 halcondotnet），不认识宿主里的任何控件。
+    /// <para>
+    /// 也是参数迁移的样例：1 版的参数类把最小面积存成 <c>Min</c>，2 版改名为 <c>MinArea</c> ——
+    /// 版本号写在 <see cref="AlgoAttribute.ParaVersion"/> 上，旧方案读入时由 <see cref="MigratePara"/> 改名，不会被静默读成默认值。
+    /// </para>
     /// </summary>
-    [Algo("sample.region-area", "区域面积", Group = "示例", Order = 10)]
+    [Algo("sample.region-area", "区域面积", Group = "示例", Order = 10, ParaVersion = 2)]
     public class RegionAreaStrategy : ParaStrategyBase<RegionAreaPara>
     {
         /// <summary> 本轮面积；失败时为 0 </summary>
@@ -26,6 +31,16 @@ namespace DotNet.SamplePlugin
         }
 
         protected override void ResetOutputs() => Area = 0;
+
+        protected override void MigratePara(JObject para, int fromVersion)
+        {
+            // 1 → 2: Min 改名为 MinArea
+            if (fromVersion < 2 && para["Min"] != null)
+            {
+                para["MinArea"] = para["Min"];
+                para.Remove("Min");
+            }
+        }
 
         protected override RunResult Execute(RunContext context)
         {

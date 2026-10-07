@@ -79,7 +79,7 @@ namespace DotNet.VisionRuntime
     public sealed class AlgoCatalog
     {
         /// <summary> 插件不得自带副本的程序集：它们必须与宿主共用同一份 </summary>
-        internal static readonly string[] SharedAssemblies = { "halcondotnet", "DotNet.HalconCore", "DotNet.Drawing", "DotNet.VisionRuntime" };
+        internal static readonly string[] SharedAssemblies = { "halcondotnet", "DotNet.HalconCore", "DotNet.Drawing", "DotNet.VisionRuntime", "Newtonsoft.Json" };
 
         /// <summary> 契约程序集（DotNet.HalconCore），插件编译时引用的就是它 </summary>
         private static readonly AssemblyName Contract = typeof(IParaStrategy).Assembly.GetName();
@@ -174,6 +174,8 @@ namespace DotNet.VisionRuntime
                 problems.Add($"{where}: [Algo] 不能标在开放泛型类型上");
             if (!type.IsAbstract && type.GetConstructor(Type.EmptyTypes) == null)
                 problems.Add($"{where}: 缺少公开的无参构造函数");
+            if (attribute.ParaVersion < 1)
+                problems.Add($"{where}: [Algo] 的参数版本必须从 1 开始");
             return problems.Count == before;
         }
 

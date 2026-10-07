@@ -1,5 +1,6 @@
 using DotNet.Drawing;
 using HalconDotNet;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -112,6 +113,15 @@ namespace DotNet.HalconCore
         void Close(IInteractionHost host);
     }
 
+    /// <summary>
+    /// 参数迁移的入口：宿主读到旧版本的参数时调用。插件作者不用实现它 —— 覆盖基类的 <c>MigratePara</c> 即可。
+    /// </summary>
+    public interface IParaMigration
+    {
+        /// <summary> 把 <paramref name="para"/> 从 <paramref name="fromVersion"/> 改成当前版本的形状（就地修改） </summary>
+        void MigratePara(JObject para, int fromVersion);
+    }
+
     #endregion
 
     /// <summary>
@@ -128,7 +138,7 @@ namespace DotNet.HalconCore
     /// <item>声明：<see cref="DeclareOutputs"/>，一次声明同时生成变量树和解析器。</item>
     /// </list>
     /// </remarks>
-    public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding
+    public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding, IParaMigration
         where TPara : DisplayOptions, new()
     {
         private TPara _para = new TPara();
@@ -324,6 +334,20 @@ namespace DotNet.HalconCore
             _outputs = o.Roots.ToList();
             _outputIndex = OutputBuilder.Index(_outputs);
         }
+
+        #endregion
+
+        #region 参数迁移
+
+        /// <summary>
+        /// 方案里存的参数版本低于 <see cref="AlgoAttribute.ParaVersion"/> 时，宿主在反序列化<b>之前</b>调用：
+        /// 在 JSON 层面把旧形状改成新形状（改名、换单位、拆字段…），改完再按 <typeparamref name="TPara"/> 读。
+        /// 一次可能跨好几个版本，按 <paramref name="fromVersion"/> 逐级处理。抛异常时该工具作为占位工具保留原始配置。
+        /// </summary>
+        /// <remarks> 用到 Newtonsoft.Json：要迁移参数的插件需要引用它，且必须用宿主的同一份（不得自带副本）。 </remarks>
+        protected virtual void MigratePara(JObject para, int fromVersion) { }
+
+        void IParaMigration.MigratePara(JObject para, int fromVersion) => MigratePara(para, fromVersion);
 
         #endregion
 

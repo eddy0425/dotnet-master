@@ -16,9 +16,13 @@ namespace DotNet.VisionRuntime
     /// 和每个工具一个以 <see cref="IAlgoStrategy.Id"/> 命名的数据子目录（模板图、模型文件…）。
     /// </summary>
     /// <remarks>
-    /// 每个工具存 <c>{ AlgoKey, Id, Name, Para }</c>。加载时按 <see cref="AlgoCatalog"/> 的稳定键创建实例；
+    /// 每个工具存 <c>{ AlgoKey, Id, Name, ParaVersion, Para }</c>。加载时按 <see cref="AlgoCatalog"/> 的稳定键创建实例；
     /// 找不到键（插件缺失）或参数读不出来时，用 <see cref="MissingTool"/> 占位并保留原始 JSON，
     /// 再次保存时原样写回 —— 不丢配置，也不打乱其余工具的顺序与引用。
+    /// <para>
+    /// 参数版本低于插件当前版本时，先交给策略的 <c>MigratePara</c> 在 JSON 层面迁移再读；没有存版本的视为 1。
+    /// 高于插件当前版本（方案是新程序存的）时不尝试读取，直接占位保留原文 —— 免得旧程序把新方案读坏后又写回。
+    /// </para>
     /// </remarks>
     public static class FlowScheme
     {
@@ -60,6 +64,7 @@ namespace DotNet.VisionRuntime
                     ["AlgoKey"] = info.Key,
                     ["Id"] = tool.Id,
                     ["Name"] = tool.Name,
+                    ["ParaVersion"] = info.ParaVersion,
                     ["Para"] = JToken.FromObject(tool.Para, serializer),
                 });
             }
@@ -134,9 +139,16 @@ namespace DotNet.VisionRuntime
         private static IParaStrategy TryCreate(JObject record, AlgoCatalog catalog, JsonSerializer serializer, out string problem)
         {
             string key = record.Value<string>("AlgoKey");
-            if (catalog.Find(key) == null)
+            var info = catalog.Find(key);
+            if (info == null)
             {
                 problem = $"未找到算法 '{key}'（插件缺失？）";
+                return null;
+            }
+            int saved = record.Value<int?>("ParaVersion") ?? 1;
+            if (saved > info.ParaVersion)
+            {
+                problem = $"参数版本 {saved} 高于插件支持的 {info.ParaVersion}（方案由更新的程序保存，请升级插件）";
                 return null;
             }
 
@@ -145,8 +157,11 @@ namespace DotNet.VisionRuntime
             {
                 tool.Id = record["Id"]?.ToObject<Guid>() ?? Guid.NewGuid();
                 tool.Name = record.Value<string>("Name") ?? tool.Name;
-                if (record["Para"] is JObject para)
+                if (record["Para"] is JObject stored)
                 {
+                    // 在副本上迁移: 失败时原始记录要原样留给占位工具
+                    var para = (JObject)stored.DeepClone();
+                    if (saved < info.ParaVersion) (tool as IParaMigration)?.MigratePara(para, saved);
                     // 先释放默认参数里的句柄 (例如空 ROI), 再换成读进来的配置
                     object loaded = para.ToObject(tool.Para.GetType(), serializer);
                     (tool.Para as IDisposable)?.Dispose();
@@ -155,7 +170,8 @@ namespace DotNet.VisionRuntime
                 problem = null;
                 return tool;
             }
-            catch (Exception ex) when (ex is JsonException || ex is ArgumentException || ex is FormatException || ex is InvalidCastException)
+            catch (Exception ex) when (ex is JsonException || ex is ArgumentException || ex is FormatException || ex is InvalidCastException
+                                       || ex is InvalidOperationException || ex is NullReferenceException)
             {
                 tool.Dispose();
                 problem = $"参数读取失败: {ex.Message}";

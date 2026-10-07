@@ -42,6 +42,13 @@ namespace DotNet.HalconCore
         /// <summary> 新建 ROI 的默认形状；只对实现了 <see cref="IRoiEditable"/> 的策略有意义 </summary>
         public RectEnum DefaultRoi { get; set; } = RectEnum.Rectangle;
 
+        /// <summary>
+        /// 参数类的版本，写进方案文件；从 1 开始。参数类改名、改单位、拆字段、改语义时加一，
+        /// 并覆盖 <c>ParaStrategyBase.MigratePara</c> 把旧版本的 JSON 改成新形状。
+        /// 只是新增有默认值的字段、改容器类型（数组 ↔ List）时 JSON 形状不变，不必加。
+        /// </summary>
+        public int ParaVersion { get; set; } = 1;
+
         /// <summary> 读取类型上的特性；没有标注时返回 null </summary>
         public static AlgoAttribute Of(Type type)
         {
@@ -61,6 +68,7 @@ namespace DotNet.HalconCore
             Group = string.IsNullOrWhiteSpace(attribute.Group) ? "其它" : attribute.Group;
             Order = attribute.Order;
             DefaultRoi = attribute.DefaultRoi;
+            ParaVersion = attribute.ParaVersion;
             Type = type;
         }
 
@@ -69,6 +77,10 @@ namespace DotNet.HalconCore
         public string Group { get; }
         public int Order { get; }
         public RectEnum DefaultRoi { get; }
+
+        /// <summary> 参数类的当前版本（见 <see cref="AlgoAttribute.ParaVersion"/>） </summary>
+        public int ParaVersion { get; }
+
         public Type Type { get; }
 
         /// <summary> 由特性与实现类型生成元数据；宿主扫描算法目录时用 </summary>

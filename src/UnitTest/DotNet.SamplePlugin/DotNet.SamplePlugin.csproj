@@ -45,6 +45,11 @@
       <HintPath>$(DotNetDllDir)\Halcon\halcondotnet.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <!-- 只为参数迁移 (MigratePara 的 JObject); 与 halcondotnet 一样用宿主的那一份, 不复制到插件目录 -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(DotNetDllDir)\Newtonsoft.Json\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
   </ItemGroup>
