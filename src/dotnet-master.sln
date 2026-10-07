@@ -47,6 +47,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.VisionRuntime", "Usi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.VisionRuntime.Tests", "UnitTest\DotNet.VisionRuntime.Tests\DotNet.VisionRuntime.Tests.csproj", "{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.HalconKit", "Using\DotNet.HalconKit\DotNet.HalconKit.csproj", "{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -125,6 +127,10 @@ Global
 		{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -148,6 +154,7 @@ Global
 		{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481} = {C3853247-25A3-492D-87FA-AC25EDCB5934}
 		{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69} = {C3853247-25A3-492D-87FA-AC25EDCB5934}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {85015248-7E70-49E3-B9EE-6AD3B0689B2B}

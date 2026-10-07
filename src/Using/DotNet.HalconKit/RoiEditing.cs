@@ -2,12 +2,12 @@ using System.Threading.Tasks;
 using DotNet.Drawing;
 using DotNet.HalconCore;
 
-namespace DotNet.HalconAlgo
+namespace DotNet.HalconKit
 {
     /// <summary>
     /// 交互式绘制 / 修改一个配置 ROI：所有带本地 ROI 的策略共用（原来 7 个类各抄一份）。
     /// </summary>
-    internal static class RoiEditing
+    public static class RoiEditing
     {
         /// <returns>用户确认返回 true；取消 / 超时返回 false，此时 ROI 的几何与类型都保持原样。</returns>
         public static async Task<bool> DrawAsync(IInteractionHost host, CvRegion roi, RectEnum type, bool newROI)

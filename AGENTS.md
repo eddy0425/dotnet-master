@@ -8,6 +8,7 @@
 | --- | --- |
 | `DotNet.Drawing` | 绘图基础 |
 | `DotNet.HalconCore` | 算法契约（SDK：基类、特性、能力接口），插件只看到这一层 |
+| `DotNet.HalconKit` | 算法通用积木（卡尺边缘查找、稳健拟合、ROI 编辑），插件可选引用 |
 | `DotNet.VisionRuntime` | 无界面宿主内核：算法目录与插件加载、流程引擎、方案读写 |
 | `DotNet.HalconAlgo` | 内置算法实现 |
 | `DotNet.HalconUI` | Halcon 显示与交互控件 |
@@ -32,7 +33,7 @@
 public class FitArcMidpointStrategy : ParaStrategyBase<FitArcMidpoint>, IRoiEditable
 ```
 
-1. **只依赖 Core**：算法类只引用 `DotNet.HalconCore` 和 `DotNet.Drawing`，不能引用宿主控件。
+1. **只依赖 Core**：算法类只引用 `DotNet.HalconCore` 和 `DotNet.Drawing`（可选 `DotNet.HalconKit`），不能引用宿主运行时与控件。
 2. **零登记**：算法类和参数类放在同一个文件里；新增算法不改宿主端任何代码（包括 Designer）。
 3. **可外置**：放在 `DotNet.HalconAlgo` 中，或编译成独立 dll 放进 `plugins\`，行为一致。
 

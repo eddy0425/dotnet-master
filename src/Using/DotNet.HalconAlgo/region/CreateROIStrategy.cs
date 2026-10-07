@@ -1,5 +1,6 @@
 using DotNet.Drawing;
 using DotNet.HalconCore;
+using DotNet.HalconKit;
 using HalconDotNet;
 using System.Threading.Tasks;
 

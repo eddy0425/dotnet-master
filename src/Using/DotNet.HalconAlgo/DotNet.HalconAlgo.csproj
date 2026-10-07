@@ -57,8 +57,6 @@
     <Compile Include="image\FileImageStrategy.cs" />
     <Compile Include="contour\FitArcMidpointStrategy.cs" />
     <Compile Include="contour\FitLineStrategy.cs" />
-    <Compile Include="pipeline\EdgeMeasurePipeline.cs" />
-    <Compile Include="pipeline\RobustFitPipeline.cs" />
     <Compile Include="image\LineRotImageStrategy.cs" />
     <Compile Include="image\RotateImageStrategy.cs" />
     <Compile Include="matching\GenericModelStrategy.cs" />
@@ -69,7 +67,6 @@
     <Compile Include="matching\ShapeModelStrategy.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="common\ParamEnums.cs" />
-    <Compile Include="common\RoiEditing.cs" />
     <Compile Include="contour\EdgeFitStrategyBase.cs" />
     <Compile Include="image\RotateStrategyBase.cs" />
     <Compile Include="matching\MatchStrategyBase.cs" />
@@ -104,6 +101,10 @@
     <ProjectReference Include="..\DotNet.HalconCore\DotNet.HalconCore.csproj">
       <Project>{7b2e4c10-9d6a-4f31-a5c8-3e0b1d742f96}</Project>
       <Name>DotNet.HalconCore</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\DotNet.HalconKit\DotNet.HalconKit.csproj">
+      <Project>{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}</Project>
+      <Name>DotNet.HalconKit</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

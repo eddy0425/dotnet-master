@@ -1,6 +1,7 @@
 ﻿using System;
 using DotNet.Drawing;
 using DotNet.HalconCore;
+using DotNet.HalconKit;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace DotNet.HalconAlgo.Tests

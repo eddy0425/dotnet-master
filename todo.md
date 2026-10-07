@@ -358,7 +358,7 @@ public class RegionAreaStrategy : ParaStrategyBase<RegionAreaPara>
 - [x] `AlgoCatalog.Load` 返回逐个插件的加载报告；坏插件不影响其它插件（包括共享程序集副本：只拒绝带了副本的那个插件）；信息窗口显示报告。
 - [x] `[Algo(ParaVersion = n)]` + 基类虚方法 `MigratePara`；方案记录每个工具的 `ParaVersion`；版本更高时作为 `MissingTool` 保留。
 - [x] 补全端到端测试（已有 `CoreContractTests.Plugin_LoadedFromPluginDir_CreatesAndRuns` 覆盖「加载 → 建工具 → 运行」，`MainFormTests.Plugin_AppearsInToolbox_AndItsParamsAreShown` 覆盖工具箱与参数页）：增加子目录布局，以及「保存 → 重新加载 → 参数一致」「删掉插件后重新加载 → `MissingTool` 原样写回」。
-- [ ] 新建 `DotNet.HalconKit`，迁入 `EdgeMeasurePipeline`、`RobustFitPipeline`，以及按 `IInteractionHost` 改写后的 `RoiEditing`（改为 `public`）；HalconAlgo 改引用；架构测试加 Kit 的引用白名单。
+- [x] 新建 `DotNet.HalconKit`，迁入 `EdgeMeasurePipeline`、`RobustFitPipeline`，以及按 `IInteractionHost` 改写后的 `RoiEditing`（改为 `public`）；HalconAlgo 改引用；架构测试加 Kit 的引用白名单。
 
 ### 阶段 12（可选）：工程与基础类型
 

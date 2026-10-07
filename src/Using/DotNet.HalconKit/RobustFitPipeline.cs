@@ -3,7 +3,7 @@ using HalconDotNet;
 using System;
 using System.Collections.Generic;
 
-namespace DotNet.HalconAlgo
+namespace DotNet.HalconKit
 {
     /// <summary>
     /// 稳健拟合的公共骨架：轮廓重建、一次性粗滤、按残差迭代精滤、裁剪首尾。

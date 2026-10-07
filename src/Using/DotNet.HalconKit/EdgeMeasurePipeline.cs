@@ -3,7 +3,7 @@ using HalconDotNet;
 using System;
 using System.Collections.Generic;
 
-namespace DotNet.HalconAlgo
+namespace DotNet.HalconKit
 {
     /// <summary>
     /// 一次卡尺式边缘查找的输入参数。构造时完成全部钳位与枚举翻译，

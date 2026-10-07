@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using DotNet.Drawing;
+using DotNet.HalconKit;
 using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

@@ -36,8 +36,18 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void HalconAlgo_ReferencesOnlyContractAndHalcon()
         {
-            var allowed = new[] { "mscorlib", "System", "System.Core", "DotNet.Drawing", "DotNet.HalconCore", "halcondotnet" };
+            var allowed = new[] { "mscorlib", "System", "System.Core", "DotNet.Drawing", "DotNet.HalconCore", "DotNet.HalconKit", "halcondotnet" };
             var actual = BuiltIn.GetReferencedAssemblies().Select(a => a.Name).ToArray();
+
+            CollectionAssert.IsSubsetOf(actual, allowed, "实际引用: " + string.Join(", ", actual));
+        }
+
+        /// <summary> 通用积木和插件站在同一层：只依赖契约、几何与 HALCON，不认识 WinForms，也不认识宿主运行时与内置算法 </summary>
+        [TestMethod]
+        public void HalconKit_ReferencesOnlyContractAndHalcon()
+        {
+            var allowed = new[] { "mscorlib", "System", "System.Core", "DotNet.Drawing", "DotNet.HalconCore", "halcondotnet" };
+            var actual = typeof(DotNet.HalconKit.RoiEditing).Assembly.GetReferencedAssemblies().Select(a => a.Name).ToArray();
 
             CollectionAssert.IsSubsetOf(actual, allowed, "实际引用: " + string.Join(", ", actual));
         }

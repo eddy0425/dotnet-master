@@ -2,6 +2,7 @@ using HalconDotNet;
 using System;
 using DotNet.Drawing;
 using DotNet.HalconCore;
+using DotNet.HalconKit;
 using System.Collections.Generic;
 
 
