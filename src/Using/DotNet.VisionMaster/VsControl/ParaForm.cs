@@ -3,7 +3,6 @@ using DotNet.HalconUI;
 using DotNet.HalconCore;
 using DotNet.VisionRuntime;
 using System;
-using System.IO;
 using System.Linq;
 using System.Drawing;
 using System.Windows.Forms;
@@ -15,28 +14,31 @@ using Newtonsoft.Json.Linq;
 namespace DotNet.VisionMaster
 {
     /// <summary>
-    /// 工具参数页：按策略声明的参数生成面板，承载 ROI / 模板这两类固定交互，以及取消编辑 / 运行测试 / 保存参数的编辑会话。
+    /// 工具参数页：按策略声明的参数生成各页面板，按能力接口放上能力编辑器，以及取消编辑 / 运行测试 / 保存参数的编辑会话。
     /// </summary>
     /// <remarks>
-    /// 本类只认识 <see cref="IParaStrategy"/> 与能力接口（<see cref="IParaBinding"/>、<see cref="IRoiEditable"/>、
-    /// <see cref="ITemplateEditable"/>），不认识任何具体算法：新增算法不需要改这里，也不需要改 Designer。
+    /// 本类只认识 <see cref="IParaStrategy"/>、<see cref="IParaBinding"/> 与能力编辑器（<see cref="ICapabilityEditor"/>），
+    /// 不认识任何具体算法，也不再写死 ROI 页 / 模板页：新增算法不需要改这里，也不需要改 Designer。
     /// </remarks>
     public partial class ParaForm : UserControl
     {
+        private sealed class EditorSlot
+        {
+            public ICapabilityEditor Definition;
+            public Control View;
+        }
+
         private readonly HDisplayUI _display;
-        private HModelUI _hModel;
         private ValueForm _valueForm;
-        private HEditModelUI _editModel;
 
         private IParaStrategy _tool;
         private IReadOnlyList<IParaStrategy> _flow = new IParaStrategy[0];
 
-        private Dictionary<RadioButton, RectEnum> _rectDrawMap;
-        private Dictionary<RadioButton, RectEnum> _modelDrawMap;
-        // 页按名字建、按需建：插件声明了新页名就多一个页签，不改 Designer。
-        // ROI / 模板两页上还有固定的交互控件，暂时仍在 Designer 里，按名字登记进来
+        // 页按名字建、按需建：插件声明了新页名就多一个页签，不改 Designer
         private readonly Dictionary<string, TabPage> _pages = new Dictionary<string, TabPage>(StringComparer.Ordinal);
         private readonly Dictionary<string, ParamPanel> _panels = new Dictionary<string, ParamPanel>(StringComparer.Ordinal);
+        // 能力编辑器各建一次, 显示工具时按能力挂到对应的页上
+        private readonly List<EditorSlot> _editors = new List<EditorSlot>();
 
         private static readonly Color PageBackColor = Color.FromArgb(30, 40, 30);
 
@@ -50,6 +52,7 @@ namespace DotNet.VisionMaster
         /// <b>不变式</b>：同一 <c>HDisplayUI</c> 上任何时刻只能有一条绘制在飞。<c>DrawSession.Finish</c> 的
         /// <c>TrySetResult</c> 会<b>就地内联</b>旧会话 await 之后的代码，若允许 busy 时再发起绘制，
         /// 旧续体的 <c>finally</c> 就会在新会话开始之前把闸门清掉；<see cref="_drawEpoch"/> 让每一轮只清自己那一轮。
+        /// 所有能力编辑器都经 <see cref="EditorContext.RunDraw"/> 走这同一道闸门。
         /// </para>
         /// </remarks>
         private bool _drawBusy;
@@ -67,44 +70,25 @@ namespace DotNet.VisionMaster
             _display = displayUI;
             Host = new DisplayInteractionHost(displayUI);
 
-            Register(Pages.Region, tabRegion, regionPanel);
-            Register(Pages.Template, tabMatching, matchingPanel);
-
-            _rectDrawMap = new Dictionary<RadioButton, RectEnum>
-            {
-                { btn_rectRectangle, RectEnum.Rectangle },
-                { btn_rectAffRect,   RectEnum.AffRect },
-                { btn_rectCircle,    RectEnum.Circle },
-                { btn_rectEllipse,   RectEnum.Ellipse },
-                { btn_rectPolygon,   RectEnum.Polygon },
-            };
-            _modelDrawMap = new Dictionary<RadioButton, RectEnum>
-            {
-                { btn_modelRectangle, RectEnum.Rectangle },
-                { btn_modelAffRect,   RectEnum.AffRect },
-                { btn_modelCircle,    RectEnum.Circle },
-                { btn_modelEllipse,   RectEnum.Ellipse },
-                { btn_modelPolygon,   RectEnum.Polygon },
-            };
+            var context = new EditorContext(displayUI, Host, () => _tool, () => _drawBusy, () => _hostBusy, RunDraw);
+            foreach (var editor in CapabilityEditors.BuiltIn)
+                _editors.Add(new EditorSlot { Definition = editor, View = editor.Create(context) });
 
             tabControl1.TabPages.Clear();
-            _display.RoiShown += Display_RoiShown;
+            UpdateActions();
         }
 
         private void ParaForm_Load(object sender, EventArgs e)
         {
-            _hModel = new HModelUI();
-            _editModel = new HEditModelUI();
             _valueForm = new ValueForm(FindForm());
-            panel1.Controls.Add(_hModel);
 
-            // _editModel / _valueForm 没有父容器, Designer 的 Dispose(bool) 不会释放它们;
+            // _valueForm 没有父容器, Designer 的 Dispose(bool) 不会释放它;
             // 挂 HandleDestroyed 而不是重写 Dispose(bool): 后者已在 Designer 里定义。
             HandleDestroyed += ParaForm_HandleDestroyed;
         }
 
         /// <summary>
-        /// 释放 <see cref="ParaForm_Load"/> 里自行 new、又没挂进控件树的两个窗体。
+        /// 释放不在控件树里的东西：来源选择窗、当前没显示的页与编辑器。
         /// </summary>
         /// <remarks>
         /// <b>必须判 <see cref="Control.Disposing"/></b>：句柄重建同样会触发本事件，那时控件还活着。
@@ -114,41 +98,22 @@ namespace DotNet.VisionMaster
         {
             if (!Disposing && !IsDisposed) return;
 
-            _display.RoiShown -= Display_RoiShown;
-            Watch(null);
-
-            try { _editModel?.Dispose(); }
-            catch (Exception ex) { Log.Warn(nameof(ParaForm), "释放模板编辑窗失败.", ex); }
-
             try { _valueForm?.Dispose(); }
             catch (Exception ex) { Log.Warn(nameof(ParaForm), "释放来源选择窗失败.", ex); }
 
-            // 当前没显示的页不在控件树里, 不会随本控件释放
-            foreach (var page in _pages.Values.Where(p => p.Parent == null).ToList())
+            var detached = _editors.Select(s => s.View).Concat(_pages.Values).Where(c => c.Parent == null).ToList();
+            foreach (var control in detached)
             {
-                try { page.Dispose(); }
-                catch (Exception ex) { Log.Warn(nameof(ParaForm), $"释放参数页 '{page.Text}' 失败.", ex); }
+                try { control.Dispose(); }
+                catch (Exception ex) { Log.Warn(nameof(ParaForm), $"释放 '{control.Name}{control.Text}' 失败.", ex); }
             }
         }
 
-        /// <summary> 登记一页及其参数面板，接上来源选择与写回 </summary>
-        private void Register(string name, TabPage page, ParamPanel panel)
-        {
-            page.Text = name;
-            panel.SourcePicker = PickSource;
-            panel.SourceListPicker = list => PickSource(() => _valueForm.Pick(Upstream(), list));
-            panel.SourceFormatter = source => _flow.Describe(source);
-            panel.ValueWriter = WriteValue;
-            panel.Committed += Panel_Committed;
-            _pages.Add(name, page);
-            _panels.Add(name, panel);
-        }
-
-        /// <summary> 取名为 <paramref name="name"/> 的页；没有就新建一页，只放一个参数面板（外观同 Designer 里的页） </summary>
+        /// <summary> 取名为 <paramref name="name"/> 的页；没有就新建一页，放一个参数面板 </summary>
         private TabPage PageOf(string name)
         {
             if (_pages.TryGetValue(name, out var page)) return page;
-            page = new TabPage { BackColor = PageBackColor, Padding = new Padding(3) };
+            page = new TabPage(name) { BackColor = PageBackColor, Padding = new Padding(3) };
             var panel = new ParamPanel
             {
                 AutoScroll = true,
@@ -157,28 +122,51 @@ namespace DotNet.VisionMaster
                 Font = new Font("Microsoft Sans Serif", 9F, FontStyle.Regular, GraphicsUnit.Point, 134),
                 ForeColor = Color.White,
                 RowsPerColumn = 6,
+                SourcePicker = PickSource,
+                SourceListPicker = list => PickSource(() => _valueForm.Pick(Upstream(), list)),
+                SourceFormatter = source => _flow.Describe(source),
+                ValueWriter = WriteValue,
             };
+            panel.Committed += Panel_Committed;
             page.Controls.Add(panel);
-            Register(name, page, panel);
+            _pages.Add(name, page);
+            _panels.Add(name, panel);
             return page;
         }
 
         /// <summary>
-        /// 要显示的页：按参数第一次出现的顺序；实现了能力接口的工具即使没在那一页声明参数，也要有那一页放编辑器
-        /// （排在显示页之前）。
+        /// 要显示的页：按参数第一次出现的顺序；工具需要某个能力编辑器、却没在那一页声明参数时，也要有那一页（排在显示页之前）。
         /// </summary>
-        private static List<string> PageNames(IParaStrategy tool, IReadOnlyList<ParamItem> items)
+        private List<string> PageNames(IParaStrategy tool, IReadOnlyList<ParamItem> items)
         {
             var names = items.Select(i => i.Page).Distinct(StringComparer.Ordinal).ToList();
-            Action<string> ensure = page =>
+            foreach (var slot in _editors.Where(s => s.Definition.Supports(tool)))
             {
-                if (names.Contains(page)) return;
+                if (names.Contains(slot.Definition.Page)) continue;
                 int display = names.IndexOf(Pages.Display);
-                names.Insert(display < 0 ? names.Count : display, page);
-            };
-            if (tool is IRoiEditable) ensure(Pages.Region);
-            if (tool is ITemplateEditable) ensure(Pages.Template);
+                names.Insert(display < 0 ? names.Count : display, slot.Definition.Page);
+            }
             return names;
+        }
+
+        /// <summary> 把工具需要的编辑器挂到各自的页上：有编辑器的页，参数面板停靠在顶部，编辑器填满下面 </summary>
+        private void ArrangeEditors(IParaStrategy tool)
+        {
+            foreach (var slot in _editors)
+            {
+                var page = tool != null && slot.Definition.Supports(tool) ? _pages[slot.Definition.Page] : null;
+                if (slot.View.Parent == page) continue;
+                slot.View.Parent?.Controls.Remove(slot.View);
+                page?.Controls.Add(slot.View);
+            }
+            foreach (var pair in _pages)
+            {
+                var panel = _panels[pair.Key];
+                bool hasEditor = _editors.Any(s => s.View.Parent == pair.Value);
+                panel.Dock = hasEditor ? DockStyle.Top : DockStyle.Fill;
+                // 停靠按 z 序从后往前处理: 面板放到最后, 先占住顶部, 编辑器再填满剩下的
+                if (hasEditor) panel.SendToBack();
+            }
         }
 
         /// <summary> 交给策略的交互宿主（画 ROI、建模板、工具初始化） </summary>
@@ -221,7 +209,7 @@ namespace DotNet.VisionMaster
         public event EventHandler EditCancelled;
 
         /// <summary>
-        /// 显示一个工具：按它声明的参数生成各页面板，并把它的 ROI 交给显示窗口。
+        /// 显示一个工具：按它声明的参数生成各页面板，按能力放上编辑器，并把它的 ROI 交给显示窗口。
         /// </summary>
         /// <param name="flow">整个流程；来源选择只列出本工具之前的工具，来源的显示名也按它拼出。</param>
         /// <remarks> 换了工具才开始新一轮编辑；同一工具重新显示（改名、取消编辑）保留编辑起点 </remarks>
@@ -229,7 +217,6 @@ namespace DotNet.VisionMaster
         {
             bool switched = !ReferenceEquals(tool, _tool);
             _tool = tool;
-            Watch(tool as ITemplateEditable);
             _flow = flow ?? new IParaStrategy[0];
 
             var items = (tool as IParaBinding)?.DescribeParams() ?? new ParamItem[0];
@@ -238,18 +225,22 @@ namespace DotNet.VisionMaster
             // 不显示的页也重新绑定 (为空): 免得面板还拿着上一个工具的参数项
             foreach (var pair in _panels)
                 pair.Value.Bind(items.Where(i => i.Page == pair.Key));
+            ArrangeEditors(tool);
 
             tabControl1.TabPages.Clear();
             foreach (var name in names) tabControl1.TabPages.Add(_pages[name]);
             if (tabControl1.TabPages.Count > 0) tabControl1.SelectedIndex = 0;
 
-            ShowRoiInfo(null);
             if (tool is IRoiEditable roi) roi.DispROI(Host);
             else _display.SetNonePara();
-            if (tool is ITemplateEditable template) ShowTemplate(template, thumbnail: false);
+            // 编辑器在工具交出 ROI 之后再绑定: 模板编辑器要把模板轮廓叠在这个 ROI 上
+            foreach (var view in Views) view.Bind(tool);
 
             if (switched) BeginEdit();
+            else UpdateActions();
         }
+
+        private IEnumerable<ICapabilityView> Views => _editors.Select(s => s.View).OfType<ICapabilityView>();
 
         /// <summary> 当前显示的参数项（各页合并），测试与宿主定位用 </summary>
         internal IEnumerable<ParamItem> ParamItems => _panels.Values.SelectMany(p => p.Items);
@@ -259,6 +250,9 @@ namespace DotNet.VisionMaster
 
         /// <summary> 当前显示的页签名（按顺序） </summary>
         internal IReadOnlyList<string> PageTitles => tabControl1.TabPages.Cast<TabPage>().Select(p => p.Text).ToList();
+
+        /// <summary> 某个能力编辑器的界面（不论当前是否显示） </summary>
+        internal T Editor<T>() where T : Control => _editors.Select(s => s.View).OfType<T>().FirstOrDefault();
 
         /// <summary> 本工具之前的工具 </summary>
         internal IReadOnlyList<IParaStrategy> Upstream()
@@ -342,9 +336,7 @@ namespace DotNet.VisionMaster
             btn_cancelEdit.Enabled = IsIdle;
             btn_saveEdit.Enabled = CanSave;
             btn_runTest.Enabled = CanRunTest;
-            // 绘制会改动工具持有的 HObject (ROI / 模板 / 模型), 执行会话忙时不能做
-            foreach (var button in new Control[] { btn_drawRegion, but_editRegion, btn_newModel, but_modifyModel, but_editModel })
-                button.Enabled = !_hostBusy;
+            foreach (var view in Views) view.UpdateState();
         }
 
         /// <summary>
@@ -404,53 +396,16 @@ namespace DotNet.VisionMaster
 
         #endregion
 
-        #region ROI 读数
-
-        private void Display_RoiShown(object sender, CvRegion region) => ShowRoiInfo(region);
-
-        /// <summary> Region 页的几何读数由宿主自己填，策略不再碰这些控件 </summary>
-        private void ShowRoiInfo(CvRegion region)
-        {
-            txt_Width.Text = region == null ? string.Empty : region.Width.ToString("F2");
-            txt_Height.Text = region == null ? string.Empty : region.Height.ToString("F2");
-            txt_TopLeft.Text = region == null ? string.Empty : $"{region.TopLeft.X:F2};{region.TopLeft.Y:F2}";
-            txt_BottomRight.Text = region == null ? string.Empty : $"{region.BottomRight.X:F2};{region.BottomRight.Y:F2}";
-            txt_Center.Text = region == null ? string.Empty : $"{region.Center.X:F2};{region.Center.Y:F2}";
-        }
-
-        #endregion
-
         #region 绘制
 
-        private void btn_drawRegion_Click(object sender, EventArgs e)
-        {
-            // 新建 ROI 的默认形状由算法自己声明 ([Algo(DefaultRoi = ...)]), 宿主不再按算法分支
-            var shape = AlgoInfo.Of(_tool)?.DefaultRoi ?? RectEnum.Rectangle;
-            var radio = _rectDrawMap.FirstOrDefault(kv => kv.Value == shape).Key;
-            if (radio != null) radio.Checked = true;
-            RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(Host, Checked(_rectDrawMap), true));
-        }
-
-        private void but_editRegion_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(Host, Checked(_rectDrawMap), false));
-
-        private void btn_newModel_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(Host, Checked(_modelDrawMap), true), commitsData: true);
-
-        private void but_modifyModel_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(Host, Checked(_modelDrawMap), false), commitsData: true);
-
-        private static RectEnum Checked(Dictionary<RadioButton, RectEnum> map)
-            => map.FirstOrDefault(kv => kv.Key.Checked).Value;
-
         /// <summary>
-        /// 4 个绘制入口共用：闸门 → 清屏 → 交给策略 → 异常提示 → 只清自己那一轮的闸门。
+        /// 所有能力编辑器的绘制入口共用：闸门 → 清屏 → 交给策略 → 异常提示 → 只清自己那一轮的闸门。
         /// </summary>
         /// <param name="commitsData">
         /// 绘制会改写数据目录里的文件（模板）：文件与模型句柄不在快照里、撤销不了，
         /// 还原参数只会得到"新模型 + 旧示教点"，所以结束后直接以当前状态为新的编辑起点。
         /// </param>
-        private async void RunDraw(Func<IParaStrategy, Task> draw, bool commitsData = false)
+        private async void RunDraw(Func<IParaStrategy, Task> draw, bool commitsData)
         {
             if (_drawBusy || _tool == null) return;
             if (_hostBusy)
@@ -486,84 +441,6 @@ namespace DotNet.VisionMaster
                     else MarkDirty();
                 }
             }
-        }
-
-        #endregion
-
-        #region 模板
-
-        private void but_editModel_Click(object sender, EventArgs e)
-        {
-            if (_hostBusy)
-            {
-                Prompt.Show("流程正在运行，请先停止连续运行再编辑模板。");
-                return;
-            }
-            // 绘制期间不能打开编辑窗：它会把模板区域的句柄交给 _editModel，而待完成的绘制稍后会释放这个旧句柄
-            if (_drawBusy)
-            {
-                Prompt.Show("当前正在绘制 ROI / 模板，请先在图像上右键确认或取消后再打开模板编辑窗。");
-                return;
-            }
-            // 编辑窗自己也可能正在绘制(它是非模态的): 再次 DisplayModel 会把它挂起的会话饿死到超时
-            if (_editModel.IsDrawBusy)
-            {
-                Prompt.Show("模板编辑窗正在绘制区域，请先在图像上右键确认或取消后再打开。");
-                return;
-            }
-
-            try
-            {
-                if (!(_tool is ITemplateEditable template)) return;
-                var view = template.GetTemplateView();
-
-                // 编辑窗要读模板图, 再按最佳匹配的位姿把模板区域摆回模板图上; 两者缺一个就无从显示
-                if (string.IsNullOrEmpty(view.ModelPath) || !File.Exists(view.ModelPath))
-                {
-                    Prompt.Show("尚未创建模板，请先新建模板。");
-                    return;
-                }
-                if (!view.Best.HasValue)
-                {
-                    Prompt.Show("最近一次运行没有匹配结果，请先运行并匹配成功后再编辑模板。");
-                    return;
-                }
-
-                _editModel.Show();
-                _editModel.DisplayModel(view.ModelPath, view.ModelRegion, view.Contour, view.Best.Value);
-            }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
-        }
-
-        private ITemplateEditable _watched;
-
-        /// <summary> 只听当前工具的模板变化：换工具时退订上一个 </summary>
-        private void Watch(ITemplateEditable template)
-        {
-            if (ReferenceEquals(template, _watched)) return;
-            if (_watched != null) _watched.TemplateChanged -= Template_Changed;
-            _watched = template;
-            if (_watched != null) _watched.TemplateChanged += Template_Changed;
-        }
-
-        private void Template_Changed(object sender, EventArgs e)
-        {
-            if (!ReferenceEquals(sender, _tool) || !(sender is ITemplateEditable template)) return;
-            try { ShowTemplate(template, thumbnail: true); }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
-        }
-
-        /// <summary>
-        /// 在显示窗口上持续显示查找 ROI + 模板轮廓 + 坐标系；<paramref name="thumbnail"/> 时一并刷新模板缩略图。
-        /// 原来由匹配算法自己调宿主的 <c>SetModelPara</c> / <c>DrawDone</c>，现在宿主按 <see cref="TemplateView"/> 自己画。
-        /// </summary>
-        private void ShowTemplate(ITemplateEditable template, bool thumbnail)
-        {
-            var view = template.GetTemplateView();
-            var roi = _tool is IRoiEditable ? Host.ShownRoi?.HoRegion : null;
-            _display.SetModelPara(roi, view.Contour, view.Best?.Coord ?? default(CvCoord));
-            if (thumbnail && view.Best.HasValue)
-                _hModel?.DisplayModel(view.ModelPath, view.ModelRegion, view.Contour, view.Best.Value);
         }
 
         #endregion

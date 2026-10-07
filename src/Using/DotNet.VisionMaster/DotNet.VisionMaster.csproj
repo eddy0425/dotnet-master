@@ -115,6 +115,19 @@
     <Compile Include="VsControl\ParaForm.Designer.cs">
       <DependentUpon>ParaForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="VsControl\CapabilityEditor.cs" />
+    <Compile Include="VsControl\RoiEditor.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="VsControl\RoiEditor.Designer.cs">
+      <DependentUpon>RoiEditor.cs</DependentUpon>
+    </Compile>
+    <Compile Include="VsControl\TemplateEditor.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="VsControl\TemplateEditor.Designer.cs">
+      <DependentUpon>TemplateEditor.cs</DependentUpon>
+    </Compile>
     <EmbeddedResource Include="InfoForm.resx">
       <DependentUpon>InfoForm.cs</DependentUpon>
     </EmbeddedResource>

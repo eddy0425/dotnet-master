@@ -431,12 +431,12 @@ namespace DotNet.VisionMaster.Tests
                 form.StartLoop();
                 Assert.IsTrue(Para(form).HostBusy);
                 Assert.IsFalse(Priv.Get<Button>(Para(form), "btn_runTest").Enabled);
-                Assert.IsFalse(Priv.Get<Button>(Para(form), "btn_drawRegion").Enabled, "会话忙时不能绘制 ROI");
+                Assert.IsFalse(Priv.Get<Button>(Para(form).Editor<RoiEditor>(), "btn_drawRegion").Enabled, "会话忙时不能绘制 ROI");
 
                 form.StopLoop();
                 WaitIdle(form);
                 Assert.IsFalse(Para(form).HostBusy);
-                Assert.IsTrue(Priv.Get<Button>(Para(form), "btn_drawRegion").Enabled);
+                Assert.IsTrue(Priv.Get<Button>(Para(form).Editor<RoiEditor>(), "btn_drawRegion").Enabled);
             }, defaultFlow: false);
         }
 

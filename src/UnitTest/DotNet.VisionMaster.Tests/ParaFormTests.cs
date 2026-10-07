@@ -66,6 +66,22 @@ namespace DotNet.VisionMaster.Tests
             WindowHost.PumpUntil(() => !ctx.Para.IsDrawBusy);
         }
 
+        private static RoiEditor Roi(Ctx ctx) => ctx.Para.Editor<RoiEditor>();
+
+        private static TemplateEditor Template(Ctx ctx) => ctx.Para.Editor<TemplateEditor>();
+
+        private static readonly string[] RoiHandlers = { "btn_drawRegion_Click", "but_editRegion_Click" };
+        private static readonly string[] TemplateHandlers = { "btn_newModel_Click", "but_modifyModel_Click", "but_editModel_Click" };
+
+        /// <summary> 点一个入口：ROI / 模板的入口在各自的能力编辑器上，其余在参数页上 </summary>
+        private static void Click(Ctx ctx, string handler)
+        {
+            object target = RoiHandlers.Contains(handler) ? Roi(ctx)
+                : TemplateHandlers.Contains(handler) ? (object)Template(ctx)
+                : ctx.Para;
+            Priv.Click(target, handler);
+        }
+
         private static string[] Tabs(Ctx ctx)
             => Priv.Get<TabControl>(ctx.Para, "tabControl1").TabPages.Cast<TabPage>().Select(p => p.Text).ToArray();
 
@@ -102,6 +118,47 @@ namespace DotNet.VisionMaster.Tests
             protected override void DeclareOutputs(OutputBuilder o) { }
             protected override void ResetOutputs() { }
             protected override RunResult Execute(RunContext context) => RunResult.Ok();
+        }
+
+        private sealed class RegionParamsOnly : ParaStrategyBase<CalibPara>
+        {
+            protected override void DeclareParams(ParamBuilder p) => p.Page(Pages.Region).Int("行数", () => inPara.Rows, v => inPara.Rows = v);
+            protected override void DeclareOutputs(OutputBuilder o) { }
+            protected override void ResetOutputs() { }
+            protected override RunResult Execute(RunContext context) => RunResult.Ok();
+        }
+
+        /// <summary> 编辑器按能力挂到页上：有编辑器的页参数面板停在顶部，编辑器填满下面；与具体算法无关 </summary>
+        [DataTestMethod]
+        [DataRow(typeof(CreateROIStrategy), true, false)]
+        [DataRow(typeof(ShapeModelStrategy), true, true)]
+        [DataRow(typeof(FileImageStrategy), false, false)]
+        public void ShowTool_EditorsFollowCapabilities(Type type, bool roi, bool template)
+        {
+            Run((IParaStrategy)Activator.CreateInstance(type), ctx =>
+            {
+                Assert.AreEqual(roi, Roi(ctx).Parent != null, "ROI 编辑器");
+                Assert.AreEqual(template, Template(ctx).Parent != null, "模板编辑器");
+                if (roi)
+                {
+                    Assert.AreEqual(Pages.Region, ((TabPage)Roi(ctx).Parent).Text);
+                    Assert.AreEqual(DockStyle.Top, ctx.Para.PanelOf(Pages.Region).Dock);
+                    Assert.AreEqual(DockStyle.Fill, Roi(ctx).Dock);
+                }
+            });
+        }
+
+        /// <summary> 在"区域设置"页声明参数、但不能编辑 ROI 的工具：只有参数面板，没有 ROI 编辑器 </summary>
+        [TestMethod]
+        public void ShowTool_PageWithoutCapability_HasNoEditor()
+        {
+            var tool = new RegionParamsOnly();
+            Run(tool, ctx =>
+            {
+                CollectionAssert.Contains(Tabs(ctx), Pages.Region);
+                Assert.IsNull(Roi(ctx).Parent);
+                Assert.AreEqual(DockStyle.Fill, ctx.Para.PanelOf(Pages.Region).Dock);
+            });
         }
 
         [TestMethod]
@@ -243,7 +300,7 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(new FakeAffStrategy(), ctx =>
             {
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Click(ctx, "btn_drawRegion_Click");
 
                 Assert.AreEqual(Tuple.Create(RectEnum.AffRect, true), ctx.Strategy.RoiDraws.Single());
                 Assert.IsTrue(ctx.Para.IsDrawBusy);
@@ -252,7 +309,7 @@ namespace DotNet.VisionMaster.Tests
             });
             Run(ctx =>
             {
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Click(ctx, "btn_drawRegion_Click");
                 Assert.AreEqual(Tuple.Create(RectEnum.Rectangle, true), ctx.Strategy.RoiDraws.Single());
                 Finish(ctx);
             });
@@ -263,10 +320,10 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(new FakeAffStrategy(), ctx =>
             {
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");   // 默认形状把单选切到仿射矩形
+                Click(ctx, "btn_drawRegion_Click");   // 默认形状把单选切到仿射矩形
                 Finish(ctx);
 
-                Priv.Click(ctx.Para, "but_editRegion_Click");
+                Click(ctx, "but_editRegion_Click");
 
                 Assert.AreEqual(Tuple.Create(RectEnum.AffRect, false), ctx.Strategy.RoiDraws[1]);
                 Finish(ctx);
@@ -278,11 +335,11 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                Priv.Get<RadioButton>(ctx.Para, "btn_modelCircle").Checked = true;
+                Priv.Get<RadioButton>(Template(ctx), "btn_modelCircle").Checked = true;
 
-                Priv.Click(ctx.Para, "btn_newModel_Click");
+                Click(ctx, "btn_newModel_Click");
                 Finish(ctx);
-                Priv.Click(ctx.Para, "but_modifyModel_Click");
+                Click(ctx, "but_modifyModel_Click");
                 Finish(ctx);
 
                 CollectionAssert.AreEqual(new[]
@@ -304,9 +361,9 @@ namespace DotNet.VisionMaster.Tests
                     ctx.Display.SetRectPara(region);
                 }
 
-                Assert.AreEqual("30.00", Priv.Get<TextBox>(ctx.Para, "txt_Width").Text);
-                Assert.AreEqual("40.00", Priv.Get<TextBox>(ctx.Para, "txt_Height").Text);
-                Assert.AreEqual("25.00;40.00", Priv.Get<TextBox>(ctx.Para, "txt_Center").Text, "读数由宿主自己填, 策略不碰控件");
+                Assert.AreEqual("30.00", Priv.Get<TextBox>(Roi(ctx), "txt_Width").Text);
+                Assert.AreEqual("40.00", Priv.Get<TextBox>(Roi(ctx), "txt_Height").Text);
+                Assert.AreEqual("25.00;40.00", Priv.Get<TextBox>(Roi(ctx), "txt_Center").Text, "读数由宿主自己填, 策略不碰控件");
             });
         }
 
@@ -323,11 +380,11 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                Priv.Click(ctx.Para, first);
+                Click(ctx, first);
                 Assert.IsTrue(ctx.Para.IsDrawBusy);
 
                 foreach (var entry in new[] { "btn_drawRegion_Click", "but_editRegion_Click", "btn_newModel_Click", "but_modifyModel_Click" })
-                    Priv.Click(ctx.Para, entry);
+                    Click(ctx, entry);
 
                 Assert.AreEqual(1, ctx.Strategy.RoiDraws.Count + ctx.Strategy.TemplateDraws.Count,
                     "绘制进行中，其它入口都不应再发起绘制");
@@ -341,10 +398,10 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Click(ctx, "btn_drawRegion_Click");
                 Finish(ctx);
 
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Click(ctx, "btn_drawRegion_Click");
 
                 Assert.AreEqual(2, ctx.Strategy.RoiDraws.Count);
                 Assert.IsTrue(ctx.Para.IsDrawBusy);
@@ -359,8 +416,8 @@ namespace DotNet.VisionMaster.Tests
             {
                 int before = Priv.Get<int>(ctx.Para, "_drawEpoch");
 
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");   // 被闸门挡掉，不应计数
+                Click(ctx, "btn_drawRegion_Click");
+                Click(ctx, "btn_drawRegion_Click");   // 被闸门挡掉，不应计数
                 Finish(ctx);
 
                 Assert.AreEqual(before + 1, Priv.Get<int>(ctx.Para, "_drawEpoch"));
@@ -379,7 +436,7 @@ namespace DotNet.VisionMaster.Tests
             {
                 ctx.Strategy.DrawError = new InvalidOperationException("绘制失败原因");
 
-                Priv.Click(ctx.Para, entry);
+                Click(ctx, entry);
                 WindowHost.PumpUntil(() => !ctx.Para.IsDrawBusy);
 
                 CollectionAssert.AreEqual(new[] { "绘制失败原因" }, ctx.Prompts.Messages);
@@ -393,7 +450,7 @@ namespace DotNet.VisionMaster.Tests
             Run(new MergeRegionStrategy(), ctx =>
             {
                 foreach (var entry in new[] { "btn_drawRegion_Click", "but_editRegion_Click", "btn_newModel_Click", "but_modifyModel_Click", "but_editModel_Click" })
-                    Priv.Click(ctx.Para, entry);
+                    Click(ctx, entry);
                 WindowHost.PumpUntil(() => !ctx.Para.IsDrawBusy);
 
                 CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
@@ -416,8 +473,8 @@ namespace DotNet.VisionMaster.Tests
             Run((IParaStrategy)null, ctx =>
             {
                 foreach (var handler in AllHandlers)
-                    Priv.Click(ctx.Para, handler);
-                Priv.Call(ctx.Para, "Template_Changed", new FakeStrategy(), EventArgs.Empty);
+                    Click(ctx, handler);
+                Priv.Call(Template(ctx), "Template_Changed", new FakeStrategy(), EventArgs.Empty);
                 WindowHost.Pump();
 
                 CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
@@ -430,16 +487,16 @@ namespace DotNet.VisionMaster.Tests
 
         #region 编辑模板
 
-        private static Form EditModelWindow(Ctx ctx) => Priv.Get<Form>(ctx.Para, "_editModel");
+        private static Form EditModelWindow(Ctx ctx) => Template(ctx).EditWindow;
 
         [TestMethod]
         public void EditModel_WhileDrawing_PromptsAndDoesNotOpen()
         {
             Run(ctx =>
             {
-                Priv.Click(ctx.Para, "btn_newModel_Click");
+                Click(ctx, "btn_newModel_Click");
 
-                Priv.Click(ctx.Para, "but_editModel_Click");
+                Click(ctx, "but_editModel_Click");
 
                 Assert.AreEqual(1, ctx.Prompts.Messages.Count);
                 StringAssert.Contains(ctx.Prompts.Messages[0], "正在绘制");
@@ -454,7 +511,7 @@ namespace DotNet.VisionMaster.Tests
             Run(ctx =>
             {
                 Priv.Set(EditModelWindow(ctx), "_drawBusy", true);
-                try { Priv.Click(ctx.Para, "but_editModel_Click"); }
+                try { Click(ctx, "but_editModel_Click"); }
                 finally { Priv.Set(EditModelWindow(ctx), "_drawBusy", false); }
 
                 Assert.AreEqual(1, ctx.Prompts.Messages.Count);
@@ -468,7 +525,7 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                Priv.Click(ctx.Para, "but_editModel_Click");
+                Click(ctx, "but_editModel_Click");
 
                 Assert.AreEqual(1, ctx.Prompts.Messages.Count);
                 StringAssert.Contains(ctx.Prompts.Messages[0], "新建模板");
@@ -483,7 +540,7 @@ namespace DotNet.VisionMaster.Tests
             var fake = new FakeStrategy { View = new TemplateView(typeof(ParaFormTests).Assembly.Location, null, null, null) };
             Run(fake, ctx =>
             {
-                Priv.Click(ctx.Para, "but_editModel_Click");
+                Click(ctx, "but_editModel_Click");
 
                 Assert.AreEqual(1, ctx.Prompts.Messages.Count);
                 StringAssert.Contains(ctx.Prompts.Messages[0], "匹配");
@@ -505,7 +562,7 @@ namespace DotNet.VisionMaster.Tests
                 var fake = new FakeStrategy { View = new TemplateView(modelPath, null, null, new ModelResult(32, 32, 0, 1)) };
                 Run(fake, ctx =>
                 {
-                    Priv.Click(ctx.Para, "but_editModel_Click");
+                    Click(ctx, "but_editModel_Click");
 
                     CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
                     Assert.IsTrue(EditModelWindow(ctx).Visible);
@@ -520,7 +577,7 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(new CreateROIStrategy(), ctx =>
             {
-                Priv.Call(ctx.Para, "Template_Changed", new FakeStrategy(), EventArgs.Empty);
+                Priv.Call(Template(ctx), "Template_Changed", new FakeStrategy(), EventArgs.Empty);
 
                 CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
             });
@@ -568,7 +625,7 @@ namespace DotNet.VisionMaster.Tests
                 Assert.IsTrue(ctx.Para.IsDirty);
                 Assert.IsTrue(Btn(ctx, "btn_cancelEdit").Enabled);
 
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
 
                 Assert.IsFalse(ctx.Strategy.inPara.Flag);
                 Assert.AreNotSame(before, ctx.Strategy.inPara);
@@ -585,11 +642,11 @@ namespace DotNet.VisionMaster.Tests
             Run(ctx =>
             {
                 SetFlag(ctx, true);
-                Priv.Click(ctx.Para, "btn_saveEdit_Click");
+                Click(ctx, "btn_saveEdit_Click");
                 Assert.IsFalse(ctx.Para.IsDirty);
 
                 SetFlag(ctx, false);
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
 
                 Assert.IsTrue(ctx.Strategy.inPara.Flag, "回到保存时的值, 而不是进入工具时的值");
             });
@@ -625,7 +682,7 @@ namespace DotNet.VisionMaster.Tests
                 ctx.Para.TestRunner = () => runs++;
                 Assert.IsTrue(Btn(ctx, "btn_runTest").Enabled);
 
-                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Click(ctx, "btn_drawRegion_Click");
                 Assert.IsFalse(Btn(ctx, "btn_runTest").Enabled);
                 ctx.Para.RunTest();
                 Assert.AreEqual(0, runs);
@@ -648,13 +705,13 @@ namespace DotNet.VisionMaster.Tests
                 SetFlag(ctx, true);
                 Assert.IsTrue(ctx.Para.IsDirty);
 
-                Priv.Click(ctx.Para, entry);
+                Click(ctx, entry);
                 Finish(ctx);
 
                 Assert.IsFalse(ctx.Para.IsDirty);
 
                 SetFlag(ctx, false);
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
                 Assert.IsTrue(ctx.Strategy.inPara.Flag, "回到模板绘制结束时的值");
             });
         }
@@ -667,19 +724,19 @@ namespace DotNet.VisionMaster.Tests
                 int runs = 0;
                 ctx.Para.TestRunner = () => runs++;
 
-                Priv.Click(ctx.Para, "btn_runTest_Click");
+                Click(ctx, "btn_runTest_Click");
                 Assert.AreEqual(1, runs);
 
                 ctx.Para.HostBusy = true;
                 SetFlag(ctx, true);
-                Priv.Click(ctx.Para, "btn_runTest_Click");
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_runTest_Click");
+                Click(ctx, "btn_cancelEdit_Click");
                 Assert.AreEqual(1, runs);
                 Assert.IsTrue(ctx.Strategy.inPara.Flag, "宿主运行期间不允许取消编辑");
 
                 ctx.Para.HostBusy = false;
                 ctx.Para.TestRunner = () => throw new InvalidOperationException("运行出错");
-                Priv.Click(ctx.Para, "btn_runTest_Click");
+                Click(ctx, "btn_runTest_Click");
                 CollectionAssert.AreEqual(new[] { "运行出错" }, ctx.Prompts.Messages);
             });
         }
@@ -693,17 +750,17 @@ namespace DotNet.VisionMaster.Tests
                 int raised = 0;
                 ctx.Para.EditCancelled += (s, e) => raised++;
 
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
                 Assert.AreEqual(1, raised, "没有修改也离开");
 
                 SetFlag(ctx, true);
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
                 Assert.AreEqual(2, raised);
                 Assert.IsFalse(ctx.Strategy.inPara.Flag, "先撤销再离开");
 
                 ctx.Para.HostBusy = true;
                 Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
                 Assert.AreEqual(2, raised);
             });
         }
@@ -719,7 +776,7 @@ namespace DotNet.VisionMaster.Tests
                 Priv.Set(ctx.Para, "_snapshot", null);
 
                 SetFlag(ctx, true);
-                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Click(ctx, "btn_cancelEdit_Click");
                 Assert.AreEqual(0, raised);
                 Assert.IsTrue(ctx.Strategy.inPara.Flag);
                 Assert.IsTrue(ctx.Para.IsDirty);
@@ -756,7 +813,7 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
+                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == Roi(ctx)));
                 Assert.AreEqual(1, ctx.Strategy.TemplateListeners, "订阅当前工具的模板变化");
             });
         }
@@ -804,14 +861,14 @@ namespace DotNet.VisionMaster.Tests
             Run(ctx =>
             {
                 var valueForm = Priv.Get<Form>(ctx.Para, "_valueForm");
-                var editModel = Priv.Get<Form>(ctx.Para, "_editModel");
+                var editModel = EditModelWindow(ctx);
 
                 ctx.Para.Dispose();
 
                 Assert.IsTrue(valueForm.IsDisposed, "_valueForm 没有父容器，只能由 ParaForm 释放");
-                Assert.IsTrue(editModel.IsDisposed, "_editModel 没有父容器，只能由 ParaForm 释放");
-                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para),
-                    "不退订的话 HDisplayUI 会一直引着已销毁的 ParaForm");
+                Assert.IsTrue(editModel.IsDisposed, "模板编辑窗没有父容器，随模板编辑器释放");
+                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == Roi(ctx)),
+                    "不退订的话 HDisplayUI 会一直引着已销毁的 ROI 编辑器");
                 Assert.AreEqual(0, ctx.Strategy.TemplateListeners, "工具也不能引着已销毁的 ParaForm");
             });
         }
@@ -826,13 +883,13 @@ namespace DotNet.VisionMaster.Tests
             Run(ctx =>
             {
                 var valueForm = Priv.Get<Form>(ctx.Para, "_valueForm");
-                var editModel = Priv.Get<Form>(ctx.Para, "_editModel");
+                var editModel = EditModelWindow(ctx);
 
                 Priv.Click(ctx.Para, "ParaForm_HandleDestroyed", ctx.Para);
 
                 Assert.IsFalse(valueForm.IsDisposed);
                 Assert.IsFalse(editModel.IsDisposed);
-                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
+                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == Roi(ctx)));
                 Assert.AreEqual(1, ctx.Strategy.TemplateListeners);
             });
         }
