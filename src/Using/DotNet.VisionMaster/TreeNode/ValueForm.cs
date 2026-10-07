@@ -22,6 +22,8 @@ namespace DotNet.VisionMaster
 
         private const char Split = '/';
         private readonly IWin32Window _owner;
+        // 兼容规则与运行前校验是同一条 (SourceCompatibility), 选得到的就校验得过
+        private Func<OutputItem, bool> _accepts = item => false;
 
         public ValueForm(IWin32Window owner)
         {
@@ -44,14 +46,14 @@ namespace DotNet.VisionMaster
         /// <param name="upstream">当前工具之前的工具（只有它们的输出可选）。</param>
         public SourceRef? Pick(IReadOnlyList<IParaStrategy> upstream, SourceParam param)
         {
-            Prepare(upstream, param.SourceType, param.AllowsLocal, param.Value);
+            Prepare(upstream, param.SourceType, param.AllowsLocal, param.Value, param.Accepts);
             return ShowPick();
         }
 
-        /// <summary> 给来源列表选一项：只能选上游的 <paramref name="type"/> 输出，没有"默认" </summary>
-        public SourceRef? Pick(IReadOnlyList<IParaStrategy> upstream, OutEnum type)
+        /// <summary> 给来源列表选一项：只能选上游输出，没有"默认" </summary>
+        public SourceRef? Pick(IReadOnlyList<IParaStrategy> upstream, SourceListParam param)
         {
-            Prepare(upstream, type, allowLocal: false, current: SourceRef.Local);
+            Prepare(upstream, param.SourceType, allowLocal: false, current: SourceRef.Local, accepts: param.Accepts);
             return ShowPick();
         }
 
@@ -63,9 +65,12 @@ namespace DotNet.VisionMaster
         }
 
         /// <summary> 生成树并预选当前值（不弹窗） </summary>
-        internal void Prepare(IReadOnlyList<IParaStrategy> upstream, OutEnum type, bool allowLocal, SourceRef current)
+        /// <param name="accepts">哪些输出可选；省略时按 <paramref name="type"/> 判断。</param>
+        internal void Prepare(IReadOnlyList<IParaStrategy> upstream, OutEnum type, bool allowLocal, SourceRef current,
+            Func<OutputItem, bool> accepts = null)
         {
             ValueType = type;
+            _accepts = accepts ?? (item => SourceCompatibility.Accepts(type, null, item));
             AllowLocal = allowLocal;
             Picked = current;
             GenerateTree(upstream, allowLocal);
@@ -88,11 +93,12 @@ namespace DotNet.VisionMaster
             }
         }
 
-        /// <summary> 一个输出一个节点，<see cref="TreeNode.Name"/> 记输出类型（<see cref="Matches"/> 按它判断） </summary>
+        /// <summary> 一个输出一个节点：<see cref="TreeNode.Tag"/> 存输出本身（按它判断能不能选），<see cref="TreeNode.Name"/> 记种类 </summary>
         private static void AddOutput(TreeNodeCollection nodes, OutputItem item)
         {
             var node = nodes.Add(item.Name);
             node.Name = item.Type.ToString();
+            node.Tag = item;
             foreach (var child in item.Children) AddOutput(node.Nodes, child);
         }
 
@@ -138,28 +144,13 @@ namespace DotNet.VisionMaster
             if (node.Level == 0)
                 return ReferenceEquals(node.Tag, LocalTag) && AllowLocal;   // 工具根节点本身不是输出
 
-            if (!Matches(node.Name)) return false;
+            if (!(node.Tag is OutputItem item) || !_accepts(item)) return false;
 
             var root = node;
             while (root.Parent != null) root = root.Parent;
             if (!(root.Tag is Guid toolId)) return false;
             picked = new SourceRef(toolId, PathOf(node));
             return true;
-        }
-
-        private bool Matches(string nodeType)
-        {
-            if (nodeType == ValueType.ToString()) return true;
-            switch (ValueType)
-            {
-                case OutEnum.String:
-                    return nodeType != nameof(OutEnum.HTuple) && nodeType != nameof(OutEnum.Outline) &&
-                           nodeType != nameof(OutEnum.Image) && nodeType != nameof(OutEnum.Region);
-                case OutEnum.CalOrOut:
-                    return nodeType == nameof(OutEnum.Angle) || nodeType == nameof(OutEnum.Number) || nodeType == nameof(OutEnum.String);
-                default:
-                    return false;
-            }
         }
 
         /// <summary> 工具根节点之下的路径，例如 <c>坐标系/原点</c> </summary>

@@ -252,6 +252,63 @@ namespace DotNet.HalconAlgo.Tests
             Assert.IsNotNull(stub.FindOutput("文本显示"));
         }
 
+        /// <summary> 新的输出类型：圆 / 文本 / 开关 / 数组 / 自定义类型；每个输出都带 CLR 类型 </summary>
+        [TestMethod]
+        public void Outputs_NewKinds_CarryValueTypes()
+        {
+            var o = new OutputBuilder()
+                .Circle("圆", () => new CvCircle(new Point2d(3, 4), 5))
+                .Text("条码", () => "ABC")
+                .Flag("合格", () => true)
+                .Numbers("得分", () => new[] { 0.9, 0.8 })
+                .Value("标定", () => new Calib { Scale = 2 }, OutEnum.HTuple);
+            var index = o.Roots.ToDictionary(r => r.Path);
+
+            Assert.AreEqual(OutEnum.Circle, index["圆"].Type);
+            Assert.AreEqual(typeof(CvCircle), index["圆"].ValueType);
+            CollectionAssert.AreEqual(new[] { "圆/圆心", "圆/半径" }, index["圆"].Children.Select(c => c.Path).ToArray());
+            Assert.AreEqual(4.0, index["圆"].Children[0].Children[0].GetValue(), "圆心/行");
+            Assert.AreEqual(5.0, index["圆"].Children[1].GetValue());
+            Assert.AreEqual(typeof(string), index["条码"].ValueType);
+            Assert.AreEqual(OutEnum.Result, index["合格"].Type);
+            Assert.AreEqual(OutEnum.Array, index["得分"].Type);
+            Assert.AreEqual(typeof(IReadOnlyList<double>), index["得分"].ValueType);
+            Assert.AreEqual(typeof(Calib), index["标定"].ValueType);
+            Assert.AreEqual(OutEnum.HTuple, index["标定"].Type, "种类只决定图标");
+        }
+
+        public class Calib { public double Scale; }
+        public sealed class FineCalib : Calib { }
+
+        [TestMethod]
+        public void Compatibility_KindStillDistinguishesImageFromRegion()
+        {
+            var o = new OutputBuilder().Image("图像", () => null).Region("区域", () => null).Number("数", () => 1).Roots;
+
+            Assert.IsTrue(SourceCompatibility.Accepts(OutEnum.Region, null, o[1]));
+            Assert.IsFalse(SourceCompatibility.Accepts(OutEnum.Region, null, o[0]), "图像和区域都是 HObject, 只看类型会接错");
+            Assert.IsTrue(SourceCompatibility.Accepts(OutEnum.String, null, o[2]), "文本来源接受标量");
+            Assert.IsFalse(SourceCompatibility.Accepts(OutEnum.String, null, o[0]));
+            Assert.IsTrue(SourceCompatibility.Accepts(OutEnum.CalOrOut, null, o[2]));
+        }
+
+        [TestMethod]
+        public void Compatibility_TypedSource_UsesAssignability()
+        {
+            var o = new OutputBuilder()
+                .Value("标定", () => new FineCalib())
+                .Value("别的", () => "x")
+                .Roots;
+            SourceRef value = SourceRef.Local;
+            var source = (SourceParam)new ParamBuilder().Source<Calib>("标定来源", () => value, v => value = v).Items.Single();
+
+            Assert.AreEqual(OutEnum.Undefined, source.SourceType);
+            Assert.AreEqual(typeof(Calib), source.ValueType);
+            Assert.IsFalse(source.AllowsLocal);
+            Assert.IsTrue(source.Accepts(o[0]), "子类型可以赋给来源要求的类型");
+            Assert.IsFalse(source.Accepts(o[1]));
+        }
+
         [TestMethod]
         public void Outputs_InvalidNames_Throw()
         {

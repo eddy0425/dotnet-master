@@ -109,16 +109,24 @@ namespace DotNet.HalconCore
         protected override void SetValue(object value) => _set((T)value);
     }
 
-    /// <summary> 上游输出引用；<see cref="SourceType"/> 决定可选哪种输出 </summary>
+    /// <summary> 上游输出引用；<see cref="SourceType"/> / <see cref="ValueType"/> 决定可选哪些输出 </summary>
     public sealed class SourceParam : ParamItem<SourceRef>
     {
-        internal SourceParam(string page, string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum sourceType)
+        internal SourceParam(string page, string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum sourceType, Type valueType = null)
             : base(page, label, ParamKind.Source, get, set)
         {
             SourceType = sourceType;
+            ValueType = valueType;
         }
 
+        /// <summary> 要求的输出种类；按 CLR 类型声明的来源（<see cref="ParamBuilder.Source{T}"/>）为 <see cref="OutEnum.Undefined"/> </summary>
         public OutEnum SourceType { get; }
+
+        /// <summary> 要求的 CLR 类型；只按种类声明时为 null </summary>
+        public Type ValueType { get; }
+
+        /// <summary> 这个输出能不能接到本来源上（规则见 <see cref="SourceCompatibility"/>） </summary>
+        public bool Accepts(OutputItem output) => SourceCompatibility.Accepts(SourceType, ValueType, output);
 
         /// <summary> 是否允许"本地"（"默认"）：图像 / 区域 / 坐标系有本地含义，其余类型没有 </summary>
         public bool AllowsLocal => SourceType == OutEnum.Image || SourceType == OutEnum.Region || SourceType == OutEnum.Coord;
@@ -347,6 +355,9 @@ namespace DotNet.HalconCore
         /// <summary> 最多几项；0 表示不限 </summary>
         public int MaxCount { get; }
 
+        /// <summary> 这个输出能不能加进本列表（规则见 <see cref="SourceCompatibility"/>） </summary>
+        public bool Accepts(OutputItem output) => SourceCompatibility.Accepts(SourceType, null, output);
+
         protected override bool SameValue(object current, object value)
         {
             var a = current as IEnumerable<SourceRef> ?? new SourceRef[0];
@@ -412,6 +423,13 @@ namespace DotNet.HalconCore
 
         public ParamBuilder Source(string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum type)
             => Add(new SourceParam(_page, label, get, set, type));
+
+        /// <summary>
+        /// 按 CLR 类型声明来源：只要上游输出的值能赋给 <typeparamref name="T"/> 就可以选，
+        /// 用来接收别的插件用 <see cref="OutputBuilder.Value{T}"/> 输出的自定义类型。没有"默认"。
+        /// </summary>
+        public ParamBuilder Source<T>(string label, Func<SourceRef> get, Action<SourceRef> set)
+            => Add(new SourceParam(_page, label, get, set, OutEnum.Undefined, typeof(T)));
 
         public ParamBuilder Choice<T>(string label, Func<T> get, Action<T> set, params Option<T>[] options)
         {

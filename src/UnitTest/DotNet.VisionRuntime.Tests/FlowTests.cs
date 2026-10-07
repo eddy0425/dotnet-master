@@ -214,6 +214,59 @@ namespace DotNet.VisionRuntime.Tests
             protected override RunResult Execute(RunContext context) => RunResult.Ok();
         }
 
+        /// <summary> 一个"插件"输出的自定义类型 </summary>
+        public sealed class Gauge
+        {
+            public double Value;
+        }
+
+        private sealed class GaugeStep : ParaStrategyBase<StepPara>
+        {
+            public GaugeStep(string name) { Name = name; }
+            protected override void DeclareParams(ParamBuilder p) { }
+            protected override void DeclareOutputs(OutputBuilder o) => o.Value("量规", () => new Gauge { Value = 42 });
+            protected override void ResetOutputs() { }
+            protected override RunResult Execute(RunContext context) => RunResult.Ok();
+        }
+
+        /// <summary> 另一个"插件"按 CLR 类型声明来源，接收上面的自定义类型 </summary>
+        private sealed class GaugeReader : ParaStrategyBase<StepPara>
+        {
+            public double Read;
+            public GaugeReader(string name) { Name = name; }
+            protected override void DeclareParams(ParamBuilder p) => p.Source<Gauge>("量规来源", () => inPara.Input, v => inPara.Input = v);
+            protected override void DeclareOutputs(OutputBuilder o) { }
+            protected override void ResetOutputs() => Read = 0;
+            protected override RunResult Execute(RunContext context)
+            {
+                Read = context.Resolve<Gauge>(inPara.Input).Value;
+                return RunResult.Ok();
+            }
+        }
+
+        /// <summary> 插件之间可以传自定义类型：按 CLR 类型的可赋值关系校验，种类只决定图标 </summary>
+        [TestMethod]
+        public void CustomType_FlowsBetweenPlugins_ValidatedByValueType()
+        {
+            var gauge = new GaugeStep("量规");
+            var reader = new GaugeReader("读取");
+            reader.inPara.Input = gauge.Ref("量规");
+            var runner = new FlowRunner(new IParaStrategy[] { gauge, reader });
+
+            Assert.AreEqual(0, runner.Validate().Count);
+            using (var result = runner.Run(_initial))
+            {
+                Assert.IsTrue(result.AllOk, result.FirstError?.Result.Message);
+                Assert.AreEqual(42, reader.Read);
+            }
+
+            var a = new Step("A");
+            reader.inPara.Input = a.Ref("次数");
+            var issues = new FlowRunner(new IParaStrategy[] { a, reader }).Validate();
+            Assert.AreEqual(1, issues.Count);
+            StringAssert.Contains(issues[0].Message, "需要 Gauge");
+        }
+
         /// <summary> 来源列表里的每一项都是一条输入依赖，逐项校验 </summary>
         [TestMethod]
         public void Validate_SourceList_ChecksEachEntry()

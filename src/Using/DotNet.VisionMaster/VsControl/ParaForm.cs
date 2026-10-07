@@ -136,7 +136,7 @@ namespace DotNet.VisionMaster
         {
             page.Text = name;
             panel.SourcePicker = PickSource;
-            panel.SourceListPicker = list => PickSource(() => _valueForm.Pick(Upstream(), list.SourceType));
+            panel.SourceListPicker = list => PickSource(() => _valueForm.Pick(Upstream(), list));
             panel.SourceFormatter = source => _flow.Describe(source);
             panel.ValueWriter = WriteValue;
             panel.Committed += Panel_Committed;

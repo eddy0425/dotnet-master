@@ -69,6 +69,41 @@ namespace DotNet.VisionMaster.Tests
 
         private static string[] Roots(TreeView tree) => tree.Nodes.Cast<TreeNode>().Select(n => n.Text).ToArray();
 
+        public sealed class Gauge { }
+
+        private sealed class GaugePara : DisplayOptions
+        {
+            public SourceRef Input { get; set; } = SourceRef.Local;
+        }
+
+        private sealed class GaugeReader : ParaStrategyBase<GaugePara>
+        {
+            protected override void DeclareParams(ParamBuilder p) => p.Source<Gauge>("量规来源", () => inPara.Input, v => inPara.Input = v);
+            protected override void DeclareOutputs(OutputBuilder o) { }
+            protected override void ResetOutputs() { }
+            protected override RunResult Execute(RunContext context) => RunResult.Ok();
+        }
+
+        /// <summary> 选择窗与运行前校验是同一条兼容规则：按类型声明的来源只能选值能赋过去的输出 </summary>
+        [TestMethod]
+        public void DoubleClick_TypedSource_AcceptsOnlyAssignableOutputs()
+        {
+            Run((form, tree, upstream) =>
+            {
+                upstream.Add(new FakeStrategy("量规0") { Outs = o => o.Value("量规", () => new Gauge()).Number("读数", () => 1) });
+                using (var reader = new GaugeReader())
+                {
+                    var param = (SourceParam)reader.DescribeParams().Single(i => i.Label == "量规来源");
+                    form.Prepare(upstream, param.SourceType, param.AllowsLocal, param.Value, param.Accepts);
+
+                    Assert.IsFalse(Roots(tree).Contains("默认"), "按类型声明的来源没有本地含义");
+                    Assert.IsFalse(DoubleClick(form, tree, "量规0/读数").Item1);
+                    Assert.IsFalse(DoubleClick(form, tree, "形状匹配0/图像").Item1);
+                    Assert.IsTrue(DoubleClick(form, tree, "量规0/量规").Item1, "确认后窗口关闭, 放在最后");
+                }
+            });
+        }
+
         #region 生成树
 
         [TestMethod]

@@ -172,12 +172,17 @@ enum DotNet.HalconCore.OutEnum : System.Int32
     Undefined = 0
 sealed class DotNet.HalconCore.OutputBuilder
     public .ctor()
+    public DotNet.HalconCore.OutputBuilder Circle(System.String name, System.Func<DotNet.Drawing.CvCircle> get)
     public DotNet.HalconCore.OutputBuilder Coord(System.String name, System.Func<DotNet.Drawing.CvCoord> current, System.Func<System.Nullable<DotNet.Drawing.Point2d>> template)
+    public DotNet.HalconCore.OutputBuilder Flag(System.String name, System.Func<System.Boolean> get)
     public DotNet.HalconCore.OutputBuilder Image(System.String name, System.Func<HalconDotNet.HObject> get)
     public DotNet.HalconCore.OutputBuilder Line(System.String name, System.Func<DotNet.Drawing.CvLine> get)
     public DotNet.HalconCore.OutputBuilder Number(System.String name, System.Func<System.Double> get)
+    public DotNet.HalconCore.OutputBuilder Numbers(System.String name, System.Func<System.Collections.Generic.IReadOnlyList<System.Double>> get)
     public DotNet.HalconCore.OutputBuilder Point(System.String name, System.Func<DotNet.Drawing.Point2d> get)
     public DotNet.HalconCore.OutputBuilder Region(System.String name, System.Func<HalconDotNet.HObject> get)
+    public DotNet.HalconCore.OutputBuilder Text(System.String name, System.Func<System.String> get)
+    public DotNet.HalconCore.OutputBuilder Value<T>(System.String name, System.Func<T> get, DotNet.HalconCore.OutEnum type = Undefined)
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Roots { get; }
 sealed class DotNet.HalconCore.OutputItem
     public DotNet.HalconCore.OutEnum Type { get; }
@@ -186,6 +191,7 @@ sealed class DotNet.HalconCore.OutputItem
     public System.Object GetValue()
     public System.String Name { get; }
     public System.String Path { get; }
+    public System.Type ValueType { get; }
     public override System.String ToString()
 static class DotNet.HalconCore.Pages
     public const System.String Display = "显示输出"
@@ -230,6 +236,7 @@ sealed class DotNet.HalconCore.ParamBuilder
     public DotNet.HalconCore.ParamBuilder Int(System.String label, System.Func<System.Int32> get, System.Action<System.Int32> set, System.Int32[] presets = null, System.Nullable<System.Int32> min = null, System.Nullable<System.Int32> max = null)
     public DotNet.HalconCore.ParamBuilder Page(System.String page)
     public DotNet.HalconCore.ParamBuilder Source(System.String label, System.Func<DotNet.HalconCore.SourceRef> get, System.Action<DotNet.HalconCore.SourceRef> set, DotNet.HalconCore.OutEnum type)
+    public DotNet.HalconCore.ParamBuilder Source<T>(System.String label, System.Func<DotNet.HalconCore.SourceRef> get, System.Action<DotNet.HalconCore.SourceRef> set)
     public DotNet.HalconCore.ParamBuilder SourceList(System.String label, System.Func<System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.SourceRef>> get, System.Action<System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.SourceRef>> set, DotNet.HalconCore.OutEnum type, System.Int32 maxCount = 0)
     public DotNet.HalconCore.ParamBuilder Tab(DotNet.HalconCore.TabPageEnum tab)
     public DotNet.HalconCore.ParamBuilder Text(System.String label, System.Func<System.String> get, System.Action<System.String> set)
@@ -291,13 +298,19 @@ enum DotNet.HalconCore.RunStatus : System.Int32
     Error = 2
     Ok = 0
     Warning = 1
+static class DotNet.HalconCore.SourceCompatibility
+    public static System.Boolean Accepts(DotNet.HalconCore.OutEnum wanted, System.Type wantedType, DotNet.HalconCore.OutputItem output)
+    public static System.String Describe(DotNet.HalconCore.OutEnum wanted, System.Type wantedType)
 sealed class DotNet.HalconCore.SourceListParam : DotNet.HalconCore.ParamItem<System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.SourceRef>>
     protected override System.Boolean SameValue(System.Object current, System.Object value)
     public DotNet.HalconCore.OutEnum SourceType { get; }
+    public System.Boolean Accepts(DotNet.HalconCore.OutputItem output)
     public System.Int32 MaxCount { get; }
 sealed class DotNet.HalconCore.SourceParam : DotNet.HalconCore.ParamItem<DotNet.HalconCore.SourceRef>
     public DotNet.HalconCore.OutEnum SourceType { get; }
+    public System.Boolean Accepts(DotNet.HalconCore.OutputItem output)
     public System.Boolean AllowsLocal { get; }
+    public System.Type ValueType { get; }
 struct DotNet.HalconCore.SourceRef : System.IEquatable<DotNet.HalconCore.SourceRef>
     public .ctor(System.Guid toolId, System.String output)
     public System.Boolean Equals(DotNet.HalconCore.SourceRef other)

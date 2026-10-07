@@ -237,12 +237,14 @@ namespace DotNet.VisionRuntime
                     switch (param)
                     {
                         case SourceParam source:
-                            Report(issues, i, source.Label, Check(i, source.Value, source.SourceType));
+                            Report(issues, i, source.Label,
+                                Check(i, source.Value, source.Accepts, SourceCompatibility.Describe(source.SourceType, source.ValueType)));
                             break;
                         case SourceListParam list:
                             var entries = list.Value;
                             for (int k = 0; k < entries.Count; k++)
-                                Report(issues, i, $"{list.Label}[{k}]", Check(i, entries[k], list.SourceType));
+                                Report(issues, i, $"{list.Label}[{k}]",
+                                    Check(i, entries[k], list.Accepts, SourceCompatibility.Describe(list.SourceType, null)));
                             break;
                     }
                 }
@@ -255,7 +257,7 @@ namespace DotNet.VisionRuntime
             if (issue != null) issues.Add(new FlowIssue(index, _tools[index], label, issue));
         }
 
-        private string Check(int index, SourceRef source, OutEnum type)
+        private string Check(int index, SourceRef source, Func<OutputItem, bool> accepts, string wanted)
         {
             if (source.IsLocal) return null;
 
@@ -269,7 +271,8 @@ namespace DotNet.VisionRuntime
 
             var output = _tools[at].FindOutput(source.Output);
             if (output == null) return $"'{_tools[at].Name}' 没有输出 '{source.Output}'";
-            if (output.Type != type) return $"'{_tools[at].Name}/{source.Output}' 的类型是 {output.Type}, 需要 {type}";
+            if (!accepts(output))
+                return $"'{_tools[at].Name}/{source.Output}' 的类型是 {SourceCompatibility.Describe(output.Type, output.ValueType)}, 需要 {wanted}";
             return null;
         }
 
