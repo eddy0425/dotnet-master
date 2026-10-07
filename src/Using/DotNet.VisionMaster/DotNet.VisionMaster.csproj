@@ -1,0 +1,197 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{05DB6968-170A-4786-8DF3-FC401E406EDD}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>DotNet.VisionMaster</RootNamespace>
+    <AssemblyName>DotNet.VisionMaster</AssemblyName>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="halcondotnet, Version=22.11.0.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(DotNetDllDir)\Halcon\halcondotnet.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(DotNetDllDir)\Newtonsoft.Json\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="SunnyUI">
+      <HintPath>$(DotNetDllDir)\SunnyUI\SunnyUI.dll</HintPath>
+    </Reference>
+    <Reference Include="SunnyUI.Common">
+      <HintPath>$(DotNetDllDir)\SunnyUI\SunnyUI.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="DialogPlacement.cs" />
+    <Compile Include="InfoForm.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="InfoForm.designer.cs">
+      <DependentUpon>InfoForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Program.cs" />
+    <Compile Include="Prompt.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="DrawingLogBridge.cs" />
+    <Compile Include="TreeNode\JobForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TreeNode\JobForm.designer.cs">
+      <DependentUpon>JobForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TreeNode\ToolForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TreeNode\ToolForm.designer.cs">
+      <DependentUpon>ToolForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TreeNode\ValueForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TreeNode\ValueForm.Designer.cs">
+      <DependentUpon>ValueForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="VsControl\ParaForm.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="VsControl\ParaForm.Designer.cs">
+      <DependentUpon>ParaForm.cs</DependentUpon>
+    </Compile>
+    <EmbeddedResource Include="InfoForm.resx">
+      <DependentUpon>InfoForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <EmbeddedResource Include="TreeNode\JobForm.resx">
+      <DependentUpon>JobForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TreeNode\ToolForm.resx">
+      <DependentUpon>ToolForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TreeNode\ValueForm.resx">
+      <DependentUpon>ValueForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="VsControl\ParaForm.resx">
+      <DependentUpon>ParaForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Library\DotNet.Logging\DotNet.Logging.csproj">
+      <Project>{61b8513d-a49f-451e-b525-a7db5692cd32}</Project>
+      <Name>DotNet.Logging</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\DotNet.Drawing\DotNet.Drawing.csproj">
+      <Project>{ce09acc5-0e8d-4d7d-aa2b-d47b837f2cd2}</Project>
+      <Name>DotNet.Drawing</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\DotNet.HalconCore\DotNet.HalconCore.csproj">
+      <Project>{7b2e4c10-9d6a-4f31-a5c8-3e0b1d742f96}</Project>
+      <Name>DotNet.HalconCore</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\DotNet.HalconAlgo\DotNet.HalconAlgo.csproj">
+      <Project>{90ffd348-89ae-46ad-995f-780490a7865f}</Project>
+      <Name>DotNet.HalconAlgo</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\DotNet.HalconUI\DotNet.HalconUI.csproj">
+      <Project>{f64662fa-e352-43ae-9b06-2e1ecfb1f205}</Project>
+      <Name>DotNet.HalconUI</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\FlowAdd.png" />
+    <None Include="Resources\FlowDelete.png" />
+    <None Include="Resources\FlowDown.png" />
+    <None Include="Resources\FlowRename.png" />
+    <None Include="Resources\FlowUp.png" />
+    <None Include="Resources\MenuDelete.png" />
+    <None Include="Resources\RunButton.png" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

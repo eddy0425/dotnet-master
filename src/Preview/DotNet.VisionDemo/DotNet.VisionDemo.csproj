@@ -24,7 +24,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x64</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
@@ -34,7 +34,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="halcondotnet">
-      <HintPath>C:\DotNet\.dll\Halcon\halcondotnet.dll</HintPath>
+      <HintPath>$(DotNetDllDir)\Halcon\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -96,27 +96,23 @@
       <Project>{5c5f27fb-2b8d-4212-a788-ff51177cfb9f}</Project>
       <Name>DotNet.Data</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\Library\DotNet.Json\DotNet.Json.csproj">
-      <Project>{5954e440-e34e-49ad-bccd-93284cd8ea2b}</Project>
-      <Name>DotNet.Json</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\DotNet.Drawing\DotNet.Drawing.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.Drawing\DotNet.Drawing.csproj">
       <Project>{ce09acc5-0e8d-4d7d-aa2b-d47b837f2cd2}</Project>
       <Name>DotNet.Drawing</Name>
     </ProjectReference>
-    <ProjectReference Include="..\DotNet.HalconAlgo\DotNet.HalconAlgo.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.HalconAlgo\DotNet.HalconAlgo.csproj">
       <Project>{90ffd348-89ae-46ad-995f-780490a7865f}</Project>
       <Name>DotNet.HalconAlgo</Name>
     </ProjectReference>
-    <ProjectReference Include="..\DotNet.HalconCore\DotNet.HalconCore.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.HalconCore\DotNet.HalconCore.csproj">
       <Project>{7b2e4c10-9d6a-4f31-a5c8-3e0b1d742f96}</Project>
       <Name>DotNet.HalconCore</Name>
     </ProjectReference>
-    <ProjectReference Include="..\DotNet.HalconUI\DotNet.HalconUI.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.HalconUI\DotNet.HalconUI.csproj">
       <Project>{f64662fa-e352-43ae-9b06-2e1ecfb1f205}</Project>
       <Name>DotNet.HalconUI</Name>
     </ProjectReference>
-    <ProjectReference Include="..\DotNet.VisionMaster\DotNet.VisionMaster.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.VisionMaster\DotNet.VisionMaster.csproj">
       <Project>{05db6968-170a-4786-8df3-fc401e406edd}</Project>
       <Name>DotNet.VisionMaster</Name>
     </ProjectReference>

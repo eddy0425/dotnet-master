@@ -1,768 +1,501 @@
-﻿# Preview 三工程 代码审查与重构方案
+# src/Using 重构计划
 
-> 审查范围：`src/Preview/DotNet.Drawing`（6901 行）、`src/Preview/DotNet.HalconUI`（7552 行）、`src/Preview/DotNet.HalconAlgo`（4000 行）
-> 审查方式：逐文件通读 + 跨工程模式扫描
-> 优先级：**P0 = 必现缺陷/数据损坏/资源泄漏**，**P1 = 潜在缺陷/易误用 API**，**P2 = 可维护性/一致性**
+> 范围：`DotNet.Drawing`、`DotNet.HalconCore`、`DotNet.HalconAlgo`、`DotNet.HalconUI`、`DotNet.VisionMaster`
+> 现状：.NET Framework 4.5/4.5.2 + WinForms + Halcon 22.11，Core 约 0.85k 行、Algo 约 4.8k 行，测试方法 757 个（Drawing 147、HalconAlgo 249、HalconUI 296、VisionMaster 65；HalconCore 没有测试项目）
+>
+> **设计前提（必须保留）**：**一个算法 = 一个类**。继承 `ParaStrategyBase<TPara>`，再按需实现能力接口，就能完整地加入一个 Halcon 算法，例如：
+>
+> ```csharp
+> [Algo("fit.arc-midpoint", "圆弧中点", Group = "测量")]
+> public class FitArcMidpointStrategy : ParaStrategyBase<FitArcMidpoint>, IRoiEditable
+> ```
+>
+> 本计划的目标是**把这条约定做成真正的插件契约**：
+>
+> 1. **只依赖 Core**：算法类只引用 `DotNet.HalconCore`（和 `DotNet.Drawing`），不知道宿主窗体里有什么控件。
+> 2. **零登记**：除了这个类和它的参数类（放在同一个文件里），宿主端不需要为新算法改任何代码，包括 Designer。
+> 3. **可外置**：算法类放在 HalconAlgo 里，或者编译成独立 dll 丢进 `plugins\` 目录，效果一样。
 
 ---
 
-## 〇、结论摘要
+## 1. 现状评估
 
-| 类别 | 数量 | 代表问题 |
+### 1.1 做得对的地方（保留）
+
+- **单类插件模型**：`ParaStrategyBase<TPara>` 加上能力接口（`IRoiEditable`、`ITemplateEditable`、`IParaBinding`、`ITreeNodeProvider`），一个类就能声明算法的执行、参数面板、输出树和 ROI 交互。宿主按能力接口做类型判断（`if (s is IRoiEditable roi)`）。**这是整个架构的核心，保留。**
+- 依赖方向正确：`Drawing ← HalconCore ← {HalconAlgo, HalconUI} ← VisionMaster`。Algo 和 UI 互不引用，UI 通过 `IHDisplay`、`IParaUiHost`、`IRoiHost` 等接口反向注入。
+- `IParaUiHost` 已经把 WinForms 的 `Control` 挡在算法层之外，方向是对的，只是粒度还停留在“控件”而不是“参数”（见 P3）。
+- `EdgeMeasurePipeline`、`RobustFitPipeline` 是纯计算，不碰显示，可以被多个策略共用。
+- `FitArcMidpointStrategy` 已经把「纯计算（`ComputeFit`）」和「绘制（`DrawPendingOverlay`）」分成两个方法，是类内分离的样板。
+- `CvRegion.HoRegion` 的 setter 会释放旧句柄（`CreateROI.Result` 本身是只读属性，正是依赖这一点），匹配模板的「快照 → 试匹配 → 提交」事务也写得严谨。
+- HalconUI 的交互绘制子系统是全库设计最好的一块：Session、Renderer、Shape、Geometry 四个职责分得清楚，每个 Shape 是一个状态机，`DrawGeometry` 是纯函数。**这部分整体保留**，只需要去掉其中的静态状态。
+- VsControl 的绑定结构清楚：策略接口 `IVsControlBinding` 加 7 个具体策略，由 `VsControlBindingStrategyFactory` 创建，未知类型回退到空对象 `VsNullBindingStrategy`。阶段 1 的动态面板可以直接复用这套绑定。
+- 测试覆盖面不错。
+
+### 1.2 主要问题
+
+| # | 问题 | 证据 | 影响 |
+|---|---|---|---|
+| P1 | **「一个类」的约定没有闭环**：宿主仍要按算法写分支 | 见 §2.2 的清单：`AlgoEnum` 枚举、`MainForm` 手写 new 和 8 个按钮、`ParaForm` 里 5 处 `switch (strategy.Algorithm)` 和 1 处 `switch (strategy)` 类型匹配 | 新增一个算法至少要改 3 个文件；已经漏注册了 RotateImage、LineRotImage、MergeRegion 三个策略 |
+| P2 | 策略类内部职责没有分开 | `Fun_action` 一边计算一边绘制（FitArc 除外）；运行结果（`ArcMidpoint`、`Results`、`Coord`、`HoContour`）放在 `inPara` 里，和配置混在一起；`GenTreeNode` 里树节点和 `RegisterOutput` 要各写一遍同样的路径 | 无法无界面运行；序列化 `inPara` 时会把运行结果和句柄一起带上；树路径和解析路径容易写得不一致 |
+| P3 | **控件槽位是算法与宿主 Designer 之间的隐藏契约** | 控件名魔法字符串 `cmb_100`、`ckb_disp0` 出现在全部 11 个策略文件中；`DispPara` 和 `SavePara` 靠同一组槽位字符串对齐，每个参数写两遍；`MergeRegion` 借用 `cmb_110` 当跟随坐标（因为不开 Region 页）；`RotateImage` 的 `cmb_102` 随 `RotateType` 在「角度」和「坐标系」之间切换含义；`SavePara` 每次点运行都会被调用，`MergeRegion` 只好自己比较新旧值来判断「配置是否真的变了」 | 槽位数量和位置由 ParaForm.Designer 决定：参数多一个、来源多一个，就得改 Designer，**插件契约被宿主的窗体布局卡住**；宿主只能靠 `switch` 去猜每个槽位该选什么类型 |
+| P4 | 大量复制粘贴 | 4 个匹配策略合计 2037 行，结构几乎一样（Generic 的结果句柄处理和 `SavePara` 稍有不同）；FitLine 和 FitArc 的 ROI 跟随、`DispPara` 重复；Rotate 和 LineRot 的 `RunWithReset` 逐字相同；每个策略都重复一段「显示文本 / 字体」面板代码；ParaForm 里 4 个 async 绘制入口重复 | 修一个 bug 要改 4 处 |
+| P5 | 没有流程（Flow）引擎 | 流程就是 `List<IParaStrategy>`；VisionMaster 的运行按钮只跑当前工具（`MainForm.cs:147`）；VisionDemo 里只有简单的顺序全跑循环；`ToolForm` 只有定义，没有任何地方实例化 | 在 VisionMaster 里，上游结果要用户手动逐个运行 |
+| P6 | 工具引用是可变显示名拼成的字符串 | `ResolveFrom("形状匹配/坐标系/原点")` 用 foreach 线性查找，取第一个 `Name` 相等的策略；魔法字符串 `"默认"` 表示使用本工具自己的数据；坐标跟随还依赖隐藏的路径约定：`CoordIn.ToTmplPoint()` 把 `xxx/坐标系` 改写成 `xxx/TmplPoint` 再解析一次 | 重名或改名后引用就断了；`TmplPoint` 协议没有任何类型约束，漏注册只在运行时才暴露 |
+| P7 | 没有方案持久化 | `AlgoPaths` 定义了 `SchemeDir`、`JobInfo` 等路径，但没有人使用；`FilePaths.cs` 只剩一个空壳静态类，类体全部被注释掉 | 重启后配置丢失 |
+| P8 | Halcon 句柄生命周期不完整 | 匹配策略没实现 `IDisposable`，`ModelID`、`HoContour` 等泄漏；`FileImageStrategy` 没有实现 `IDisposable`，它的 `Close` 是空方法，而宿主只对实现了 `IDisposable` 的策略做释放，所以参数类 `FileImage.Image` 永远不会被释放；`Close()` 只有单元测试在调用 | 长时间运行会内存泄漏；而且「要不要实现 `IDisposable`」全靠每个类自己记得 |
+| P9 | `DotNet.Drawing` 名不副实，而且被 Halcon 污染 | 纯几何、Halcon 工具、标注为「OpenCV 互操作」的结构体（仓库里其实没有 OpenCV 依赖）、JSON、日志全混在一起；6 个文件用到 Halcon 类型，其中包括 `Rect2d` 的 `HTuple` 构造函数；所有文件的命名空间都是 `DotNet.Drawing`，与文件夹不对应 | 纯几何类型也被迫依赖 halcondotnet 和 x64 原生运行时，无法独立复用 |
+| P10 | 可变静态状态 | `AlgoPaths.ProjectDir`、`UIBlock`（宿主会赋值，但生产代码从不读取，只有测试读）、`Prompt.Show`、`SerializeConvert.NewtonsoftJsonFirst`、两套静态 `Log` | 测试互相干扰，行为隐式 |
+| P11 | God control | `ParaForm` 573 行代码 + 1591 行 Designer；有向具体策略类型的下转；4 个 `async void` 绘制入口 | 改动风险高 |
+| P12 | `HDisplay` 是 god class（968 行），而且会修改领域对象 | 一个类里混了显示、交互绘制、区域生成三种职责；4 个按 `RectEnum` 的 switch；圆环生成有 2 份实现（`GenRing`、`DispRingInternal`），`DrawRingIntoAsync` 又重复了一遍内外半径的归一化；`DispGenRegion`、`GenCoordsRegion` 会修改传入的 `CvRegion` | 改动风险高 |
+| P13 | UI 层里有模板编辑和文件 IO | `HModelUI`、`HEditModelUI` 都直接调用 `ReadImage`；`HEditModelUI` 还在窗体里做 `Union2`/`Difference`；`TransObject` 两处逐字相同，`DisplayModel` 两处高度相似；`ModelExtension` 和 `ModelType` 是死代码 | UI 层不是纯视图 |
+| P14 | 同一个控件上叠了三套鼠标系统 | `HWindowMouse`、`IMouseHandler`（`DrawEnum` 加 switch）、`DrawSession`；`DrawType` 公开可写，模式切换没有校验 | 事件处理顺序依赖订阅顺序 |
+| P15 | VsControl 绑死了宿主窗体的控件名 | `VsControlFactory` 硬编码 `tabControl1`、`tabPage0..4`、`ckb_disp0..4`，靠反射按私有字段名取控件 | HalconUI 反向依赖 VisionMaster 的 Designer |
+| P16 | UI 层的静态和全局状态 | `DrawSession.Sessions` 静态列表；`DrawHelper.Timeout`；`SetSystem("autodraw")` 是进程级参数；`HalconAPI.CancelDraw()` 是全局操作 | 两个窗口同时绘制会互相干扰 |
+| P17 | 线程假设不明确 | 全部假定在 UI 线程，没有 `InvokeRequired` 保护 | 相机线程调用 `DispImage` 会跨线程修改控件 |
+| P18 | 工程配置不一致 | 目标框架混用：Drawing、Core、Algo、UI、Data 是 4.5，VisionMaster、VisionDemo、Logging、Excel、Extension 是 4.5.2；Using 下各项目 Debug 是 x64、Release 是 AnyCPU，而测试项目两种配置都是 x64；HintPath 写死 `C:\DotNet\.dll\...`；VisionMaster 引用了 DotNet.Data 和 DotNet.Excel 却没用 | Debug 和 Release 的行为不一致；Release 的 exe 能以 x64 运行，只是因为没有设置 `Prefer32Bit`；换一台机器就编译不了 |
+| P19 | 执行状态只能画在屏幕上 | `Fun_action` 只返回 `bool`，失败原因由各策略自己用红字 `DispText` 画出来（例如 `ShapeModelStrategy.cs:57`、`:82`）；红字是否受「显示文本」开关控制，各策略口径不一（`MergeRegion` 特意不受控） | 流程引擎拿不到失败原因，无法记录日志或汇总；拆出 `Render` 之后，这些信息没有地方放 |
+
+> 关于「Core 里有 UI 抽象」：`IParaUiHost`、`IRoiHost`、`ITreeVisualizer`、`TabPageEnum` 放在 Core，是「一个类就能声明参数面板和 ROI 交互」的必要代价。它们只是接口，不依赖 WinForms，**保留在 Core**。真正的问题是 P3：这些接口的粒度是「控件名」，而不是「参数」。
+
+### 1.3 现存 Bug（不依赖重构，先修）
+
+- [x] **日志没写进文件**：（已修：`Program.cs` 把 `Drawing.Log.Current` 接到 `DotNet.Logging`，见 `DrawingLogBridge`）
+  - `DotNet.Drawing.Log` 默认只写到 Trace，而 `Program.cs` 只初始化了 `DotNet.Logging`，生产代码里也没有任何地方给 `Drawing.Log.Current` 赋值。
+  - 结果是 HalconUI、HalconAlgo、VisionMaster 中共 24 个文件、71 处 `Log` 调用，日志全部只进了 Trace，没有写进文件。
+- [x] **模板图互相覆盖**：（阶段 0 先由 MainForm 按下标赋 `RunIndex`；阶段 1 改为按 `Id`）`RunIndex` 是策略自身的属性（`IParaStrategy.cs:18`），MainForm 从来没有给它赋值（VisionDemo 的 `CreateROIForm.cs:45` 赋值了）。所以 VisionMaster 里 4 个匹配策略的模板图都写到 `JobDir/0/matching.bmp`。
+- [x] **三个策略漏注册**：（阶段 1a 由 `AlgoCatalog` 自动生成工具箱后解决）`RotateImage`、`LineRotImage`、`MergeRegion` 没加进 MainForm，但 ParaForm 已经有它们的分支。其中 `MergeRegionStrategy` 在所有生产代码里（包括 VisionDemo）都没有被实例化。
+- [x] **死代码**：`MainForm.cs:136-143` 的 `switch (Name) case "ShapeMode"` 永远匹配不到（策略名实际是「形状匹配」），而且这个分支体本身就是空的。
+- [x] **参数可编辑但没生效**：（`CoordIn` 已在 4 个匹配的查找里生效：本地查找区域随上游坐标系搬移；`LockCenter`、`AngleEnd` 已删除）匹配策略的 `CoordIn` 只在 `DispPara`、`SavePara` 里出现，两个 `Fun_action` 都没用到。另外 `LockCenter`（4 个匹配参数类都有）和 `AngleEnd`（只在 Generic 里有）声明了但从未被读取。
+- [x] **执行结果被忽略**：（阶段 0 先记日志；阶段 2 由 `RunResult` 取代 bool）生产宿主（MainForm、VisionDemo）都丢弃了 `Fun_action` 的 bool 返回值，只有单元测试会检查它。
+- [x] **写死的测试路径**：`MainForm.cs:52` 硬编码了 `D:\testImage\FitArcMidpoint`。
+- [x] **序列化会带上句柄**：`HTuple ModelID`、`public HObject HoContour/Image` 没加 `[JsonIgnore]`。
+- [x] **字体实现与 Halcon 版本不符**：（核实后结论不同：差别在窗口图形栈而不是版本号。`HWindowControl` 是旧图形栈的 `WIN32-Window`，2022 版的 `disp_text` 在上面报 #5123、文本整行消失。改为 `HWindowFonts.Create` 按 `get_window_type` 选择实现）项目引用的是 Halcon 22.11，但 `HDisplay.cs:43` 写死使用 `HWindowFont2018`，`HWindowFont2022` 没有被用到。
+- [x] **多余引用**：HalconUI 的 csproj 引用了 Newtonsoft（HintPath 是写死的绝对路径），但没有任何代码使用。
+
+---
+
+## 2. 目标架构：把「单类策略」做成插件契约
+
+### 2.1 结论
+
+保留现有的架构形态：**分层 + 单类策略插件（基类 + 能力接口）**。不另起一套 Tool/Param/Result/Editor 多类模型，也不重命名程序集。
+
+这里的「插件」指的是**加载期插件**：
+
+| 特性 | 采用 | 说明 |
 |---|---|---|
-| P0 必现 Bug | 12 | `HalconHelper.GenContours` 无限自递归；`DispPolygon` 行列颠倒；可变全局单例 `Rect2d.Default` / `CvRegion.Empty` |
-| P0 资源泄漏 | 31 处 | `new HObject(); GenEmptyObj(out x);` 覆盖丢句柄，分布于 10 个文件 |
-| P1 设计缺陷 | 20+ | 分层倒置、巨型接口、三层纯转发、角度二次转换、坐标序 (X,Y)/(Row,Col) 混用 |
-| P2 可维护性 | 大量 | 55 处 `catch{}`/`Console.WriteLine` 静默吞错、11 个空壳策略类、647 行整体注释掉的死代码文件 |
+| 只依赖 Core 契约 | ✔ | 插件不引用 HalconUI、VisionMaster，也不知道任何控件名 |
+| 自动发现 | ✔ | 启动时扫描 HalconAlgo 和 `plugins\*.dll` 中带 `[Algo]` 的类型 |
+| 稳定身份 | ✔ | `[Algo]` 上的字符串键，用于方案持久化，与类名、命名空间无关 |
+| 启动校验 | ✔ | 键重复、缺无参构造函数、标在抽象类上，一律启动即报错 |
+| 热卸载、进程隔离 | ✘ | .NET Framework 下需要 AppDomain，收益不值得；换插件要重启 |
 
-**最紧迫的三件事**：① 修 12 个必现 Bug；② 统一 HObject 所有权模型，消灭 31 处泄漏；③ 打断 `HalconAlgo → HalconUI` 的反向依赖。
+重构做四件事：
 
----
+1. **宿主通用化**：把宿主里所有「按算法分支」的知识，改为由策略类自己声明。宿主只认识基类和能力接口，不认识任何具体算法。
+2. **参数面板声明式化**：策略声明「有哪些参数」，宿主负责生成控件和双向绑定。**算法里不再出现任何控件名**，`DispPara` + `SavePara` 合并成一份声明。
+3. **基类承担公共流程**：执行模板、输出声明、状态报告、生命周期都由 `ParaStrategyBase<TPara>` 统一实现，子类只填算法本身。
+4. **类内分区**：同一个类里，「配置」「计算」「绘制」「声明」各自待在固定的方法里，不互相渗透。
 
-## 一、架构级问题（P0，必须最先解决）
+### 2.2 宿主里现有的「按算法分支」及替代方式
 
-### A1. 分层倒置：算法层反向依赖 UI 层
+这一节就是「一个类不够用」的全部原因（已对照源码核实）：
 
-- **位置**：`DotNet.HalconAlgo/DotNet.HalconAlgo.csproj`（`ProjectReference → DotNet.HalconUI`）、`DotNet.HalconAlgo/IParaStrategy.cs:1-3`
-- **现象**：依赖拓扑为 `Drawing ← HalconUI ← HalconAlgo`。算法工程直接 `using DotNet.HalconUI; using System.Windows.Forms;`，`IParaStrategy` 的方法签名里出现 `HDisplayUI`、`TreeVisualizer`、`Control`、`VsControlModel`。
-- **影响**：算法无法脱离 WinForms 单元测试；无法在无界面服务/多线程流水线中复用；UI 改动会连锁编译整个算法层。
-- **方案**：
-  1. 新建 `DotNet.HalconCore`（无 UI 依赖），下沉 `IHDisplay`（仅保留绘制原语）与 `IParaStrategy` 的**算法部分**；
-  2. `IParaStrategy` 拆成小接口（见 A2），UI 相关实现移到 HalconUI 侧的适配器；
-  3. 目标依赖方向：`Drawing ← HalconCore ← HalconAlgo`，`HalconCore ← HalconUI`，算法层与 UI 层互不依赖。
+| 宿主现在的做法 | 位置 | 改为由策略类自己声明 |
+|---|---|---|
+| 手写 `new` 8 个策略，8 个按钮按下标切换 | `MainForm.cs:33-40, 68-104` | 策略类打 `[Algo("fit.arc-midpoint", "圆弧中点", Group = "测量")]` 特性；宿主启动时用 `AlgoCatalog` 扫描程序集，自动生成工具箱 |
+| 每个策略写 `Algorithm => AlgoEnum.X`，宿主再按枚举 switch | 11 个策略文件 + `ParaForm` | **删除 `AlgoEnum`**。算法的身份是 `[Algo]` 的稳定键，显示名和分组也来自特性 |
+| 按算法决定每个「来源」按钮弹出的变量类型（图像、区域、直线、坐标系） | `ParaForm` 的 `btn_100`、`btn_101`、`btn_102..105`、`btn_110`、`btn_setCoordIn` 共 5 个 handler | 策略用 `p.Source("区域来源", ..., OutEnum.Region)` 声明。宿主生成的每个来源控件自带类型，**所有来源按钮共用一个通用实现**，不再有槽位 |
+| 每个参数在 `DispPara` 和 `SavePara` 里各写一次，靠槽位名对齐 | 11 个策略文件 | `DeclareParams(ParamBuilder p)` 一份声明，getter/setter 双向绑定 |
+| 参数变化的检测由策略自己比较新旧值（`MergeRegion` 的 `SameConfig`） | `MergeRegionStrategy.cs:234-263` | 宿主在值真正变化时才写回并调用 `OnParamsChanged()`，策略在那里清空示教态 |
+| 按算法决定新建 ROI 的默认形状（拟合类用 `AffRect`，其余用 `Rectangle`） | `ParaForm.cs:364-373` | `[Algo(..., DefaultRoi = RectEnum.AffRect)]`；只对实现了 `IRoiEditable` 的策略有意义，不进基类 |
+| 编辑模板窗、绘制完成事件里，对 4 个匹配类做类型 switch 取 `ModelPath`、`ModeRect`、`HoContour`、`Results` | `ParaForm.cs:498-514, 539-565` | `ITemplateEditable` 增加 `TemplateView GetTemplateView()`，由匹配基类统一实现 |
+| 只对实现了 `IDisposable` 的策略做释放 | `MainForm.cs:61` | 基类实现 `IDisposable`，子类覆盖 `Dispose(bool)`。不会再出现「忘了实现就泄漏」 |
+| `RunIndex` 由宿主手动赋值（VisionMaster 漏了） | `IParaStrategy.cs:18` | 删除。模板目录由实例的 `Id` 决定；「哪些是上游」由 `FlowRunner` 构造 `RunContext` 时给出 |
+| Region 页的几何读数（`cmb_Width`、`cmb_Center` 等）由每个 ROI 策略自己填 | 6 个 ROI 策略的 `DispPara` | 宿主在 `IRoiHost.SetRectPara` 时自己填，策略不再碰这些控件 |
 
-### A2. `IParaStrategy` 是 15 成员的巨型接口（违反 ISP）
+全部替换完成后，`ParaForm` 和 `MainForm` 里不再出现任何具体策略类型、`AlgoEnum` 或 `cmb_1xx` 槽位。
 
-- **位置**：`DotNet.HalconAlgo/IParaStrategy.cs`
-- **现象**：一个接口同时承担 参数解析 / 算法执行 / ROI 绘制 / 树节点生成 / WinForms 控件双向同步 / 模板设置。
-- **方案**：按职责拆分——
-  - `IAlgoStrategy`：`Algorithm`、`Name`、`RunIndex`、`Execute(AlgoContext)`
-  - `IOutputProvider`：`ResolveOutput(path)` / `TryResolveOutput<T>(path, out T)`
-  - `IRoiEditable`：`DrawROI` / `DispROI` / `SetTemplate`
-  - `IParaBinding`：`DispPara` / `SavePara`（进一步改为声明式绑定，见 C4）
-  - `ITreeNodeProvider`：`GenTreeNode`
+### 2.3 重构后新增一个算法的样子
 
-  策略类按需实现，不再被迫写空方法。
-
-### A3. `HDisplayUI → HDisplayCore → HDisplay` 三层纯转发
-
-- **位置**：`HDisplayUI.cs`（527 行）、`HWindows/HDisplayCore.cs`（378 行）、`HWindows/HDisplay/HDisplay.cs`（971 行）
-- **现象**：`IHDisplay` 有约 60 个成员，三层各手写一遍转发。中间层 `HDisplayCore` 除 `Size`/`Centre`/`MouseDown`/`MouseDouble` 外**未增加任何行为**。约 1000 行以上是纯样板。
-- **影响**：每加一个绘制方法要改三处；漏改一处即行为分叉（现已出现，见 B4）。
-- **方案**：
-  1. 删除 `HDisplayCore`，由 `HDisplayUI` 直接组合 `HDisplay` + `HWindowMouse`；
-  2. `HDisplayUI` **不再实现** `IHDisplay`，改为暴露 `public IHDisplay Display { get; }`（组合优于假继承）；
-  3. `IHDisplay` 按 A4 瘦身后，转发量自然降到可接受范围。
-
-### A4. `IHDisplay` 的 46 个 `Disp*` 重载
-
-- **实测规模**：接口共 **66 个成员**，其中 `Disp*` 方法 **46 个**，带 `string color` 参数的重载 **22 个**。
-- **现象**：几乎每个图元都有「带 color」「不带 color」两版，唯一差别是首行 `SetColor(color)`；`size` 参数在重载间时而 `double` 时而 `int`。
-- **方案**：
-  - 统一为 `void Disp<T>(T shape, DrawStyle? style = null)`，`DrawStyle` 封装 `Color`/`Size`/`LineWidth`/`DrawMode`；
-  - 颜色从 `string` 改为 `HColor` 强类型（枚举或 `readonly struct`），消除魔法字符串；
-  - 保留少量薄兼容重载并标 `[Obsolete]`，分批迁移。
-
----
-
-## 二、必现 Bug 清单（P0）
-
-### B1. `HalconHelper.GenContours` 无限自递归 → 栈溢出
-
-- **位置**：`DotNet.Drawing/HalconHelper.cs`
+一个文件，包含策略类和参数类：
 
 ```csharp
-public static void GenContours(List<Point2d> points, out HObject contour)
+[Algo("fit.arc-midpoint", "圆弧中点", Group = "测量", Order = 40, DefaultRoi = RectEnum.AffRect)]
+public class FitArcMidpointStrategy : ParaStrategyBase<FitArcMidpoint>, IRoiEditable
 {
-    GenContours(points, out contour);   // 调用的是自己
-}
-```
-
-- **修复**：改为 `controller.GenContours(points, out contour);`
-- **根因**：`HalconHelper` 是 `HalconController` 的纯静态镜像，两份 API 逐字复制，复制时漏改前缀。
-- **根治**：删除 `HalconHelper` 整个类，调用方改用 `HalconController`（或反之保留一个）。这是**同一份逻辑维护两遍**的典型代价。
-
-### B2. `DispCvRegion` 多边形分支行列颠倒
-
-- **位置**：`HWindows/HDisplay/HDisplay.cs`，`DispCvRegion` 的 `RectEnum.Polygon` 分支
-
-```csharp
-HOperatorSet.DispPolygon(_hWindow, hRegion.PolygonX, hRegion.PolygonY);
-```
-
-- **证据**：同文件 `DrawPolygonInto` 中 `hRegion.PolygonX = columns; hRegion.PolygonY = rows;`，而 Halcon `disp_polygon(Window, Row, Column)` 首参为 Row。
-- **现象**：多边形 ROI 显示时 X/Y 互换，画面完全错位。
-- **修复**：`HOperatorSet.DispPolygon(_hWindow, hRegion.PolygonY, hRegion.PolygonX);`
-
-### B3. `DrawRegion` / `DrawRegionMod` 缺失 `Ring` 分支
-
-- **位置**：`HWindows/HDisplay/HDisplay.cs`
-- **现象**：`RectEnum` 含 `Ring`，`DispCvRegion` 也实现了 Ring 显示，但 `DrawRegion(CvRegion)`（:589）、`DrawRegionMod(CvRegion)`（:665）、`DrawRegion(RectEnum, out HObject)`（:793）三个方法的 `switch` 都没有 Ring 分支且无 `default` → 用户选择圆环 ROI 时**静默无反应**，无任何提示。
-- **修复**：补齐 Ring 分支；并为所有 `switch (RectEnum)` 加 `default: throw new NotSupportedException(...)`，让遗漏在编码期暴露。
-
-### B4. `DispLine(CvLine, int radius)` 绕过颜色缓存 → 颜色错乱
-
-- **位置**：`HWindows/HDisplay/HDisplay.cs`
-
-```csharp
-public void DispLine(CvLine line, int radius, string color)
-{
-    SetColor(color);                       // 更新 _color 缓存
-    _hWindow.DispLine(...);
-    _hWindow.SetColor(HColor.Red);         // 直接调窗口，_color 缓存未更新！
-    _hWindow.DispCircle(...);
-}
-```
-
-- **现象**：`SetColor` 有「颜色相同则跳过 PInvoke」的快速路径。此处窗口实际颜色已是 Red 而缓存仍是 `color`，后续调用 `SetColor(HColor.Red)` 会被缓存命中跳过 → **后续所有图元错误地继续用红色绘制**。
-- **修复**：把 `_hWindow.SetColor(...)` 全部改为走 `SetColor(...)`，把 `_color` 设为唯一写入口；并在 `Fun_ZoomImage`/`ClearWindow` 等重置窗口状态的位置使缓存失效。
-
-### B5. `CvCoord.Angle` 二次单位转换
-
-- **位置（共 4 处，均需删除）**：`HWindows/HDisplay/HDisplay.cs:417`、`:422`（`DispCross(CvCoord, ...)` 两个重载）；`DotNet.Drawing/HalconController.cs:120`、`:121`（`VectorAngleToRigid(CvCoord...)`）
-
-```csharp
-_hWindow.DispCross(coord.Y, coord.X, size, coord.Angle.ToRadians());
-```
-
-- **证据**：`CvMode/CvCoord.cs:37-40` 中 `AngleDegrees => Angle * 180.0 / Math.PI`，`Direction => new(Math.Cos(Angle), Math.Sin(Angle))` —— **`Angle` 本身就是弧度**。
-- **现象**：再乘 π/180，坐标系十字与刚体变换角度错误（约缩小 57 倍）。
-- **修复**：删除上述 4 处 `.ToRadians()`。
-- **不要误删**：`HalconController.cs:189`、`:214` 的 `angleDiff` 属于从未使用的死代码（见 D9），应连同整段删除而非仅去掉转换；`image/RotateImageStrategy.cs:87` 的 `baseAglDeg.ToRadians()` 是**正确**的（`baseAglDeg` 确为角度制），必须保留。
-- **根治**：引入强类型 `readonly struct Angle`（内部存弧度，提供 `FromDegrees`/`FromRadians`/`Degrees`/`Radians`），从类型上杜绝单位混淆。
-
-### B6. 可变全局单例被外部污染
-
-- **位置**：`DotNet.Drawing/OpenCvSharp/Rect2d.cs`、`DotNet.Drawing/CvMode/CvRegion.cs`
-
-```csharp
-public static readonly Rect2d Default = new Rect2d();     // Rect2d 是可变 class
-public static readonly CvRegion Empty = new CvRegion();   // 且实现 IDisposable
-
-public static Rect2d Intersect(Rect2d a, Rect2d b)
-{
-    ...
-    return Default;   // 不相交时返回全局共享引用
-}
-```
-
-- **现象**：调用方拿到 `Default` 后调 `Inflate()` 或赋 `X/Y/Width/Height`，即**永久污染全局单例**；`CvRegion.Empty` 被任意一处 `Dispose()` 后，全进程的 `Empty` 都变成已释放状态。
-- **修复**：
-  - `Intersect` 不相交时返回 `new Rect2d()`；
-  - `Default` 改为 `public static Rect2d Default => new Rect2d();`（属性，每次新实例），或将 `Rect2d` 改为不可变；
-  - `CvRegion.Empty` 直接删除。
-
-### B7. `CvRegion.Clone()` 丢失 `HoRegion`
-
-- **位置**：`DotNet.Drawing/CvMode/CvRegion.cs` + `DotNet.Drawing/CvMode/TransExpV2.cs`
-
-```csharp
-public CvRegion Clone() => TransExpV2<CvRegion, CvRegion>.Trans(this);
-// TransExpV2 内部：foreach (var item in typeof(TOut).GetProperties())  ← 只枚举属性
-public HObject HoRegion;   // 是字段，不是属性 → 被跳过
-```
-
-- **现象**：克隆出的 `CvRegion` 的 `HoRegion` 为 `null`，后续显示/运算 NRE 或静默不显示。
-- **修复**：`Clone()` 手写实现，显式 `HoRegion = this.HoRegion?.CopyObj(1, -1)`（深拷贝，明确所有权）；`TransExpV2` 补 `GetFields()`，或明确标注「仅复制属性」并在 XML 注释中警示。
-
-### B8. `SerializeConvert` 用 `FileMode.OpenOrCreate` 写文件 → JSON 损坏
-
-- **位置**：`DotNet.Drawing/Serialize/SerializeConvert.cs`
-
-```csharp
-using (var fileStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite))
-{ var date = JsonSerializeToBytes(obj); fileStream.Write(date, 0, date.Length); fileStream.Close(); }
-```
-
-- **现象**：`OpenOrCreate` **不截断**。新内容比旧文件短时旧尾部残留 → 产出 `{...}}]` 之类的非法 JSON，配置文件永久损坏。
-- **修复**：改为 `FileMode.Create`；`using` 内的 `fileStream.Close()` 冗余，删除。
-- **加固**：改为「写临时文件 → `File.Replace`」的原子写入，避免掉电或异常写坏配置。
-
-### B9. 31 处 HObject 句柄泄漏（同一模式）
-
-- **模式**：
-
-```csharp
-HObject x = new HObject();          // 创建句柄 #1
-HOperatorSet.GenEmptyObj(out x);    // 句柄 #1 丢失，永不释放
-```
-
-- **分布**（10 个文件）：`contour/FitArcMidpointStrategy.cs`、`contour/FitLineStrategy.cs`、`matching/GenericModelStrategy.cs`、`matching/NccModelStrategy.cs`、`matching/ScaledModelStrategy.cs`、`matching/ShapeModelStrategy.cs`、`region/CreateROIStrategy.cs`、`region/MergeRegionStrategy.cs`、`DotNet.Drawing/Extension/RegionExtension.cs`、`DotNet.Drawing/HalconController.cs`
-- **影响**：长时间运行的机台程序 Halcon 非托管内存持续增长，最终 `HALCON error: out of memory`。
-- **修复**：
-  1. 统一删除 `new HObject()` 初始化，只保留 `HOperatorSet.GenEmptyObj(out x)`；
-  2. 更彻底的做法：封装 `sealed class HObjectHandle : IDisposable` 或 `using var x = HObjectScope.Empty();`，让所有权在类型上可见；
-  3. 加集成测试，断言流程前后 `HOperatorSet.CountObj` 平衡。
-- **同类问题**：`RegionExtension.RebuildRegion` 的 Ring 分支 `GenEmptyObj(out circle1/circle2)` 生成的对象随即被 `GenCircle(out ...)` 覆盖；`FileImageStrategy.Init` 与 `RotateImage` 构造函数中 `GenEmptyObj` 覆盖字段初始化器 `= new HObject()`。
-
-### B10. `FitLineStrategy.Close()` 释放后仍被使用
-
-- **位置**：`DotNet.HalconAlgo/contour/FitLineStrategy.cs`
-
-```csharp
-public override void Close(HDisplayUI display) { inPara.HoRect.Dispose(); }
-```
-
-- **现象**：`CvRegion.Dispose()` 会把 `HoRegion` 置 null 且 `_disposed = true`。若用户关闭工具页后再次打开同一策略实例，`DrawROI`/`Fun_action` 必然 NRE。
-- **修复**：`Close` 只释放**运行期临时对象**，不销毁配置态的 `inPara.HoRect`；策略实例生命周期结束才由 `Dispose()` 释放（可参考 `FitArcMidpointStrategy` 的 `Close → Dispose` + `_disposed` 幂等写法，但同样需先确认策略实例不会被复用）。
-
-### B11. `MergeRegionStrategy` 是假实现却返回成功
-
-- **位置**：`DotNet.HalconAlgo/region/MergeRegionStrategy.cs`
-
-```csharp
-var region = strategys.ResolveFrom<CvRegion>(inPara.RegionIn);  // 解析后完全未使用
-var coord  = strategys.ResolveFrom<CvCoord>(inPara.CoordIn);    // 解析后完全未使用
-int srcCnt = 0;                                                  // 只统计来源数量
-if (inPara.DispText) { /* 只显示文本 */ }
-return true;                                                     // 未做任何合并，却报告成功
-```
-
-- **现象**：流程中配置了「区域合并」，实际什么也没发生，下游拿到的仍是原始区域，且**无任何错误提示**。另外 `regionGet`/`imgReduce` 创建后在 `finally` 直接释放，纯粹浪费。
-- **修复**：要么用 `HOperatorSet.Union2` 真正实现合并并注册输出，要么删除该策略并从 `AlgoEnum` 移除。**绝不能保留返回 true 的空实现。**
-
-### B12. `HDisplayUI` 在 `HandleDestroyed` 中释放 → 句柄重建后使用已释放对象
-
-- **位置**：`HDisplayUI.cs` 构造函数中 `HandleDestroyed += UI_HandleDestroyed;`
-- **现象**：WinForms 的 `HandleDestroyed` 在**句柄重建**时也会触发（更换 `Parent`、修改 `Dock`/`RightToLeft`、TabPage 切换等），此时控件并未销毁。`display` 被提前 `Dispose`，之后控件重建句柄却不会重新创建 `display` → 所有显示功能静默失效。
-- **补充证据**：`UI_HandleDestroyed`（:139-155）内已先解绑 `HMouseDown/Up/Wheel/Move` 与 `HandleDestroyed` 自身，因此句柄重建后**不会再有第二次机会重新初始化**，`display` 永久处于已释放状态。
-- **修复**：`HDisplayUI.Designer.cs:14` 已存在 `protected override void Dispose(bool disposing)`，把释放逻辑整体迁移到该方法的 `if (disposing)` 分支即可（构造函数中的 `HandleDestroyed += UI_HandleDestroyed;` 一并删除）。不要用 `HandleDestroyed` 做资源释放。
-
----
-
-## 三、设计缺陷清单（P1）
-
-### C1. 坐标序 (X, Y) 与 (Row, Column) 在同一 API 族内混用
-
-- **位置**：`HWindows/HDisplay/IHDisplay.cs:68-77`、`HWindows/HDisplay/HDisplay.cs` 的 `DispPoint` 重载族（共 **10 个重载**，坐标语义分裂成两派）
-
-```csharp
-void DispPoint(double crossX, double crossY, ...);               // (X, Y)
-void DispPoint(double[] rowPoints, double[] columnPoints, ...);  // (Row, Col) = (Y, X) —— 顺序反了
-```
-
-- **影响**：调用方极易传反，且编译器无法发现（都是 `double`）。`DispText(message, FontX, FontY, ...)` 内部转成 `(FontY, FontX)`，靠一行注释维系语义，同类风险。
-- **方案**：所有公开 API 统一以 `Point2d`（X/Y 语义）为准，Halcon 的 (Row, Col) 转换**只在最内层一处**完成；数组重载改为 `IReadOnlyList<Point2d>`。
-
-### C2. 40 多个 `Disp*` 重载缺少防护，与其它方法防护级别不一致
-
-- **位置**：`HWindows/HDisplay/HDisplay.cs`
-- **现象**：`SetDraw`/`DispImage`/`DispGenRegion`/`DrawRegion` 都有 `IsWindowUsable()` + `try/catch`；而全部 `DispPoint`/`DispCross`/`DispLine`/`DispArrow`/`DispCircle`/`DispRegion`/`DispRectangle2` **一个防护都没有**，窗口已释放时直接抛 Halcon 异常打穿上层调用栈。
-- **另**：`DispPoint(double[], double[], string color, int)` 先 `SetColor(color)` 再校验数组长度，**副作用先于校验发生**；长度不等时静默 `return`。
-- **方案**：按 A4 收敛重载后，在唯一实现入口做一次防护；校验一律前置；长度不等应抛 `ArgumentException` 而非静默返回。
-
-### C3. `DrawHelper`：阻塞式模态循环 + 全局单例状态
-
-- **位置**：`HWindows/HMouse/DrawHelper.cs`（1639 行，全工程最大文件）
-
-```csharp
-private void BlockUntilDone()
-{
-    while (!_completed && !_cancelled) { Application.DoEvents(); System.Threading.Thread.Sleep(10); }
-}
-private static DrawHelper _active;   // 全局可变静态，无 lock / volatile
-```
-
-- **问题**：
-  1. **`Application.DoEvents()` 重入**：绘制过程中用户可点击任意按钮、关闭窗体、再次发起绘制。代码注释里已承认该风险，并用 `_active` 身份校验、`Interlocked.Exchange(ref h._ended, 1)` 打补丁，但根因未除；
-  2. **无超时、无取消令牌**：若宿主忘记转发鼠标事件，循环**永不退出**，UI 完全假死，只能靠静态 `CancelDraw()` 从外部打断；
-  3. **多窗口不安全**：第二个 `HWindowControl` 发起绘制会顶掉第一个的 `_active`；
-  4. **1639 行单类**承担 状态机 + 命中测试 + 几何计算 + 绘制 + 窗口参数存取 + 背景截图，严重违反 SRP；
-  5. 12 个静态入口是 `CancelDraw(); Begin(); try{ BlockUntilDone(); 拷贝字段 } finally{ End(h); }` 的逐字复制；
-  6. 类是 `public` 但全部实例成员私有、无公开构造，实质是「绘图会话」，命名为 `DrawHelper` 具误导性，且未实现 `IDisposable`；
-  7. **单文件内 21 处空 `catch`**，占整个 `DotNet.HalconUI` 31 处的 2/3 —— 绘制流程中的 Halcon 错误几乎全部被吞掉。
-- **方案**（风险较高，建议单独排期，分三步）：
-  1. ~~**短期**：给 `BlockUntilDone` 加超时（如 5 分钟）与 `CancellationToken`；`_active` 加 `volatile` 并改为「每 `HWindow` 一个会话」的字典，支持多窗口；~~ **已完成**
-  2. ~~**中期**：拆为 `DrawSession`（状态机 + 几何）+ `DrawRenderer`（绘制）+ `DrawInteraction`（命中测试）；类改 `sealed` 并实现 `IDisposable`；12 个静态入口收敛到一个泛型模板方法；~~ **已完成**
-  3. ~~**长期**：改为 `Task<DrawResult> DrawAsync(...)` + `TaskCompletionSource`，由鼠标事件驱动完成，彻底消灭 `DoEvents`。~~ **已完成**
-
-- **已落地**（步骤 1 + 2 + 3）：
-
-  | 新文件（`HWindows/HMouse/Draw/`） | 职责 |
-  | --- | --- |
-  | `DrawGeometry.cs` | 纯几何 + 命中阈值，无 Halcon 依赖，可直接单测 |
-  | `DrawSafe.cs` | 集中原来散落的「有意吞异常」入口（`Dispose` / 窗口参数存取），21 处空 `catch` 收敛成 2 个带日志的方法 |
-  | `DrawRenderer.cs` | 窗口双缓冲、背景快照、`PixelSize` 缓存与全部绘制图元；`IDisposable`，`Dispose` 即原 `End()` |
-  | `DrawShape.cs` | 图元状态机基类（`DrawPhase` / `DrawHandle` / 拖拽 / 确认） |
-  | `Draw/Shapes/*.cs` | Point / Line / Rect1 / Rect2 / Circle / Ellipse / Region 七个 `sealed` 子类 |
-  | `DrawSession.cs` | `sealed` + `IDisposable`；会话注册表、鼠标分发、`WaitForCompletionAsync(timeout, token)` |
-  | `DrawResults.cs` | 7 个 `readonly struct` 结果类型（`async` 方法不能带 `out`），均带 `Completed` 标志 |
-
-  - **超时与取消**：`DrawSession.WaitForCompletionAsync` 返回 `TaskCompletionSource<bool>` 的 `Task`，超时由 `CancellationTokenSource(timeout)` 触发，默认上限 5 分钟（`DrawHelper.Timeout` 可调，设为 `TimeSpan.Zero` 退回不限时），超时写 `Log.Warn` 并自动结束；12 个入口新增可选 `CancellationToken` 参数。
-  - **多窗口**：会话按 `HWindow` **对象引用**注册在列表里（`HMouseEventArgs` 不带窗口标识，只能由调用方提供），`ActiveFor(window)` 取该窗口最新的会话；`NoneMouse` 改为构造注入 `HWindow`，`HDisplayUI` 在构造函数里绑定自身窗口（原字段初始化器早于 `InitializeComponent()`，拿不到 `HalconWindow`）。
-  - **入口收敛**：12 处 `CancelDraw(); Begin(); try{ BlockUntilDone(); 拷贝字段 } finally{ End(h); }` 收敛为 `Run<TShape>(window, shape, edit, token)`，`DrawHelper` 只剩「参数换算 + 调用模板」；参数类型由 `HTuple windowHandle` 改为 `HWindow window`（对现有调用点源码兼容）。
-  - **规模**：`DrawHelper` 1702 行 → 353 行；`Active` 属性移除，外部改用 `ForwardMouseDown/Up/Move/Wheel`。
-  - **行为保持**：`OnMouseDown` 的防抖（临时清零 `Dragging`，避免 Rect2 控制点被吸附导致闪烁）、Region 的两段式右键（先闭合再确认）、椭圆输出 `radius1 >= radius2` 的归一化，全部逐字保留。
-
-- **步骤 3（`DrawAsync`）落地**：
-
-  - **`DoEvents` 彻底消失**：`BlockUntilDone` 的 `while { Application.DoEvents(); Thread.Sleep(10); }` 换成 `TaskCompletionSource<bool>`，由鼠标事件 `TrySetResult` 驱动。生产代码中已无任何 `Application.DoEvents()`。
-  - **续体会内联，靠顺序而非 `Post` 保证安全**：`TrySetResult` 在鼠标事件里调用时，捕获的 `SynchronizationContext` 与 `SynchronizationContext.Current` 是同一个实例，BCL 走内联快路径**直接在当前栈上跑续体**，并不会 `Post` 回消息队列；.NET Framework 4.5 也没有 `RunContinuationsAsynchronously`（4.6+）可以关掉它。因此 `DrawSession.Finish` 的次序是**先 `Unregister` + 释放句柄，最后才 `TrySetResult`** —— 续体执行期间本会话已不在注册表里，它若泵消息也不会再收到鼠标事件。
-  - **调用链**：`DrawSession` → `DrawHelper`（12 个 `…Async` 入口）→ `HDisplay` → `IHDisplay`/`IRoiHost`/`IParaStrategy` → `HDisplayUI`/`HEditModelUI` → 8 个策略 → `ParaForm` 全链改完；旧同步签名**全部删除**，不留 `[Obsolete]` 包装。
-  - **签名变化**：`async` 不能带 `out`，因此 12 个入口改为返回 `DrawXxxResult` 结构体；`IHDisplay.DrawRegion(RectEnum, out HObject)` → `Task<HObject> DrawRegionAsync(RectEnum)`；两个 `CvRegion` 重载 → `Task<bool>`，把用户是否确认一路透传到算法层（`IRoiHost` / `HDisplayUI` 同步改签名）。
-  - **空对象语义（易踩）**：`DrawRegionAsync(RectEnum)` 取消 / 超时返回的是 `gen_empty_obj`（**空对象元组**，`count_obj == 0`），不是 `gen_empty_region`（空区域，`count_obj == 1`）。只有后者喂给 `union2` / `difference` 才是无操作；0 长度元组会报错或得到空结果，把模板区域整片清掉。调用方必须先 `CountObj` 判空短路 —— 见 `HEditModelUI.DrawROIAsync`。
-  - **行为变更（需现场回归）**：取消 / 超时时**不再回写几何**，保留原 ROI。改造前取消一个**新建** ROI 会把 `(0,0,0,0)` 写进参数，属于旧 bug，现已修正。圆环的两步交互（外圆 + 内圆）任一步取消则整个交互放弃。4 个 `SetTemplateAsync` 在未确认时直接返回，不再按旧几何重建模板（否则用户一取消就丢原模板）；8 个 `DrawROIAsync` 则**故意不短路**，取消后仍要把原 ROI 重画回去（`ParaForm` 事先 `ReDispImage()` 已清屏）。
-  - **重入防护**：`ParaForm` 的 4 个 `async void` 入口用 `_drawBusy` 标志串行化，`HEditModelUI` 的添加 / 删除区域按钮在绘制期间禁用。不加防护时第二次点击会 `CancelDraw` 掉前一次会话，两条协程交叉读写同一个策略对象与 `HObject`（先 `Dispose` 再赋值），可能访问已释放对象。
-  - **调用方约束**：必须在 UI 线程 `await`，绝不能 `.Wait()` / `.Result` —— 等待期间 UI 线程要继续泵消息才能收到鼠标事件，阻塞即死锁。
-
-### C4. `DispPara`/`SavePara` 靠魔法字符串手工双向同步
-
-- **位置**：各策略类（`contour/FitLineStrategy.cs` 等）
-
-```csharp
-VsControls["cmb_100"] ... VsControls["ckb_disp0"] ... VsControls["CB_FontX"]
-```
-
-- **规模**：全 `DotNet.HalconAlgo` 共 **144 处** `VsControls["..."]` 字面量索引。
-- **问题**：控件 key 是 `"cmb_100"`、`"cmb_101"` 这类**纯序号、无语义**的字符串（同一文件里 `cmb_100`~`cmb_110` 连续排布，无法从名字判断对应哪个参数）；`DispPara` 与 `SavePara` 必须手工保持镜像，漏改一处即参数静默丢失；`SavePara` 用 `VsControls["..."]` 直接索引，key 缺失即 `KeyNotFoundException` 崩溃。
-- **方案**：
-  1. 索引一律改为 `TryGetValue`，缺失时记录警告而非崩溃；
-  2. 中期改为**声明式绑定**：参数类属性上标注 `[VsControl("阈值", ControlType.TrackBar, Min = 0, Max = 255)]`，由 `VsControlFactory` 反射生成控件并双向绑定，`DispPara`/`SavePara` 从各策略中彻底消失。
-
-### C5. 中文 UI 文案被当作业务状态持久化
-
-- **位置**：`contour/FitLineStrategy.cs`（`"由黑到白"`、`"图像中心"`、`"默认"`）、`contour/FitArcMidpointStrategy.cs`（`circPointOrder.S == "positive"`）、`image/RotateImageStrategy.cs`（`case "坐标系Y轴"`）
-
-```csharp
-internal string GetTransition
-{ get { if (Transition == "由黑到白") return "positive"; ... return ""; } }  // 未知值返回空串 → Halcon 报错
-```
-
-- **问题**：① 改一个界面文案就会让所有已保存配置失效；② 无法做多语言；③ 未知值回落为 `""` 会让 Halcon 在运行时报参数错误，而非在配置期就拒绝。
-- **方案**：业务状态改用 `enum`（如 `TransitionMode.DarkToLight`），序列化存枚举名；界面显示走 `Description` 特性或资源文件；转换函数对未知值 `throw`。
-
-### C6. 泛型 `ResolveOutput<T>` 对 null 强转 struct → NRE
-
-- **位置**：`DotNet.HalconAlgo/IParaStrategy.cs`
-
-```csharp
-public T ResolveOutput<T>(string[] path) => (T)ResolveOutput(path);
-public static T ResolveFrom<T>(this IList<IParaStrategy> strategies, string fullPath, ...) => (T)ResolveFrom(...);
-```
-
-- **现象**：路径不存在时 `ResolveOutput` 返回 `null`，若 `T` 是 `CvCoord`/`Point2d` 等值类型则抛 `NullReferenceException`，错误信息与真实原因（路径拼错）完全无关。`RotateImageStrategy` 中的 `strategys.ResolveFrom<CvCoord>(inPara.CoordIn)` 已存在此风险。
-- **方案**：改为 `bool TryResolveOutput<T>(string[] path, out T value)`；保留的强转版本在失败时抛携带路径信息的 `AlgoOutputNotFoundException`。
-
-### C7. `Fun_action(HObject, IHDisplay)` 传 `strategys = null`
-
-- **实测范围**：共 **7 个文件**存在此调用 —— `contour/FitLineStrategy.cs:46`、`image/LineRotImageStrategy.cs:29`、`image/RotateImageStrategy.cs:29`、`matching/GenericModelStrategy.cs:41`、`matching/NccModelStrategy.cs:41`、`matching/ScaledModelStrategy.cs`、`matching/ShapeModelStrategy.cs`。且这 7 个文件的另一重载**全部实际调用了 `strategys.`**（各 2~4 处），即 7 处全是真实崩溃点，无一例外。
-
-```csharp
-public override bool Fun_action(HObject ho_Image, IHDisplay display)
-{ display.SetImage(ho_Image); return Fun_action(display, null); }   // ← null
-```
-
-- **现象**：另一重载在 `ImageIn`/`RegionIn`/`CoordIn` 不为 `"默认"` 时会 `strategys.ResolveFrom(...)` → NRE。即「单张图快速验证」路径在配置了上游输入时必崩。
-- **方案**：传 `Array.Empty<IParaStrategy>()`；`ResolveFrom` 对空集合返回「未找到」而非崩溃；或让两个重载合并为 `Execute(AlgoContext ctx)`，由 `ctx` 保证非空。
-
-### C8. 算法层弹 WinForms 对话框
-
-- **位置（共 3 处）**：`DotNet.Drawing/Serialize/JsonConvertHObject.cs:31`、`:52`；`DotNet.HalconAlgo/image/FileImageStrategy.cs:134`。三处都是 `catch { MessageBox.Show(ex.Message); }` —— 弹完框后**不重新抛出**，调用方以为成功。
-- **问题**：库/算法层弹模态框——在服务端或后台线程中会阻塞或抛异常；且吞掉异常导致调用方以为成功。
-- **方案**：库层只抛异常或写日志，由最外层 UI 决定如何呈现。
-
-### C9. `RotateImageStrategy` 角度归一化边界不连续
-
-- **位置**：`image/RotateImageStrategy.cs`
-
-```csharp
-baseAglDeg = baseAglDeg % 360;      // 手工重复实现归一化
-case "坐标系Y轴":
-    if (baseAglDeg > 0) baseAglDeg = 90 - baseAglDeg;
-    else if (baseAglDeg < 0) baseAglDeg = -90 - baseAglDeg;
-    // baseAglDeg == 0 时不做任何处理 → 与两侧极限（90 / -90）不连续
-```
-
-- **方案**：`== 0` 明确归入某一分支并写清文档；统一改用 `MathHelper.NormalizeAngle`（修好 C13 之后）。
-
-### C10. ROI 跟随坐标系时「只平移不旋转」
-
-- **位置**：`region/CreateROIStrategy.cs`、`contour/FitLineStrategy.cs`、`contour/FitArcMidpointStrategy.cs`
-- **现象**：
-  - `CreateROIStrategy` 跟随坐标只调用 `HalconHelper.TransRegion(tmplPoint, inCoord.Center, ...)` 的 `Point2d` 重载 → 仅平移；且 `inPara.Coord = new CvCoord(new Point2d(column, row))` **丢弃角度**；
-  - `FitLineStrategy` 中 `fixAgl = inPara.HoRect.Phi`，跟随分支下未做任何角度变换。
-- **影响**：产品有旋转时，ROI 位置对了但方向错，测量结果系统性偏差。
-- **方案**：统一走 `VectorAngleToRigid` 生成完整刚体变换矩阵（含旋转），ROI 与测量矩形的 `Phi` 一并变换；`CvCoord` 全程保留角度。
-
-### C11. `CreateROIStrategy` 输出的区域与画面不一致
-
-- **位置**：`region/CreateROIStrategy.cs`
-- **现象**：`RegisterOutput("区域", () => inPara.HoRect)` 输出的是**未经坐标变换的原始 ROI**，而实际显示用的 `regionGet`（已变换）在 `finally` 中被释放。下游策略拿到的区域与用户在画面上看到的不是同一个。
-- **修复**：把变换后的区域保存到 `inPara`（并接管所有权），`RegisterOutput` 指向它。
-- **另**：树节点把「角度」声明为 `OutEnum.Array`，而 `ResolveOutput` 实际返回 `double` → 类型声明与实际不符。
-
-### C12. 圆弧拟合 Stage 1 用直线拟合粗滤（算法设计缺陷）
-
-- **位置**：`contour/FitArcMidpointStrategy.cs`
-
-```csharp
-lineGate = Math.Max(maxErr * 3.0, 15.0);   // 硬编码 15.0 像素
-```
-
-- **现象**：圆弧曲率较大（接近半圆）时，用直线拟合的残差本身就很大，`lineGate` 会把**正确的边缘点**当离群点剔除。
-- **方案**：Stage 1 直接用圆拟合 + `atukey` 稳健权重，或按弦长/半径估算自适应门限；硬编码 `15.0` 提升为可配置参数。
-- **另**：`FitArcMidpointStrategy` 用 `HOperatorSet.GetImageSize` 取图像尺寸，而同构的 `FitLineStrategy` 用 `display.HoWidth/HoHeight` —— 两者口径不一致，窗口与图像尺寸不符时结果会分叉。
-
-### C13. `MathHelper` 的容差与角度归一化
-
-- **位置**：`DotNet.Drawing/CvMode/MathHelper.cs`
-
-```csharp
-public const double Tolerance = 1e-9;   // 注释称"适用于像素级精度"，实际远小于像素
-public static double NormalizeAngle(double angle)
-{ while (angle >= Math.PI) angle -= TwoPi; while (angle < -Math.PI) angle += TwoPi; return angle; }
-public static double SmoothStep(double a, double b, double t)
-{ t = Clamp01((t - a) / (b - a)); return t * t * (3 - 2 * t); }   // 返回 0..1，与 (a,b) 语义不符
-```
-
-- **关键事实（核验后更正）**：`MathHelper` **已经定义了三档容差** —— `Tolerance = 1e-9`、`LooseTolerance = 1e-6`、`PixelTolerance = 0.01`，但经全库扫描，**后两档从未被任何代码使用**（0 处引用）。`AreEqual(a, b)` 的无参重载一律落到最严格的 `1e-9`，`CvArrow`/`CvCircle`/`CvCoord`/`CvLine`/`CvRegion` 的全部 `Equals`、`IsFullCircle`、`IsDegenerate`、共线判定、平行判定共 20 余处都在用它。所以问题不是「缺少分档」，而是**分档形同虚设**。
-- **问题**：
-  1. **`CvLine.Contains` 主动降级到最严格容差**：`ContainsPoint(Point2d, double tolerance = 0.01)` 默认值本是合理的像素级 0.01，但 `Contains(point) => ContainsPoint(point, MathHelper.Tolerance)`（:204）显式传入 `1e-9`，比默认严格 7 个数量级，实际结果**恒为 false**；而同一文件的 `IsOnBoundary(point)`（:209）用的是默认 0.01 —— 两个语义相近的方法行为相差 7 个数量级；
-  2. `NormalizeAngle` 用 `while` 逐步加减 `TwoPi`，对极大输入（如 1e18）近乎挂起，应改为 `angle - TwoPi * Math.Floor((angle + Math.PI) / TwoPi)`；`NormalizeAnglePositive` / `NormalizeAngleDegrees` 同样需要检查；
-  3. `SmoothStep(a, b, t)` 命名与参数语义和实现不符（返回 0..1 而非 a..b 之间的插值），易误用。
-- **方案**：
-  1. `CvLine.Contains` 改为 `ContainsPoint(point, MathHelper.PixelTolerance)`；
-  2. 逐处审查 20 余个 `AreEqual` 调用点，几何量（坐标、长度、半径）改用 `PixelTolerance`，纯数值恒等判定保留 `Tolerance`，让三档真正各司其职；
-  3. 量级敏感的判定改**相对容差**（见 C14）；
-  4. 重写 `NormalizeAngle` 系列；`SmoothStep` 更名为 `SmoothStepBetween` 并在 XML 注释中写明返回 0..1。
-
-### C14. 绝对容差用于量级敏感的判定
-
-- **位置**：`CvMode/CvCircle.cs` 的 `FromThreePoints`（`AreEqual(d, 0)` 判共线，`d` 量级为**坐标平方**）、`CvMode/CvLine.cs` 的 `TryIntersect`（`AreEqual(cross, 0)` 判平行）、`OpenCvSharp/Point2d.cs` 的 `operator /`（`|scalar| < 1e-9` 判除零）
-- **现象**：大坐标（如 4000×3000 图像）下 `d` 轻易达到 1e7 量级，`1e-9` 的绝对容差**永远判不出共线**；反之 `operator /` 会把合法的小缩放因子误判为除零并抛 `DivideByZeroException`。
-- **方案**：归一化后比较（如 `|cross| < tol * |a| * |b|`）；除法只在 `scalar == 0` 时抛异常。
-
-### C15. `Rect2d` 的可变性与契约问题
-
-- **位置**：`DotNet.Drawing/OpenCvSharp/Rect2d.cs`、`DotNet.Drawing/CvMode/CvRegion.cs`
-- **问题**：
-  1. `Inflate()` 直接改字段，**绕过构造函数的非负校验** → 可产生负宽高；
-  2. `Contains(double, double)` 用右开区间，`Contains(Rect2d)` 用闭区间 → 边界语义不一致；
-  3. `Top`/`Left` 有 setter 而 `Bottom`/`Right` 只读 → 语义不对称；
-  4. `[StructLayout(LayoutKind.Sequential)]` + `public const int SizeOf` 加在**可被继承的 class** 上（`CvRegion : Rect2d`），非 blittable，是从 struct 移植过来的遗留物；
-  5. `CvRegion.Equals(Rect2d? obj) => obj is CvRegion other && Equals(other)` **破坏对称性**：`rect.Equals(region)` 与 `region.Equals(rect)` 结果不同，放进 `HashSet`/字典行为未定义。
-- **方案**：`Rect2d` 改为不可变（`Inflate` 返回新实例）；统一边界语义并写清 XML 注释；删除 `StructLayout`/`SizeOf`；`CvRegion` 改为**组合** `Rect2d` 而非继承（`CvRegion` 有 `HoRegion`、`IDisposable`、多边形点集，与「矩形」不构成 is-a 关系）。
-
-### C16. `HWindowImage.HoImage` 悬挂引用风险
-
-- **位置**：`HWindows/HWindowImage.cs` + `HWindows/HDisplay/HDisplay.cs`
-- **现象**：`HDisplay.DispImage` 每次执行 `_hoImage.Dispose(); CopyImage(image, out _hoImage);`，而 `HWindowImage.HoImage` 仍指向**上一个已释放的对象**，直到 `Fun_DispImage` 把它覆盖。若这中间控件 `Resize` 触发 `Fun_ReDisplay()` → 使用已释放句柄。
-- **另**：`HWindowImage` 的 XML 注释称「所有权由 `HDisplayCore` 持有」，实际持有者是 `HDisplay`，注释与代码不符。
-- **方案**：图像所有权集中到一处（建议 `HWindowImage`），`HDisplay` 只传引用；或 `HWindowImage` 自持一份 `CopyObj` 副本。释放顺序：先置空引用再 `Dispose`。
-
-### C17. `VsControlModel` 只有 `Value` 会触发通知
-
-- **位置**：`VsControl/VsControlModel.cs`
-
-```csharp
-public object Value { get { return _value; } set { SetField(ref _value, value); } }  // 有通知
-public bool Visible { get; set; }        // 无通知
-public bool Enabled { get; set; }        // 无通知
-public bool DropDownStyle { get; set; }  // 无通知
-```
-
-- **现象**：绑定建立后，代码里改 `Visible`/`Enabled` **不会同步到控件**，界面看起来「没反应」。
-- **另**：`Value` 用 `object` 承载 string/bool/int，类型安全完全靠约定；`Type` 是 `string` 而非枚举。
-- **方案**：三个属性改用 `SetField`；`VsControlModel` 改为泛型 `VsControlModel<T>` 或按控件类型派生子类；`Type` 改枚举。
-
-### C18. `HDisplayUI` 的鼠标分发缺分支 + 每次事件全图重绘
-
-- **位置**：`HDisplayUI.cs`
-
-```csharp
-private void OnMouseDown(object sender, HMouseEventArgs e)
-{
-    ReDispImage();                       // 每次鼠标事件全图重绘
-    switch (drawType)
+    // ---------- 运行结果：放在策略类上，不放进 inPara ----------
+    public Point2d ArcMidpoint { get; private set; }
+
+    // ---------- 参数：一份声明，同时生成面板、回存、来源类型、输入依赖 ----------
+    protected override void DeclareParams(ParamBuilder p)
     {
-        case DrawEnum.None: ...  case DrawEnum.DispRect: ...  case DrawEnum.DispModel: ...
-        // 缺 DrawEnum.Erase 与 DrawEnum.Synthethic → 选中这两种模式时鼠标完全无响应
+        p.Tab(TabPageEnum.Parameter)
+         .Source("图像来源", () => inPara.ImageIn,  v => inPara.ImageIn  = v, OutEnum.Image)
+         .Source("区域来源", () => inPara.RegionIn, v => inPara.RegionIn = v, OutEnum.Region)
+         .Source("跟随坐标", () => inPara.CoordIn,  v => inPara.CoordIn  = v, OutEnum.Coord)
+         .Choice("过渡方向", () => inPara.Transition, v => inPara.Transition = v,
+                 (Transition.Positive, "由黑到白"), (Transition.Negative, "由白到黑"), (Transition.All, "全部"))
+         .Int   ("阈值",     () => inPara.Threshold, v => inPara.Threshold = v, presets: new[] { 30, 50 })
+         .Double("粗滤阈值", () => inPara.CoarseGate, v => inPara.CoarseGate = v, min: 0);
+        p.Tab(TabPageEnum.Display)
+         .Flag("拟合点", () => inPara.DispFixPoint, v => inPara.DispFixPoint = v);
+        // 「显示文本 / 字体」三项由基类自动追加，Region 页由宿主根据 IRoiEditable 自动打开
     }
+
+    // ---------- 输出：一次声明，同时生成变量树和解析器 ----------
+    protected override void DeclareOutputs(OutputBuilder o)
+    {
+        o.Point("中点", () => ArcMidpoint);          // 自动带出「中点/行」「中点/列」
+    }
+
+    // ---------- 计算：纯计算，不碰显示 ----------
+    protected override void ResetOutputs() => ArcMidpoint = default;
+
+    protected override RunResult Execute(RunContext ctx)
+    {
+        HObject image  = ctx.ResolveImage(inPara.ImageIn);              // Local → 当前图像
+        HObject region = ctx.ResolveRegion(inPara.RegionIn, inPara.HoRect);
+        CoordFollow follow = ctx.ResolveCoord(inPara.CoordIn);          // Local → 恒等跟随
+        ...                                                             // 只写算法本身
+        return RunResult.Ok($"中点:({ArcMidpoint.X:F2},{ArcMidpoint.Y:F2})");
+    }
+
+    // ---------- 绘制：只读运行结果去画；状态文本由基类统一画 ----------
+    protected override void Render(IHDisplay display, RunResult result) { ... }
+
+    // ---------- ROI 交互（可选能力） ----------
+    public Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI) { ... }
+    public void DispROI(IRoiHost host) { ... }
+
+    // ---------- 生命周期 ----------
+    protected override void Dispose(bool disposing) { inPara.HoRect?.Dispose(); base.Dispose(disposing); }
+}
+
+public class FitArcMidpoint : DisplayOptions   // 只放可序列化的配置
+{
+    public SourceRef ImageIn  { get; set; } = SourceRef.Local;
+    public SourceRef RegionIn { get; set; } = SourceRef.Local;
+    public SourceRef CoordIn  { get; set; } = SourceRef.Local;
+    public Transition Transition { get; set; } = Transition.Positive;   // 存枚举，不存界面文字
+    ...
 }
 ```
 
-- **实测范围**：`OnMouseDown`（:100-102）、`OnMouseUp`（:111-113）、`OnMouseWheel`（:122-124）、`OnMouseMove`（:133-135）**四个方法的 switch 全部只有 3 个分支**，无一个 `default`。`DrawEnum` 有 5 个值，即 `Erase`（`EraseRectMouse` 确有实现，被 `HEditModelUI` 使用）在此完全接不到鼠标事件。
+**新增算法不需要改的东西**：`MainForm`、`ParaForm`（含 Designer）、`ValueForm`、任何其他文件。
 
-- **另**：`public DrawEnum drawType` 与 `public ShowDelegate OnShow` 都是**公开可变字段**（后者还不是 `event`，外部可直接覆盖或调用）。
-- **方案**：`switch` 加 `default` 兜底；字段改属性/`event`；重绘改为「脏区域」策略，或由各 handler 自行决定是否需要 `ReDispImage`。
-
----
-
-## 四、可维护性问题（P2）
-
-### D1. 55 处静默吞错
-
-- `DotNet.HalconUI`：**31 处**空 `catch`（含仅有注释的 catch）+ **24 处** `Console.WriteLine`；`DotNet.Drawing` 与 `DotNet.HalconAlgo` 无空 catch，但各有 2 处 / 1 处库层 `MessageBox.Show`（见 C8）。
-- **问题**：`Console.WriteLine` 在 WinForms 发布版本中**无人看得到**；`catch { }` 让 Halcon 错误彻底消失，现场问题无法定位。
-- **方案**：引入 `ILogger` 抽象（NLog/Serilog 或自建轻量实现），分级记录并落盘；`catch { }` 只允许出现在 `Dispose` 路径，且必须写注释说明理由。
-
-### D2. 异常包装丢失 `InnerException`
-
-- **位置**：`DotNet.Drawing/HalconController.cs` 共 7 处 `throw new Exception`，其中**同一文件内两种写法并存**：
+### 2.4 Core 契约（草案）
 
 ```csharp
-// 正确（4 处）：:320 :359 :553 :588
-throw new Exception($"保存图像失败：{ex.Message}", ex);
-// 错误（3 处）：:407 :446 :499 —— 丢 InnerException，把堆栈拼进消息字符串
-throw new Exception($"保存图像: {ex.Message}\n{ex.StackTrace}");
+// ---- 注册：代替 AlgoEnum 和 MainForm 的手写 new ----
+[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+public sealed class AlgoAttribute : Attribute
+{
+    public AlgoAttribute(string key, string displayName) { Key = key; DisplayName = displayName; }
+    public string Key { get; }                  // 稳定身份，写进方案文件；一经发布不再修改
+    public string DisplayName { get; }
+    public string Group { get; set; }
+    public int Order { get; set; }
+    public RectEnum DefaultRoi { get; set; } = RectEnum.Rectangle;   // 仅 IRoiEditable 有意义
+}
+
+public sealed class AlgoInfo { string Key; string DisplayName; string Group; int Order; RectEnum DefaultRoi; Type Type; }
+
+public sealed class AlgoCatalog
+{
+    // 扫描显式传入的程序集 + 插件目录；任何校验失败都抛 AlgoCatalogException，列出全部问题
+    public static AlgoCatalog Load(IEnumerable<Assembly> builtIn, string pluginDir);
+    public IReadOnlyList<AlgoInfo> Algorithms { get; }
+    public AlgoInfo Find(string key);
+    public IParaStrategy Create(string key);    // 同时设置 Name = DisplayName、Id = Guid.NewGuid()
+}
+
+// ---- 引用：代替 "默认" 和 "工具名/路径" 字符串 ----
+public struct SourceRef : IEquatable<SourceRef>
+{
+    public Guid ToolId { get; }                 // Guid.Empty 表示本地（原来的 "默认"）
+    public string Output { get; }               // 工具内的输出路径，例如 "坐标系/原点"
+    public static readonly SourceRef Local;
+    public bool IsLocal { get; }
+}
+
+// ---- 执行状态：代替 bool + 各策略自己画红字 ----
+public enum RunStatus { Ok, Warning, Error }
+public sealed class RunResult
+{
+    public RunStatus Status { get; }
+    public string Message { get; }
+    public TimeSpan Elapsed { get; internal set; }   // 由基类计时
+    public static RunResult Ok(string message = null);
+    public static RunResult Warn(string message);    // 例如 MergeRegion 有无效来源但仍出结果
+    public static RunResult Fail(string message);
+}
+
+// ---- 执行上下文：把「本地 / 上游」的解析收进一处 ----
+public sealed class RunContext
+{
+    public HObject CurrentImage { get; }                         // 单图验证时就是传入的图
+    public IReadOnlyList<IParaStrategy> Upstream { get; }        // 只含当前工具之前的工具
+    public CancellationToken Cancellation { get; }
+
+    public HObject ResolveImage(SourceRef source);                // Local → CurrentImage
+    public HObject ResolveRegion(SourceRef source, CvRegion local); // Local → 本地 ROI，带 IsUsableRegion 检查
+    public CoordFollow ResolveCoord(SourceRef source);            // Local → 恒等；否则返回 { Current, Template }
+    public T Resolve<T>(SourceRef source);
+    public bool TryResolve<T>(SourceRef source, out T value);
+}
+
+// ---- 显示选项：从 HalconAlgo.AlgoFont 下沉到 Core，基类要用它统一画状态文本 ----
+public class DisplayOptions
+{
+    public bool DispText { get; set; } = true;
+    public int FontX { get; set; } = 50;
+    public int FontY { get; set; } = 50;
+    public int FontSize { get; set; } = 15;
+}
+
+// ---- 基类：公共流程收进来，子类只填空 ----
+public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding, ITreeNodeProvider, IDisposable
+    where TPara : DisplayOptions, new()
+{
+    public TPara inPara { get; set; } = new TPara();
+    public object Para => inPara;                       // 宿主做通用序列化用
+    public Guid Id { get; set; }                        // 稳定实例标识，代替按 Name 查找
+    public string Name { get; set; }                    // 默认取 [Algo] 的 DisplayName，用户可改
+    public RunResult LastResult { get; private set; }
+
+    // 执行入口由基类实现，顺序固定：
+    //   ResetOutputs() → 计时 Execute(ctx)（异常转成 Fail，并再次 ResetOutputs）→ Render(display, result) → 画状态文本
+    public RunResult Run(RunContext ctx, IHDisplay display);
+
+    protected abstract void ResetOutputs();
+    protected abstract RunResult Execute(RunContext ctx);          // 纯计算，不碰显示
+    protected virtual void Render(IHDisplay display, RunResult result) { }
+    // 状态文本规则：Error / Warning 始终显示（红字）；Ok 只在 DispText 为 true 时显示（绿字）
+
+    protected abstract void DeclareParams(ParamBuilder p);         // 代替 DispPara + SavePara
+    protected virtual void OnParamsChanged() { }                   // 只在值真正变化时调用
+    protected abstract void DeclareOutputs(OutputBuilder o);       // 代替 GenTreeNode + RegisterOutput
+
+    public void Dispose() { Dispose(true); GC.SuppressFinalize(this); }
+    protected virtual void Dispose(bool disposing) { }
+}
 ```
 
-- **问题**：错误的 3 处丢弃原始异常类型与 `InnerException`，调试信息实际变少；同一文件两种写法并存说明是逐次复制粘贴积累的，无统一约定。
-- **方案**：3 处错误写法改为 `throw new Exception(msg, ex)`；进一步统一为自定义 `HalconOperationException(context, ex)`，或在无需补充上下文时直接 `throw;`。
-
-### D3. 11 个空壳策略类（死代码）
-
-`FitCircleStrategy`、`CreateCoordStrategy`、`LineOffsetStrategy`、`BarCodeStrategy`、`QRCodeStrategy`、`CaptureWinStrategy`、`IndexImageStrategy`、`RGBToGrayStrategy`、`SaveImageStrategy`、`SaveRegionImgStrategy`、`SaveRegionStrategy` —— 均为 12~16 行的 `internal class Xxx { }`。
-
-其中 `IndexImageStrategy` 的命名空间为 `DotNet.HalconAlgo.Algorithms.image`，与其余 `DotNet.HalconAlgo` **不一致**。
-
-- **方案**：全部删除；确有规划的记录到本文档「待实现」清单，不留空壳。
-
-### D4. 647 行整体注释掉的死文件
-
-- **位置**：`HWindows/HMouse/Handlers/SynthethicHandler.cs`
+**参数声明 `ParamBuilder`**（Core，不依赖 WinForms）：
 
 ```csharp
-//    public class SynthethicHandler : IDrawHandler     // IDrawHandler 接口已不存在
+public sealed class ParamBuilder
+{
+    public ParamBuilder Tab(TabPageEnum tab);
+    public ParamBuilder Source(string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum type);
+    public ParamBuilder Choice<T>(string label, Func<T> get, Action<T> set, params (T value, string text)[] items);
+    public ParamBuilder Int(string label, Func<int> get, Action<int> set, int[] presets = null, int? min = null, int? max = null);
+    public ParamBuilder Double(string label, Func<double> get, Action<double> set, double[] presets = null, double? min = null, double? max = null);
+    public ParamBuilder Flag(string label, Func<bool> get, Action<bool> set);
+    public ParamBuilder Folder(string label, Func<string> get, Action<string> set);
+    public ParamBuilder When(Func<bool> visible);     // 作用于上一项；任一参数变化后宿主重新求值
+    public IReadOnlyList<ParamItem> Items { get; }     // 宿主读取，按 Tab 分组生成控件
+}
 ```
 
-全文件 647 行**无一行有效代码**（非注释非空行 = 0）。`DrawEnum.Synthethic` 枚举值除定义外无任何引用；配套的 `DrawSynthethicArgs`（`HWindows/HMouse/DrawEvent.cs:35`）同样只有定义、无任何使用点。
+- `When` 解决 RotateImage 那种「同一个位置随模式切换含义」的情况：声明两项，各带一个 `When`，而不是让一个槽位身兼两职。
+- 每个 `Source` 项同时就是一条**输入依赖**：`FlowRunner` 和 `ValueForm` 都可以据此校验「来源必须是排在前面的工具，且类型匹配」。
+- 宿主在控件值通过校验、且与 getter 的结果不同时才调用 setter，最后统一调用一次 `OnParamsChanged()`。「点运行」不再隐含回存，MergeRegion 的 `SameConfig` 比较可以删掉。
+- 逃生口：确实无法用以上几种项表达的面板，策略可以额外实现 `ICustomParamPanel`（Core 里只有接口，返回宿主无关的描述，或者由 UI 层按键查找注册好的自定义控件）。**目前 11 个策略都不需要它**，先只定义接口，不实现。
 
-- **方案**：删除文件与枚举值。历史版本在 Git 里，无需以注释形式保留。
+**输出声明 `OutputBuilder`**：
 
-### D5. 大段结构性重复代码
+```csharp
+public sealed class OutputBuilder
+{
+    public OutputBuilder Image(string name, Func<HObject> get);
+    public OutputBuilder Region(string name, Func<HObject> get);
+    public OutputBuilder Point(string name, Func<Point2d> get);                      // 自动带出 行 / 列
+    public OutputBuilder Line(string name, Func<CvLine> get);                        // 自动带出 起点 / 终点
+    public OutputBuilder Coord(string name, Func<CvCoord> current, Func<Point2d?> template); // 自动带出 原点 / 角度，并登记跟随所需的模板点
+    public OutputBuilder Number(string name, Func<double> get);
+}
+```
 
-| 重复处 | 规模 |
+`Coord` 把「当前坐标系 + 示教模板点」作为一个整体登记，`RunContext.ResolveCoord` 一次拿到两者。原来的 `ToTmplPoint()` 路径改写约定和单独注册的 `TmplPoint` 输出一起删除。
+
+说明：
+
+- 现有的能力接口（`IRoiEditable`、`ITemplateEditable`）保留，`ITemplateEditable` 增加 `GetTemplateView()`。`IParaBinding`、`ITreeNodeProvider` 改由基类实现，宿主调用方式不变。
+- 目标框架是 .NET Framework，**不能用接口默认实现**。有默认值的元数据放在 `[Algo]` 特性上，有默认行为的方法放在基类上。
+- 子类类声明上写不写 `IDisposable` 都可以。基类已经实现了它，子类只需要覆盖 `Dispose(bool)`。
+- 现有的 `FitArcMidpointRenderData` 那种「把渲染数据单独做成一个类」的做法，在需要跨线程绘制时仍然可以用，但不是必需的。默认做法是 `Render` 直接读策略上的结果属性。
+- **Core 就是插件的 ABI**。Core 的公开成员一旦发布，只增不改；需要破坏性修改时提升 Core 的主版本号，`AlgoCatalog` 加载插件时检查它引用的 Core 主版本，不一致就拒绝加载并说明原因。
+
+### 2.5 同族算法：用中间基类，不用复制
+
+仍然是「一个算法一个类」，只是继承链多一层：
+
+| 中间基类 | 子类 | 公共部分 | 子类只写 |
+|---|---|---|---|
+| `MatchStrategyBase<TPara> : ParaStrategyBase<TPara>, IRoiEditable, ITemplateEditable` | Shape、Ncc、Scaled、Generic | 模板事务（快照 → 试匹配 → 提交）、结果循环、公共参数声明、输出声明（坐标系 + 模板点）、`GetTemplateView`、`ModelID` 的释放、模板文件路径 | `CreateModel`、`FindModel`、`ClearModel` 三个钩子，加上各自特有参数的声明（在 `base.DeclareParams(p)` 之后追加） |
+| `MatchParaBase : DisplayOptions`（参数基类） | 4 个匹配参数类 | `ModelPath`、`ModeRect`、`MinScore`、`NumMatches`、角度范围等公共字段（`HTuple` 改成 `double`、`int`） | 特有字段 |
+| `RotateStrategyBase<TPara>` | RotateImage、LineRotImage | `RunWithReset` 等公共流程 | 旋转角度的来源 |
+| `RunContext.ResolveCoord`（不是基类，是辅助方法） | FitLine、FitArc、CreateROI、MergeRegion 等 | 坐标系跟随 | 无 |
+
+预计 4 个匹配策略能从 2037 行降到约 700 行；参数面板声明化后，每个策略再少 40～80 行。
+
+### 2.6 程序集划分
+
+保持现有的 5 个项目，不重命名：
+
+```
+DotNet.Drawing     ← HalconCore（插件契约：基类、能力接口、[Algo]、AlgoCatalog、ParamBuilder、OutputBuilder、
+                   │             RunContext、RunResult、SourceRef、FlowRunner、DisplayOptions）
+                   ← HalconAlgo（内置算法，每个算法一个文件；本身就是一个「内置插件」）
+                   ← HalconUI（显示和交互，实现 IHDisplay、IRoiHost；根据 ParamItem 生成控件）
+                   ← VisionMaster（宿主：只认识 Core）
+plugins\*.dll      ← 第三方算法，只引用 Drawing + HalconCore
+```
+
+- HalconAlgo **不能**引用 HalconUI，也不应依赖任何 Core 以外的宿主约定，这样它和外置插件走的是同一条路。可以加一个架构测试：HalconAlgo 的引用列表里只允许 Drawing、HalconCore、halcondotnet 和 BCL。
+- 可选：把 `DotNet.Drawing` 里的纯几何类型拆成一个不依赖 halcondotnet 的 AnyCPU 项目（P9）。这与插件目标无关，优先级放到最后。
+
+### 2.7 考虑过但不采用的方案
+
+| 方案 | 不采用的原因 |
 |---|---|
-| `HalconHelper` vs `HalconController` | 整个类逐字复制两份 |
-| `HDisplay.DispImage(HObject)` vs `DispImage(HObject, bool)` | 约 40 行逐字重复 |
-| `HDisplay.DispLine(Point2d, Point2d, int)` 与其 color 版本 | 约 30 行逐字重复 |
-| `IHDisplay` 全部 Disp 方法的「带/不带 color」两版 | 40+ 方法 ×2 |
-| `FitLineStrategy` vs `FitArcMidpointStrategy` 的边缘查找 + 三段拟合 | 约 60 行结构性重复 |
-| `matching/` 四个 Model 策略 | 大量共性逻辑未提取 |
-| `DrawHelper` 的 12 个静态入口 | 模板逐字复制 |
-
-- **方案**：见 A3/A4；算法侧提取 `EdgeMeasurePipeline`（`gen_measure_rectangle2` → `measure_pos` → 点集）与 `RobustFitPipeline`（Stage1/2/3 稳健拟合）两个可复用组件。
-- **另**：`FitLineStrategy` 的 Stage 2 每移除一个最差点就全量重拟合，复杂度 O(n²)，点数多时明显卡顿，提取时一并优化为增量更新。
-
-### D6. 全局可变静态配置
-
-- **位置**：`DotNet.HalconAlgo/AlgoPaths.cs`
-
-```csharp
-public static string ProjectDir = "Config";
-public static string SchemeDir = Path.Combine(ProjectDir, "Scheme");  // 静态初始化时定死
-public static string JobDir    = Path.Combine(SchemeDir, "Job");
-public static string System    = Path.Combine(ProjectDir, "System.json");   // 同样在类型初始化时定死
-public static bool UIBlock = true;
-```
-
-- **问题**：`ProjectDir` 是可变字段，但派生路径在**类型初始化时**就算好了 —— 运行期改 `ProjectDir`，`SchemeDir`/`JobDir` **不会联动**，产生难查的路径错乱。
-- **方案**：改为 `public static string SchemeDir => Path.Combine(ProjectDir, "Scheme");`（表达式属性）；更好的做法是引入 `AlgoOptions` 实例并通过构造注入。
-
-### D7. `HashCode` 定义在 `namespace System`
-
-- **位置**：`DotNet.Drawing/CvMode/HashCode.cs` —— `internal struct HashCode` 放在 `namespace System`。
-- **问题**：占用 BCL 命名空间，未来目标框架升级到自带 `System.HashCode` 的版本会产生歧义；`internal` 意味着每个引用程序集都要各自复制一份。
-- **方案**：移到 `DotNet.Drawing.Internal` 命名空间，或直接引用 `Microsoft.Bcl.HashCode` NuGet 包。
-
-### D8. 硬编码路径与魔法数
-
-- `HalconController`：`@"D:\Picture\SaveOriginalImages"`、`@"D:\Picture\SaveCropWindow"` 作为默认参数写死；`Directory.CreateDirectory(Path.GetDirectoryName(filePath))` 未判 `null`；`SaveImage(HObject, string)` 中生成的时间戳变量**未被使用**；三个 `SaveImage` 重载叠加默认参数导致调用歧义。
-- `HDisplay.DispCvRegion`：所有分支的 `+ 0.5` / `+ 1` 像素偏移，且 Row 加 0.5、Col 加 1，不对称，无任何注释解释来源。
-- `FitArcMidpointStrategy`：`lineGate` 的 `15.0`。
-- **方案**：路径改为配置项（默认取 `AppDomain.CurrentDomain.BaseDirectory`）；像素偏移提为命名常量并注释推导过程；删除未使用变量；重载改为参数对象或去掉默认值。
-
-### D9. 死方法 / 未使用计算
-
-- **位置**：`DotNet.Drawing/HalconController.cs` 的 `GetTransformedCoord(Point2d, Point2d, CvCoord, out CvCoord)`
-
-```csharp
-double angleDiff = (pointTrans.Angle - point.Angle).ToRadians();  // 计算后从未使用
-double deltaX = pointTrans.X - point.X;                           // 未使用
-double deltaY = pointTrans.Y - point.Y;                           // 未使用
-double cosTheta = Math.Cos(0);   // 恒等于 1，硬编码 0
-double sinTheta = Math.Sin(0);   // 恒等于 0
-```
-
-- **现象**：函数名为「取变换后坐标」，实际**不做任何旋转**（角度写死为 0），是半成品。
-- **方案**：补全实现或删除；开启 CS0219（未使用变量）警告为错误以防再犯。
-
-### D10. 其它一致性问题
-
-| 问题 | 位置 |
-|---|---|
-| ~~`DotNet.HalconAlgo` 未启用 `Nullable`（另两个工程已启用）~~ **已随 A1 完成** | `DotNet.HalconAlgo.csproj` |
-| ~~`HalconHelper.GetPolygons` 返回 `List<Point2d>`，`HalconController` 同名方法返回 `List<Point2d>?`~~ **`HalconHelper` 已随 B1 后续删除** | 可空注解不一致 |
-| ~~`CvRegion` 的 XML 文档通篇写 `InRegion`，实际字段名为 `HoRegion`~~ **已修复，仅剩的一处注释已改为 `HoRegion`** | `CvMode/CvRegion.cs` |
-| ~~`DrawModelUIArgs` 注释称「全部只读属性」，实际 `ModelPath`/`Result` 有 setter；两个 `HObject` 属性所有权不明~~ **已修复：四个属性全部只读；两个 `HObject` 标明为借用引用（归策略所有，订阅方不得释放、不得跨调用持有）** | `HWindows/HMouse/DrawEvent.cs` |
-| ~~`FitArcMidpointRenderData` 注释称「发布后视为只读」，实际全是 public 可变字段；`Dispose()` 不幂等~~ **已修复：字段改为 `{ get; internal set; }` 属性，点集以 `IReadOnlyList<Point2d>` 暴露；`Dispose` 置空后可重复调用** | `contour/FitArcMidpointRender.cs` |
-| ~~`Point2d` 有 `Rotate`/`RotateAround` 却未实现 `ICvRotatable<Point2d>`~~ **已修复（按设计不实现）：`Point2d` 的缩放/旋转相对原点，与接口「相对自身中心」的约定不符，一并去掉 `ICvScalable<Point2d>`，并在类注释中说明** | `OpenCvSharp/Point2d.cs` |
-| ~~`JsonConvertHObject.CanConvert` 直接 `throw new NotImplementedException()`~~ **此前已修复** | `Serialize/JsonConvertHObject.cs` |
-| ~~`HTupleExtension.NotNull` 语义可疑（EMPTY 时返回 `Length > 0`），且未处理 `null`~~ **已修复：改为 `hTuple is object && Length > 0`，参数可空并标 `NotNullWhen(true)`** | `Extension/HTupleExtension.cs` |
-| ~~`StringExtension.ConvertToWesternDigit` 对 `char.GetNumericValue` 结果取 `FirstOrDefault()`，大于 9 的 Unicode 数字（如「十」= 10）只取到首字符 `'1'`~~ **已修复：追加完整整数值；非整数/无数值字符跳过（仍是逐字拼接，不做中文数词进位解析，已注明）** | `Extension/StringExtension.cs` |
-| ~~`CvCircle.BoundingBox` 对圆弧把圆心一并纳入 → 包围盒偏大~~ **已修复：以起点/终点为初值，不再纳入圆心** | `CvMode/CvCircle.cs` |
-| ~~`CvCircle.SamplePoints(count)` 对圆弧用 `span / count`，不含终点~~ **已修复：圆弧按 `span / (count - 1)` 含首尾；整圆不变** | `CvMode/CvCircle.cs` |
-| ~~`CvCircle.Scale` 只缩放半径不动圆心，与 `Point2d.Scale`（相对原点）语义不一致~~ **已修复（按设计保留）：图元统一相对自身中心（与 `CvLine.Scale` 一致），`Point2d` 为向量语义另作说明；`ICvScalable` 注释写明约定** | `CvMode/CvCircle.cs` |
-| ~~`record` 的 `with` 表达式可绕过构造函数的 `radius < 0` 校验~~ **已修复：校验移入 `Radius` 的 `init` 访问器** | `CvMode/CvCircle.cs` |
-| ~~`FitLineStrategy.Line` 是引用类型 `record`，默认 `null`；`RegisterOutput("直线/起点", () => inPara.Line.Start)` 在未执行时 NRE~~ **此前已修复（初始化为零长线段）** | `contour/FitLineStrategy.cs` |
-| ~~`RegionExtension.RebuildRegion` 中 `hRegion.HoRegion.Dispose()` 未判 null；Polygon 分支 `PolygonX/PolygonY` 为 null 会抛；`GenCoordsRegion` 未对 `hRegion` 判空~~ **此前已修复** | `Extension/RegionExtension.cs` |
-| ~~`HWindowMouse` 用 `DateTime.Now.Ticks` 判双击（受系统时间调整影响），未用 `SystemInformation.DoubleClickTime`；连续三击会被判成两次双击~~ **已修复：改用 `Environment.TickCount` + `SystemInformation.DoubleClickTime`，判出双击后清空配对，三击不再算两次双击** | `HWindows/HWindowMouse.cs` |
-| ~~`MouseDown`/`MouseDouble` 是公开标志位，本类从不复位，依赖外部清除（隐式协议）~~ **已修复：两标志位全仓无人读取，连同 `HDisplayUI.HoMouseDown/HoMouseDouble` 与设计器赋值一并删除** | `HWindows/HWindowMouse.cs` |
-| ~~`HWindowImage.Fun_ZoomImage` 实际在做**控件布局**（改 Width/Height/Location），命名误导且会再次触发 `Resize`；`HWindowControl_Resize` 中 `catch { }` 完全空吞~~ **已修复：更名 `LayoutControlToImage`，加 `_inLayout` 防重入；`catch { }` 此前已改为记日志** | `HWindows/HWindowImage.cs` |
-| ~~`HDisplay.SetImage` 用 `NullReferenceException` 表达业务错误，应为 `ObjectDisposedException`/`ArgumentNullException`~~ **已随 C16 修复** | `HWindows/HDisplay/HDisplay.cs` |
-| ~~`FileImageStrategy` 的 `Index`/`ImagePaths` 是隐式实例状态、非线程安全；`FileImage` 持 public `HObject` 字段却不实现 `IDisposable`；`catch { throw; }` 是无意义噪音~~ **已修复：去掉 `catch { throw; }`；空目录与空图改抛 `InvalidOperationException`；`FileImage` 实现 `IDisposable`；类注释写明非线程安全** | `image/FileImageStrategy.cs` |
-| ~~`IHDisplay` 中 `DispRegion(CvRegion)` 与 `DispCvRegion(CvRegion)` 签名相同、命名不同、语义不明~~ **此前已修复（更名以区分语义）** | `HWindows/HDisplay/IHDisplay.cs` |
+| 拆成 Tool + Param + Result + Editor 多个类 | 违背「一个类完成一个算法」的约定，新增算法的成本反而更高 |
+| 只给 `ShowSource` 加类型、保留槽位（原计划阶段 1） | 11 个策略要先改一遍，去槽位时再改一遍；槽位数仍由 Designer 决定，插件契约不成立 |
+| 用 `[Param("阈值")]` 特性标注参数类、全自动反射生成面板 | 条件显示、枚举文字、单位换算都要塞进特性参数，表达力不如 lambda 声明；调试困难 |
+| MEF（`System.ComponentModel.Composition`） | 能做发现，但校验、稳定键、显示元数据仍要自己写；自写 `AlgoCatalog` 约 100 行，更透明 |
+| AppDomain 隔离、热卸载 | 跨域调用要求可序列化 / `MarshalByRefObject`，HObject 句柄无法穿越；收益远小于成本 |
+| 数据流图（节点 + 连线）引擎 | 当前流程是线性的；`SourceRef` + 声明的输入依赖已经能表达 DAG，将来需要时可以在 `FlowRunner` 上演进，不必现在引入 |
+| Clean Architecture / DDD 全套、迁移到 WPF、引入 DI 容器 | 收益不足以覆盖成本 |
 
 ---
 
-## 五、值得保留的良好设计（重构时作为范本推广）
+## 3. 分阶段实施计划
 
-`contour/FitArcMidpointRender.cs` 是三个工程中**唯一**做到计算与渲染彻底分离的实现，建议作为所有策略类的改造模板：
+渐进迁移，每个阶段都能独立编译、测试并合入。**新旧写法在迁移期并存**：基类新增的成员都提供默认实现，没迁移的策略照样能跑。
 
-```csharp
-// 单槽发布 + 所有权原子转移，天然线程安全
-public FitArcMidpointRenderData TakeRenderData() => Interlocked.Exchange(ref _pendingRenderData, null);
-private void PublishRenderData(FitArcMidpointRenderData data)
-    => Interlocked.Exchange(ref _pendingRenderData, data)?.Dispose();
-```
+### 阶段 0：修 Bug 和工程卫生（1～2 天，低风险）
 
-可取之处：① `ComputeFit` 纯计算、`DrawTo(IHDisplay)` 是唯一绘制入口；② 样式与可见性开关在计算时快照，绘制可在任意线程进行；③ `IDisposable` 明确 `HObject` 所有权；④ `FitArcMidpointRenderFrame.Create` 的失败路径会连带释放 overlay。
+- [x] 修复 §1.3 中的全部 Bug。
+- [x] 删除 `DotNet.Drawing.Log`，把调用改到 `DotNet.Logging`。过渡期也可以先在 `Program.cs` 里把 `Drawing.Log.Current` 桥接到 DotNet.Logging。（采用桥接并保留 `Drawing.Log`：它是插件可见的日志抽象，插件契约不应依赖 DotNet.Logging）
+- [x] 统一目标框架（按决定**暂不升 4.8**，全部统一到 4.5.2；因此 `Choice<T>` 不能用 ValueTuple，改用 `Option.Of(value, text)`），建议直接升到 **.NET Framework 4.8**，因为 4.5 和 4.5.2 都已停止支持。注意：升级后**现有的 polyfill 都还要保留**。4.8 里仍然没有 `System.HashCode`（对应 `Internal/HashCode.cs`）和 `IsExternalInit`。4.7 起才有 `System.ValueTuple`，`Choice<T>` 的 `(T, string)[]` 参数依赖它。
+- [x] 统一平台为 x64，Release 也一样。原因是 HALCON 的原生 `halcon.dll` 只有 x64 版本，所以宿主进程必须是 64 位的。`halcondotnet.dll` 本身是 AnyCPU。
+- [x] HintPath 改为仓库内的相对路径，或者改用 NuGet。（改为 `src/Directory.Build.props` 里的 `$(DotNetDllDir)`：可用 `/p:`、环境变量 `DOTNET_DLL_DIR` 或仓库 `lib\` 覆盖，默认仍是 `C:\DotNet\.dll`）
+- [x] 删除 VisionMaster 中未使用的 DotNet.Data、DotNet.Excel 引用。
+- [x] 删除死代码：`ToolForm`、`FilePaths.cs`（空壳类）、`ValueForm.GenerateTree(TreeView)` 重载（实际被调用的是另一个重载）、`AlgoPaths.UIBlock`（同时删除 `MainFormTests` 里对它的断言）、未使用的 `LockCenter`、`AngleEnd`。
 
-**需要一并修正的两点**：`FitArcMidpointRenderData` 的字段应改为 `{ get; init; }` 或只读，让「发布后只读」从注释变成编译期约束；`Dispose()` 应加幂等标志。
+### 阶段 1：插件注册 + 声明式参数面板，删除 `AlgoEnum` 和槽位（1.5～2 周）★ 核心阶段
 
----
+目标：完成后，新增算法只需要写一个类，宿主（含 Designer）零改动。
 
-## 六、分阶段实施路线图
+**1a. 注册与身份**
 
-### 阶段 1：止血（1~2 天，零架构改动，风险最低）
+- [x] 新增 `AlgoAttribute`、`AlgoInfo`、`AlgoCatalog`（含 `plugins\` 目录扫描和启动校验），给现有 11 个策略打上特性，确定稳定键。（稳定键见各策略的 `[Algo]`；插件目录里带共享程序集副本、非 .NET dll、Core 主版本不符都在启动时报错）
+- [x] MainForm 改为由 `AlgoCatalog` 生成工具箱，删除手写 `new` 和 8 个 `buttonN_Click`。顺带解决了漏注册的问题。
+- [x] 基类增加 `Id`、`Name` 默认实现；删除 `RunIndex`，模板目录暂时改为按 `Id` 计算。（数据目录为 `DataDir`，默认按 `Id`，方案保存时迁到 `Scheme/<方案>/<Id>/`）
 
-- [x] B1 `HalconHelper.GenContours` 自递归
-- [x] B2 `DispPolygon` 行列颠倒
-- [x] B4 `DispLine` 绕过颜色缓存
-- [x] B5 去掉 4 处 `CvCoord.Angle.ToRadians()` 二次转换（HDisplay.cs:417,422 + HalconController.cs:120,121）
-- [x] B8 `FileMode.OpenOrCreate` → `FileMode.Create`
-- [x] B9 批量清理 31 处 `new HObject(); GenEmptyObj(out x);`
-- [x] B12 `HandleDestroyed` → `Dispose(bool)`
-- [x] D9 删除 `GetTransformedCoord` 中的死代码（或补全实现）
-- **验收**：MSBuild 构建 `DotNet.VisionMaster` 已通过（2026-09-01）。
-  - ⚠️ 待人工完成：跑一遍完整流程，用 `HOperatorSet.CountObj` 对比运行前后的对象数是否平衡。
-  - ⚠️ `src/DotNet.HalconUI.Tests` 源码在工作区已不存在（仅剩 bin/obj，且从未入库），单元测试暂时无法运行。
+**1b. 声明式参数面板**
 
-### 阶段 2：契约与安全性（3~5 天）
+- [x] Core 新增 `ParamBuilder`、`ParamItem`；基类新增 `DeclareParams`、`OnParamsChanged`，并基于它们实现 `IParaBinding.DispPara/SavePara`（迁移期：子类没覆盖 `DeclareParams` 时，仍走旧的 `DispPara/SavePara`）。（未保留迁移期双路径：11 个策略一次迁完，`IParaBinding` 直接改为 `DescribeParams()` + `ParamsChanged(changed)`；`OnParamsChanged` 带上真正变了的项，MergeRegion 据此只在来源变化时清示教点）
+- [x] HalconUI 新增 `ParamPanel`：按 `ParamItem` 在 `TableLayoutPanel` 里生成控件，复用 VsControl 的绑定；`Source` 项统一弹出 `ValueForm` 并按 `OutEnum` 过滤；`When` 在任一值变化后重新求值。（没有复用 VsControl：VsControl 靠私有字段名反射查找控件，动态生成的控件用不上；ParamPanel 自己持有控件并直接绑定。VsControl、`IParaUiHost`、`WinFormsParaUiHost` 已删除）
+- [x] ParaForm 的参数页、显示页改为承载 `ParamPanel`；Region 页、Matching 页仍是固定布局，由宿主根据 `IRoiEditable` / `ITemplateEditable` 决定是否显示，几何读数由宿主在 `SetRectPara` 时自己填。（五个页都承载 ParamPanel；Region / Matching 页的固定工具栏保留，几何读数由宿主订阅 `HDisplayUI.RoiShown` 填写）
+- [x] 逐个策略把 `DispPara` + `SavePara` 改写为 `DeclareParams`。顺序：FileImage → CreateROI → LineRot → Rotate（验证 `When`）→ MergeRegion（验证 `OnParamsChanged`，删除 `SameConfig`）→ FitLine → FitArc → 4 个匹配。
+- [x] 删除 ParaForm.Designer 里的 `lbl/cmb/btn_100..115`、`ckb_disp0..4`、`CB_Font*` 以及对应的 5 个来源 handler。（Designer 重写，1591 行 → 约 500 行）
 
-- [x] B6 消除可变全局单例 `Rect2d.Default` / `CvRegion.Empty`
-- [x] B7 手写 `CvRegion.Clone()`，明确 `HoRegion` 深拷贝
-- [x] B3 / C18 补齐 `switch` 缺失分支，全部加 `default` 兜底
-- [x] B10 `FitLineStrategy.Close` 不再销毁配置态对象
-- [x] B11 `MergeRegionStrategy`：实现或删除，**禁止保留返回 true 的空实现**
-- [x] C6 引入 `TryResolveOutput<T>`，替换所有强转
-- [x] C7 `strategys` 传空集合替代 `null`
-- [x] C13 / C14 修正容差体系与 `NormalizeAngle`
-- [x] C15 `Rect2d` 不可变化；`CvRegion` 改继承为组合
-- [x] C17 `VsControlModel` 三个属性改走 `SetField`
-- [x] D1 引入 `ILogger`，替换全部 `catch { }` 与 `Console.WriteLine`
-- [x] D3 / D4 删除 11 个空壳类与 647 行死文件
-- [x] D6 `AlgoPaths` 派生路径改表达式属性
-- [x] C2 全部 `Disp*` 补齐 `IsWindowUsable()` 防护；参数校验一律前置于 `SetColor` 等副作用之前
-- [x] C8 移除库层的 3 处 `MessageBox.Show`（`FileImageStrategy.Init`、`JsonConvertHObject` ×2），改为抛异常或写日志
-- [x] C9 `RotateImageStrategy` 的 `baseAglDeg == 0` 边界明确归入某一分支
-- [x] D2 异常包装改为 `throw new XxxException(msg, ex)` 保留 `InnerException`
-- [x] D8 硬编码路径 `D:\Picture\...` 改配置项；`DispCvRegion` 的 `+0.5`/`+1` 像素偏移提为命名常量并注明推导；删除未使用变量
+**1c. 其余宿主分支**
 
-### 阶段 3：API 收敛（1~2 周）
+- [x] ROI 默认形状改读 `AlgoInfo.DefaultRoi`；删除 `ParaForm.cs:364-373` 的 switch。
+- [x] `ITemplateEditable` 增加 `GetTemplateView()`，4 个匹配类实现它；删除 `ParaForm` 里的两处类型 switch 和具体类型下转。
+- [x] 基类实现 `IDisposable`（`Dispose(bool)` 模式），宿主改为对所有策略统一释放。`FileImage` 和 4 个匹配类补上各自的释放逻辑。（`IParaStrategy : IDisposable`；配置 ROI 也随工具一起释放，宿主先保存再释放）
+- [x] 上面全部完成后，**删除 `AlgoEnum` 和所有 `Algorithm` 属性**。
 
-- [x] A4 `IHDisplay` 62 → 34 成员（`Disp*` 46 → 15）；统一为 `Disp(图元, DrawStyle)`，`string color` → `HColor` 强类型
-- [x] C1 统一坐标序为 `Point2d`(X, Y)，Halcon (Row, Col) 转换只保留在最内层（`TransPixel` → `TransPoint`/`TransPoints`；算法层点集与 `FitArcMidpointRenderData` 改为 `List<Point2d>`）
-- [x] B5 后续：引入 `readonly struct Angle`，从类型上消灭单位混淆（`CvCoord.Angle` 改为强类型，`AngleJsonConverter` 保持 JSON 落盘形状不变）
-- [x] A3 删除 `HDisplayCore`；`HDisplayUI` 不再实现 `IHDisplay`，改为组合暴露 `Display` 属性
-- [x] D5 提取 `EdgeMeasurePipeline` / `RobustFitPipeline`，消除 `FitLine` 与 `FitArcMidpoint` 的重复，同时修掉 O(n²) 重拟合（改为按残差降序分批剔除，重拟合轮数降到约 log₂n；**行为变更**：临界点取舍可能与旧实现不同，需现场回归）
-- [x] B1 后续：删除 `HalconHelper`，统一到 `HalconController`（且改为静态无状态类）
+**验收**
 
-### 阶段 4：分层与交互重构（2~4 周，需单独排期）
+- [x] `ParaForm`、`MainForm` 里搜不到任何具体策略类型名、`AlgoEnum`、`cmb_1xx`。（ParaFormTests.NoSlotControls 守住）
+- [x] 在测试项目里写一个只引用 HalconCore 的假算法，编译成 dll 放进 `plugins\`，启动后出现在工具箱里，参数面板、来源选择、运行都能用。（`UnitTest/DotNet.SamplePlugin`，测试把它复制进临时 plugins 目录加载）
 
-- [x] A1 抽出 `DotNet.HalconCore`，打断 `HalconAlgo → HalconUI`
-- [x] A2 `IParaStrategy` 拆分为 5 个小接口
-- [x] C3 `DrawHelper` 三步走：~~加超时/取消~~ → ~~拆类~~ → ~~`DrawAsync` 消灭 `DoEvents`~~
-- [跳过] C4 `DispPara`/`SavePara` 改为特性驱动的声明式绑定
-- [跳过] C5 中文文案与业务状态解耦（enum + 资源文件）
-- [x] C10 / C11 ROI 跟随坐标系补全旋转变换，输出与显示保持一致
-  - `CreateROI` / `FitLine` / `FitArcMidpoint` 使用 `CvCoord` 刚体变换；两种拟合同时旋转测量中心和 `Phi`，`MergeRegion` 的跟随分支同步修正。
-  - 沿用模板协议：`TmplPoint` 是模板图像上的零角参考原点，匹配输出角度为相对模板的旋转量；本次不新增模板角度持久化字段。
-  - `CreateROI.Result` / `RegionMerge.Result` 独立持有本轮区域（均标 `JsonIgnore`，运行期状态不落盘），输出与显示使用同一句柄，不覆盖配置 `HoRect`；替换与失败时释放旧结果。`Result` 仅以 `HoRegion` 表示实际形状，不用于编辑或重建。
-    - 因此“区域”输出注册的是 `inPara.Result.HoRegion` 而**不是**整个 `CvRegion`（审查后修正）：`Result` 只有 `HoRegion` 一项是真的，`Bounds` / `Type` / `Phi` 从未随本轮结果更新、恒为默认值，对外交付整个对象等于把假数据递给下游（`TmplPoint` 当初就是这么踩的坑）。`TryResolveRegionFrom` 两种形态都收，解析侧无需改动；全仓也无人做 `ResolveFrom<CvRegion>`。
-  - 生命周期：`Close(IRoiHost)` 只清运行结果，两个区域策略口径一致（`MergeRegionStrategy` 补上覆写）；两者实现 `IDisposable`，**只释放 `Result`**，幂等。**注意：宿主既未接线 `Close`，也未对策略集合做 `IDisposable` 分发，两者目前都无调用方**，句柄仍靠 `HObject` 自身 finalizer 回收——属预留接口，待宿主在移除工具 / 关闭 job 时接线（`if (strategy is IDisposable d) d.Dispose();`）。
-    - `Dispose` **不碰配置态 `HoRect`**（第一轮连它一起释放，审查后修正）：`HoRect` 随 job 落盘，一旦在此释放，等宿主真接上 `Dispose` 之后，保存配置 / 复制工具就会读到已释放的句柄。配置态句柄的归属在 `CvRegion` 自己身上，不由策略代管。
-  - `CreateROI` 补注册 `TmplPoint`（配置态零角原点 = `HoRect.Center`，与其 `Coord` 在零跟随时同值），否则被下游选作 `CoordIn` 来源时 `ToTmplPoint()` 解析必然抛异常。
-  - `MergeRegion` 的 `Coord` 是每轮合并结果的**光栅化重心**，与配置 ROI 无关（`DispPara` 不开 Region 页，`HoRect.Center` 实际恒为 `(0,0)`），不能拿它当 `TmplPoint`——否则下游平移量等于合并重心本身。改为新增持久化的 `RegionMerge.TmplPoint`（`Point2d?`，随 job 落盘）：以“默认”跟随、且**全部来源有效**（`missCnt == 0`）的首轮合并记录一次；未示教时 `TmplPoint` 解析返回 null，下游抛 `AlgoOutputNotFoundException`（响亮失败优于静默算错）。
-  - 示教原点的**失效点绑定在 `SavePara`**，但**只在配置真的变了时才清**（`configChanged`：逐项比较 `CoordIn` 与 6 个 `RegionSources`，`SameConfig` 把 `null` 与 `""` 归一化——`RegionSources` 新建/落盘后是 `null`，而 `ui.GetString` 读空下拉框返回 `string.Empty`，不归一化会把“什么都没改”判成改了）。不这样做的话，改了 `RegionSources` / 重画了上游 ROI 之后 `TmplPoint` 会一直停在旧配置的重心，下游平移量系统性偏移，而界面上没有任何入口能清掉它。
-    - **不能无条件清**（第一轮写成无条件，审查后修正）：`SavePara` 的调用方全是各 Form 的“运行”按钮（`but_Run_Click` → `SavePara` → `Fun_action`），**不是“确定配置”才触发**。无条件清会导致：① 每点一次运行都清掉，原点被当前画面里的工件位置重新示教，下游整体偏移且毫无提示；② `CoordIn` 不是“默认”时重记条件（`CoordIn == "默认"`）恒不成立，一旦清掉就再也回不来，下游选它当 `CoordIn` 会**永久**抛 `AlgoOutputNotFoundException`。
-  - **口径差异（有意为之，待统一）**：`RegionMerge.TmplPoint` 是 `Point2d?`，四种匹配策略是非空 `Point2d`（默认 `(0,0)`，未示教时会静默按原点算）；且匹配侧在显式示教动作 `SetTemplateAsync` 里赋值，合并侧只能在 `Fun_action` 里隐式记录。可空版能区分“未示教”与“示教在原点”，后续应把匹配侧一并改为可空，并考虑给合并加一个显式“示教原点”按钮。
-  - `CreateROI` 跟随分支的输出坐标改用 `TransPoint` 亚像素变换配置中心，与两种拟合同口径，不再取 `AreaCenter` 的光栅化重心。
-  - 新增 `TryResolveRegionFrom` / `ResolveRegionFrom` 一对（不抛 / 抛），两种拟合与四种匹配兼容 `CvRegion` / `HObject` 上游区域；借用句柄不由下游释放。`MergeRegionStrategy` 删除同义的私有 `ResolveRegion`，解析不到仍按“来源无效”计数、不中断整轮合并。
-  - 空句柄判断收敛进 `TryResolveRegionFrom`：已释放（null）/ 未初始化 / `count_obj == 0` 一律算解析失败。否则 `CvRegion` 构造与各 `ClearResult` 留下的 `gen_empty_obj` 空元组会流进下游——拟合侧 `reduce_domain` 抛与真实原因无关的 HALCON 原生异常，匹配侧 `CountObj()==0` 直接静默返回 0 个结果。`ResolveRegionFrom` 的异常期望类型相应改为 `CvRegion`。
-  - **未绘制 ROI 的统一防护**：判断收进 `HObjectExtension.IsUsableRegion()`（非 null + 已初始化 + `count_obj > 0`），`TryResolveRegionFrom` 复用它，本地配置 ROI 由各策略自行调用，两条路径口径一致。失败方式沿用各文件既有惯例：两个区域策略清结果 + 红字 `return false`（`CreateROIForm` 的循环执行只在最外层包 try，抛异常会让后续工具全部不执行）；两种拟合抛 `InvalidOperationException`（与“未找到足够的轮廓点”同风格）；四种匹配红字 `return false`（与“未建立模板”同风格）。
-  - 树节点类型：创建 / 合并区域的角度节点改为 `Number`；四种匹配的角度节点同步由 `Array` 改为 `Number`。**纯语义修正、无行为变化**：注册值确实是单个 `double`，标 `Array` 属类型标注错误。（不要照搬“原 `Array` 会被 `ValueForm` 双击筛选拒绝”的说法：`setValueForm` 全仓只有 4 个调用点，`ValueType` 只可能是 `Image`/`Region`/`Line`/`Coord`，而 `switch` 里没有 `case OutEnum.Coord`——“角度”子节点改动前后都不可双击选中；`case OutEnum.Array` / `case OutEnum.CalOrOut` 目前是死代码。）
-  - 清理：删除 `RegionMerge.RegionIn`（已被 `RegionSources` 取代，全仓无读写方）；`Point2d` 的 `Magnitude` / `Angle` / `AngleDegrees` / `IsZero` 标 `JsonIgnore`（只读计算属性，落盘写得出读不回，`TmplPoint` 起该类型开始随 job 持久化）。`CvCoord` 的 `AngleDegrees` / `Center` / `Direction` / `IsIdentity` / `Inverse` 同步补标（第四轮）。其中 `Inverse` 最要紧：它本身又是 `CvCoord`，序列化会一层层往下钻，「逆的逆 ≈ 自身」只能靠 Newtonsoft 的循环引用检测收住——`JsonOptions.IgnoreReferenceLoop` 默认 `true` 才只是写出一两层垃圾，换成默认设置的 `SerializeConvert.ToJson`（目前全仓无调用方）就会直接报 "Self referencing loop detected"。
-  - **四种匹配：结果清空必须前置于所有校验**（新增“未绘制 ROI”红字返回时引入的回归，审查后修正）：`inPara.Results` / `inPara.Coord` 的清空提到 `Fun_action` 开头，早于“未绘制 ROI”与“未建立模板”两道 `return false`。改动前 `inPara.Results = new List<ModelResult>()` 排在校验之后，而 `Fun_action` 的 `bool` 返回值在**每个**调用方都被丢弃（`MainForm` / `CreateROIForm` / `LineRotImageForm` 的 `but_Run_Click` 与 `but_Cycle_Click` 都只调用不判断），校验失败只是屏幕上多一行红字、下游工具照旧继续跑——此时 `Results` / `Coord` 还留着上一轮的值，`ParaForm` 的“编辑模板”与下游“坐标系”读到的就是旧数据，界面上看不出任何异常。校验前清 `Coord` 也顺手修掉“0 个匹配仍沿用上一轮坐标系”的既有问题（响亮偏移优于静默算错），与 `ClearResult()` 同口径。
-  - **`AlgoEnum.MergeRegion` 的 `ParaForm` 接线**（此前完全缺失，`DispPara` 亮出来的 6 个“输入区域”按钮点下去全无反应，现场回归根本走不到）：`btn_100_Click` 单列一支选 `Region`（该算法的 `cmb_100` 是“输入区域0”而非图像来源），`btn_101_Click` 并入既有 `Region` 支，新增共用 `btn_regionSource_Click` 处理 `btn_102`..`btn_105` 并在 Designer 里绑上 `Click`（这四个按钮此前**没有任何** handler）。共用 handler 仍判一次 `Algorithm`：其它算法靠 `ShowButton(..., false)` 隐藏它们，隐藏只是不可见，将来别的算法启用这几个按钮时不该误入。
-    - **`CoordIn` 选择器改走参数页 110 号槽位**（第四轮修复；此前完全不可达）：`cmb_CoordIn` / `lbl_CoordIn` / `btn_setCoordIn` 都挂在 `tabPage2`（`TabPageEnum.Region`），而 `MergeRegionStrategy.DispPara` 只开 `Parameter` + `Display` 两页 → 控件永远不可见，`CoordIn` 只能永远停在“默认”，`Fun_action` 的跟随分支成了死路径。改为借参数页空闲的 110 号槽位（`lbl_110` / `cmb_110` / `btn_110`；参数页的 100-105 与 110-115 是两排独立槽位，拟合类算法同时用两排，本策略只占前一排，借后一排的第一个不冲突），`SavePara` 从同一槽位读回；新增 `ParaForm.btn_coordSource_Click` 并在 Designer 里给 `btn_110` 绑上 `Click`——该按钮此前**没有任何** handler（用到该槽位的拟合/匹配都 `ShowButton(..., false)` 隐藏了它，隐藏只是不可见，故 handler 内仍判一次 `Algorithm` 兜底）；`btn_setCoordIn_Click` 里那个到不了的 `case AlgoEnum.MergeRegion` 同步删除。**不给区域合并开 Region 页**：`ShowTabs` 对 `Region` 页不做子控件隐藏，开页会连带亮出 ROI 绘制控件，而本策略的 `HoRect` 本就不参与合并（见下条，`HoRect` 已删）。
-  - **`MergeRegion` 的示教原点：取变换前重心，且不再以 `CoordIn == "默认"` 为前提**（第四轮修复）：重心必须取变换**前**的 `merged`——跟随分支下 `result` 已被搬到当前工件位姿，拿它当零角参考会让下游平移量恒为 0（跟随白做）；而“默认”分支下 `result` 就是 `merged`、两者等价，所以也不能拿 `CoordIn == "默认"` 当示教前提，否则跟随分支永远示教不出来，下游选它当 `CoordIn` **永久**抛 `AlgoOutputNotFoundException`。示教条件收敛为「`missCnt == 0` 且尚未示教」，失效仍由 `SavePara` 的 `configChanged` 负责。
-    - **跟随分支的角度恒为 0**（能力边界，已在代码注释里写明）：本策略只拿到上游的区域句柄，无法推断来源朝向，`Coord` 这个“坐标系”只能表达平移——输入区域自己在跟随旋转时，下游选它当 `CoordIn` 会“跟着动但不跟着转”。需要旋转跟随的下游应直接跟最上游的匹配坐标系。
-  - **错误文本不受“显示文本”门控**（第四轮修复，`MergeRegion` 的“无有效输入区域” + `CreateROI` 的“尚未绘制 ROI”）：`DispText` 是显示偏好复选框，关掉它连报错一起消失是不对的——`Fun_action` 的返回值没有任何调用方检查，静音就等于工具默默什么都不做、现场没有任何线索。
-  - **降级 / 0 结果一律红字**（第四轮修复）：绿字在本仓惯例里表示“正常跑完”，降级结果不该长得跟成功一样。`MergeRegion` 在 `missCnt > 0`（重心残缺、也不会示教 `TmplPoint`）时红字；四种匹配在 `cnt == 0` 时红字。**没有**顺手做“0 匹配时把坐标系发布为 null”那个更强的版本：那会让下游 `ResolveFrom` 抛异常、打断循环执行，且与 `Results` 随 job 持久化相互影响，留给现场决定。
-  - **四种匹配的文本与坐标系口径统一**（第四轮修复）：① “尚未绘制 ROI”“未建立模板”两道红字改用“显示”页配置的 `FontX` / `FontY` / `FontSize`，不再硬编码 `(10,10)` + 默认字号（大分辨率图上几乎看不见，且与下面那行状态文本错位）；`GenericModelStrategy` 的“未建立模板”补上 `Name` 前缀（多工具同屏时才分得清是谁报的）。② 对外发布的 `Coord` 改为循环结束后取 `Results[0]`（HALCON 的 `Find*Model` 按得分降序返回），不再是内层循环里最后一个实例——多 ROI / 多匹配时“最后一个”是任意的，下游跟随坐标会在各实例间跳；与状态文本里的“最佳得分”同取 `Results[0]`，口径一致。注：模板创建路径里的 `(10,10)` 文案（“新建模板成功/失败”）是交互式动作的即时反馈，不在本次范围内。
-  - **`MergeRegionStrategy` 不再实现 `IRoiEditable`**（第四轮清理）：它没有自己的配置 ROI，形状完全来自 `RegionSources`。`HoRect` + `DrawROIAsync` 是死代码（绘制按钮 `btn_drawRegion` 在 `tabPage2`，本策略不开该页，根本点不到），而 `DispROI` 还有副作用——选中本工具（`SwitchStrategy` → `DispROI`）就会 `SetRectPara` 把显示切进 `DispRect` 交互模式、绑到一个 `(0,0)` 的空矩形上。三者与 `RegionMerge.HoRect` 一并删除，`Dispose` 也只剩 `Result` 一个运行期句柄。
-  - **构建通过（2026-09-18，含四轮审查后修复）**：MSBuild `DotNet.VisionMaster.csproj`（Debug），零错误；仍有可空引用及未使用字段警告。注：整解决方案编译会在 `DotNet.CvTuples` 处失败（NuGet fallback 目录 `C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages` 不存在），属本机环境问题，与本改动无关，且该项目不在 `DotNet.VisionMaster` 依赖链上。
-  - **待现场回归**：零角/正负旋转下 ROI 与测量矩形一致；创建 ROI → 拟合/匹配/合并的区域传递；多轮执行无累计变换，取消编辑保留配置，失败不残留旧输出。两种拟合将上游区域视为当前图像坐标系的运行结果，直接使用、不重复变换；`CoordIn` 独立控制本地测量中心与 `Phi` 跟随，不能因使用上游区域而设为“默认”。仅 `RegionIn` 为“默认”时，本地配置区域才随测量几何一起变换。区域合并的 `CoordIn` 仍表示对合并结果额外施加变换，合并已跟随的上游区域时应保持“默认”。尚未执行 Halcon 图像流程与资源回归。
-- [x] C12 圆弧拟合 Stage 1 改用圆拟合稳健权重
-  - Stage 1 的 `fit_line_contour_xld("gauss")` + 点到直线距离，换成与 Stage 2 同一个 `fit_circle_contour_xld("atukey")` + 径向残差。**根因**：弧相对其弦的凸量（sagitta）随曲率增大而增大（半圆时就等于半径），用直线当基准时「正确的边缘点」自身的残差就能越过门限，只能靠 15px 的经验下限硬撑，而大曲率下撑不住。改用同形模型后凸量不计入残差，问题从根上消失。
-  - **少一次 Halcon 拟合**：原来 Stage 1 直线拟合、Stage 2 圆拟合各来一遍；现在 Stage 1 的圆拟合结果直接就是 Stage 2 的起点，只有粗滤真的剔掉点（`coarseCulled > 0`）时才重拟合一次——Stage 2 的收敛判据建立在「模型对应当前点集」之上，点集没变就不必重算。
-  - **`15.0` 提为可配置参数** `FitArcMidpoint.CoarseGate`（`double`，默认 15，随 job 落盘），参数页借 114 号槽位（`lbl_114` / `cmb_114`，本策略原先只用到 110-113；`ShowTabs(Parameter)` 会先把 tabPage1 上全部控件隐藏，所以 `btn_114` 无需显式 `ShowButton(..., false)`）。实际门限仍是 `Max(MaxErr * 3, CoarseGate)`。
-    - **默认值有意保持 15，但含义变了**：改造前它兜的是弧的凸量，调小会误删有效点；现在凸量不再计入残差，需要更早拦住跳到邻边的点时可以放心调小。保持 15 是为了让本次改动在现场只表现为「不再误删」，不额外改变筛选力度。
-  - **口径统一（C12 附注）**：`FitLineStrategy` 原先用 `display.HoWidth/HoHeight` 构造 `EdgeMeasureSetup`，改为与 `FitArcMidpointStrategy` 一致的 `GetImageSize(ho_Image)`。`ImageIn` 不是「默认」时处理的是上游图像，与窗口里显示的那张可以完全无关，用显示尺寸会让 `gen_measure_rectangle2` 按错误的画布裁剪测量矩形。
-  - **待现场回归**：大曲率弧（接近半圆）的拟合点不再被成片标红剔除；把 `粗滤阈值` 调到 5 时仍能正常拟合；`ImageIn` 指向上游图像且上下游图像尺寸不同时，拟合直线的测量矩形不再被裁。
-- [x] C16 统一图像所有权，消除 `HWindowImage.HoImage` 悬挂引用
-  - 图像句柄从 `HDisplay._hoImage` 整体下沉到 `HWindowImage._hoImage`，`HDisplay` 只转发引用（`HoImage => _hWindowImage?.HoImage`），`SetImage` / `DispImage` 不再自己 `Dispose` + `CopyImage`。
-  - **原来的两个悬挂窗口**：① `HDisplay.SetImage` / `DispImage` 是「先 `Dispose` 旧图 → `CopyImage` 新图 → 回写 `HWindowImage`」，中间两步之间 `HWindowImage.HoImage` 指向已释放对象，而 `Fun_ZoomImage` 改控件尺寸会**同步**触发 `Resize` → `Fun_ReDisplay()`；② 更要命的是控件不可见时（所在 TabPage 未选中、Parent 为 null）`Fun_DispImage` 在 `CanDraw()` 处直接 `return`，回写那一步根本没执行，`HoImage` 会**一直**停在已释放的旧图上——而 `display.HoImage` 正是各策略 `ImageIn == "默认"` 时的图像来源。
-  - 换入换出收敛到 `AdoptImage`：`CopyImage` → 换引用 → 释放旧句柄。三步顺序不能调整（先释放再赋值就又回到窗口①）。`Dispose` 同样是先置空 `_hoImage` 再释放。
-  - `Fun_DispImage` 的**接管动作前置于 `CanDraw()` 判断**：画不了不等于这一帧该被丢弃。拷贝次数没有增加——改造前 `HDisplay` 本来就是无条件 `CopyImage` 之后才调进来的。
-  - 顺带修掉 D10 的一条：`HDisplay.SetImage` 的三处 `NullReferenceException` 改为 `ObjectDisposedException` / `ArgumentException` / `InvalidOperationException`（用「意外的空引用」表达业务错误，现场堆栈与真实原因对不上）。全仓无人 `catch (NullReferenceException)`，无调用方受影响。
-  - **待现场回归**：切到别的工具页再切回来、拖动窗口改变尺寸、连续取像时图像正常显示且不崩；多轮运行后 `CountObj` 不增长。
+### 阶段 2：基类承担执行流程（1 周，逐个策略迁移）
 
-### 阶段 5：工程化收尾
+- [x] Core 新增 `RunContext`、`RunResult`、`SourceRef`；基类新增 `ResetOutputs`、`Execute(RunContext)`、`Render(IHDisplay, RunResult)` 模板方法和统一的状态文本绘制。迁移期两个 `Fun_action` 仍是 virtual，由基类适配到新的 `Run`；没迁移的策略照常覆盖它们。（与阶段 1 合并实施，没有保留 `Fun_action` 的迁移期适配；取消 (`OperationCanceledException`) 会向外传播，其余异常一律转成 Fail）
+- [x] 基类新增 `DeclareOutputs(OutputBuilder)`，由它同时生成变量树和解析器；迁移期 `GenTreeNode` 仍是 virtual。（另外由基类追加"结果 / 文本显示"两个公共输出，原来的 `CommonNodes` 只有树节点没有值）
+- [x] `AlgoFont` 下沉到 Core，改名 `DisplayOptions`；「显示文本 / 字体」三项由基类自动追加到参数声明里。
+- [x] 逐个策略迁移：
+  - 把运行结果从 `inPara` 挪到策略类的属性上；
+  - 把计算和绘制拆成 `Execute`、`Render` 两个方法，删除各策略里自己画的红字；
+  - 参数类里的 `HTuple` 改为 `double`、`int`，界面文字（「由黑到白」「是 / 否」）改为枚举或 `bool`，文字只出现在 `Choice` 声明里；
+  - 来源字段从 `string` 改为 `SourceRef`（此时 `SourceRef` 先按「工具名 + 路径」解析，阶段 4 再切到 `Id`）。
+- [x] 每迁移一个策略，补齐无界面运行的单元测试：直接调用 `Execute`，不需要显示窗口；并断言 `Execute` 失败后所有输出都是默认值。
+- [x] 全部迁移完成后，删除两个 `Fun_action` 和 `GenTreeNode` 的 virtual 入口，`IAlgoStrategy` 只保留 `Run`。
 
-- [x] `DotNet.HalconAlgo` 启用 `Nullable`，与另两工程对齐（此前已随 A1 完成，四个 Preview 工程均为 `<Nullable>enable</Nullable>`）
-- [x] 开启 `TreatWarningsAsErrors`（至少 CS0219 未使用变量、CS8618 不可空未初始化）
-  - 四个 Preview 工程（`Drawing` / `HalconCore` / `HalconUI` / `HalconAlgo`）**全量**开启，不只限定 CS0219 / CS8618：开启前 Rebuild 只剩 15 条警告且全是可空注解，没有理由只挑几个编号。
-  - 15 条警告全部按「签名如实声明可空」修复，**无一处 `!` 压制、无行为变化**——这些 API 本来就把 null 当合法值处理，只是签名没说：`RegisterOutput` 的解析器改 `Func<object?>`（`ResolveOutput` 本就返回 `object?`，未示教的 `TmplPoint`、未初始化的 `Result.HoRegion` 都会是 null）；`TakeRenderData()` → `FitArcMidpointRenderData?`；`ResolveMouseHandler()` → `IMouseHandler?`（Erase / default 分支返回 null，调用方已用 `?.`）；`DrawModelUIArgs` 的两个 `HObject` 构造参数与属性改可空（上游 `DrawDone` 本就是 `HObject?`）；两处 `TransObject` 的 `obj` 改可空（首行即判 null）；`HDisplay` 中传给 `ReplaceRegion(ref HObject?)` 的 `region` / `ring` 局部变量改可空。
-  - 构建通过（2026-09-26）：MSBuild Rebuild `DotNet.VisionMaster.csproj`（Debug），0 警告 0 错误。`DotNet.VisionMaster` 本身未开启，不在本条范围内。
-- [x] D7 `HashCode` 迁出 `namespace System`（此前已完成，现位于 `DotNet.Drawing/Internal/HashCode.cs`，命名空间 `DotNet.Drawing.Internal`）
-- [x] D10 逐条清理一致性问题表（注释与代码不符、可空注解不一致、`CanConvert` 抛 `NotImplementedException`、`ConvertToWesternDigit` 的 `FirstOrDefault` 截断、`CvCircle` 圆弧包围盒/采样/缩放语义等）
-  - 21 行中 7 行已随此前各项修掉，其余 14 行本轮处理，逐行结论见 D10 表格。
-  - **行为变更**（需现场回归）：双击阈值由硬编码 200ms 改为系统设置（Windows 默认 500ms）；`CvCircle` 圆弧的 `BoundingBox` 变小、`SamplePoints` 含终点（两者全仓暂无调用方）；`ExtractNumber` 遇「十」等大于 9 的数字时结果变化（唯一调用方是线宽下拉框，常规输入为阿拉伯数字，不受影响）。
-  - 构建通过（2026-09-26）：MSBuild Rebuild `DotNet.VisionMaster.csproj`（Debug），0 警告 0 错误。
-- [x] 补齐几何计算（`MathHelper`/`CvCircle`/`CvLine`/`Rect2d`/`Point2d`/`CvCoord`）的单元测试——这部分无 Halcon 依赖，最容易测
-  - **已完成（2026-09-27）**：新建 `src/Preview/DotNet.Drawing.Tests`（MSTest 2.2.10，x64，已加入 sln 的 Preview 文件夹），136 个用例全部通过；另覆盖 `Angle`（含 JSON 转换器）与 `StringExtension`。
-  - 运行：`vstest.console.exe src/Preview/DotNet.Drawing.Tests/bin/Debug/DotNet.Drawing.Tests.dll /Platform:x64`。VS2019 Professional 不带代码覆盖率工具，70% 覆盖率目标**未实测**，按公开成员逐项覆盖。
-  - 测试发现并已修复：
-    - `Point2d.Normalized` 缺 `[JsonIgnore]`：默认设置下序列化 Point2d 直接抛 "Self referencing loop"（`SerializeConvert` 即默认设置）；忽略循环时则把 `Normalized` 写进 job 文件。
-    - `MathHelper.NormalizeAngle*` 四个函数的 `x - 2π·Floor(...)` 在大输入下丢精度（`NormalizeAngle(1e18)` = 121.7，落在区间外），改为精确取余 `IEEERemainder` / `%`。
-    - `StringExtension` 注释（D10 时写的）不实：汉字数词「十」是 Lo 类、从未被提取；「½」经 NFKC 先分解成 "1⁄2"。已改注释，行为不变。
-  - **发现未修（待定）**：
-    - `CvCircle` 圆弧方向语义不一致：`Contains`/`IsOnCircumference`/`DistanceToPoint`/`BoundingBox` 把圆弧视为从 StartPhi 逆时针到 EndPhi（规范化到 [0,2π) 后判断），而 `ArcSpan`/`ArcLength`/`PointAt`/`SamplePoints` 直接用 `EndPhi - StartPhi`。当 EndPhi < StartPhi（如 `ReverseArc()` 的结果）两套语义给出不同的弧：`(π/2 → 0)` 前者是 3/4 圆、后者是 1/4 圆。需先定约定再改，测试只覆盖了 StartPhi < EndPhi 的情形。
-    - `new Rect2d(0, 0, 10, 10)`（全 int 实参）与 `Rect2d(HTuple×4)` 重载二义（CS0121，HTuple 与 double 双向隐式转换），调用方必须写 double 字面量。
-- [ ] 加入 HObject 计数断言的集成测试，防止泄漏回归
+### 阶段 3：同族去重（1 周）
+
+- [x] `MatchStrategyBase<TPara>` 和 `MatchParaBase`：把 4 个匹配类的公共部分收进来。模板事务保留现有的严谨实现，只搬到基类里。（另外：模型句柄不再放进参数，模型文件随模板一起写进数据目录、`Init` 时读回；匹配 0 个结果改为 Fail）
+- [x] `RotateStrategyBase<TPara>`：消除 `RunWithReset` 的重复。（另加 `EdgeFitStrategyBase<TPara>` 收拢 FitLine / FitArc 的参数、ROI 与测量前端）
+- [x] `OutputBuilder.Coord` + `RunContext.ResolveCoord`：消除 FitLine、FitArc、MergeRegion 里复制的坐标系跟随逻辑，删除 `ToTmplPoint()` 和单独的 `TmplPoint` 输出。
+- [x] 模板图路径改为由策略实例的 `Id` 或方案目录决定，不再读静态 `AlgoPaths`。（`AlgoPaths` 已删除）
+
+### 阶段 4：流程运行和方案持久化（1 周）
+
+这些都写在宿主或 Core 里，**算法类不需要为此增加任何代码**。
+
+- [x] `FlowRunner`：按顺序执行整个流程，支持单步执行、从某个工具开始执行；为每个工具构造只含上游的 `RunContext`；收集每个工具的 `RunResult`（含耗时），失败时按策略决定停止或继续。（"当前图像"随 `IImageProducer` 前进，取代原来读显示窗口里的图）
+- [x] `SourceRef` 切换为按 `ToolId` 解析；界面显示的「工具名/路径」在运行时拼出来，不存储。重命名工具不会断开引用。（与阶段 1 合并：没有经过"工具名 + 路径"的过渡形态）
+- [x] 运行前校验：用参数声明里的 `Source` 项检查每个引用的工具存在、排在前面、输出类型匹配；不满足的工具在工具树上标红。（工具列表里标红，并在状态栏给出第一条问题）
+- [x] 方案序列化：每个工具存 `{ AlgoKey, Id, Name, Para }`。加载时用 `AlgoCatalog.Create(AlgoKey)` 创建实例；找不到键（插件缺失）时保留原始 JSON 并在界面上标出，再次保存时原样写回，不丢配置。模板图和模型文件存放在 `Scheme/<方案>/<Id>/`。（`FlowScheme` + `MissingTool` 占位）
+- [x] 实现工具树（目前 `ToolForm` 是空壳）：支持增删、排序、重命名。可添加的工具列表来自 `AlgoCatalog`，按 `Group`、`Order` 排列。（流程是线性的，做成主窗右侧的工具列表 + "添加"菜单，没有另开窗体）
+- [x] 补集成测试：多工具串联执行；保存后重新加载，结果一致。
+
+### 阶段 5：UI 层内部整理（1～2 周，可以和阶段 2～4 并行）
+
+这部分不影响算法类的写法：
+
+- [x] 拆分 `HDisplay`：（交互绘制拆到 `RoiInteraction`；圆环生成三份实现收拢为 `DotNet.Drawing.RegionShapes.GenRing`；字体经构造函数可注入；删除会改写传入 CvRegion 的 `DispGenRegion` / `GenCoordsRegion`）
+  - 显示和画笔状态。
+  - 交互绘制（`RoiInteraction`）。
+  - 区域生成逻辑移到 Drawing 或 Core。
+  - `IHWindowFont` 改为注入，并按 Halcon 版本选择实现。
+- [x] 把 `HModelUI`、`HEditModelUI` 中的模板编辑（仿射变换、Union、擦除累积）和读图抽成服务，合并两份重复的 `TransObject`、`DisplayModel`。（`TemplatePreview`：读图、平移到小图中心、并集 / 差集）
+- [x] 鼠标模式改成显式的状态机：同一时刻只有一个活动模式，平移和缩放作为默认模式。`DrawType` 不再公开可写。（`HDisplayUI.Dispatch` 固定顺序：视图导航 → 重绘 → 当前模式；`DrawType` 外部只读、设置时校验取值）
+- [x] 去掉绘制子系统中的静态状态：`DrawSession` 注册表改为每个窗口一个实例；`Timeout` 改为参数传入；`autodraw` 的保存和还原按窗口隔离。（`Timeout` 改为各入口参数；删除进程级 `HalconAPI.CancelDraw()`；**autodraw 的保存 / 还原直接删除**：HALCON 22.11 没有这个系统参数，get/set 都报 #1301，原代码每次会话都静默失败。会话注册表本来就按窗口区分，保留）
+- [x] 让 Shape 状态机可以脱离 Halcon 测试：`DrawRenderer` 抽出 `IDrawCanvas` 接口，Shape 改用自有的 `MouseInput` 结构，代替 `HMouseEventArgs`。
+- [x] VsControl 改为显式注册控件，取代按私有字段名反射（阶段 1 的 `ParamPanel` 生成的控件已经是显式注册的，这里处理剩下的 Region、Matching 页）。（VsControl 已整体删除：参数页由 ParamPanel 生成，Region / Matching 页的固定控件由 ParaForm 直接持有，不再有按名字反射的地方）
+- [x] ParaForm 里 4 个重复的 async 绘制入口合并为一个。（`RunDraw`）
+- [x] 显示入口统一切回 UI 线程，为将来接入相机做准备。（`UiThreadDisplay` 装饰器，`HDisplayUI.Display` 返回它）
+- [x] 删除死代码 `ModelExtension`、`ModelType`；`ZoomImage` 构造函数的默认分辨率 1248x2200 不再写死（`HWindowImage` 的 `zoomInfo` 已改为 0x0，只有 `getInfo` 还在沿用这个默认值）。（`ZoomImage` 默认改为 0×0）
+
+### 阶段 6（可选）：拆分 DotNet.Drawing
+
+- [ ] 纯几何类型拆到一个不引用 halcondotnet 的 AnyCPU 项目；`Rect2d(HTuple)` 构造函数改为 Halcon 侧的扩展方法。
+- [ ] 拆 `HalconController`：目录排序、仿射变换、存图分别归位。
+- [x] `StringExtension.ToTmplPoint` 在阶段 3 后已无调用方，直接删除。`ExtractNumber` 与 `DotNet.Extension` 里的版本合并成一份。注意 Drawing 版修复了「⑫ 这类大于 9 的带圈数字被截成首位」的 bug，Library 版（`DotNet.Extension/StringExtension.cs:154`）还没修，所以**要以 Drawing 版为准**。（`ToTmplPoint` 已删；`ExtractNumber` 没有跨项目合并 —— Library 与 Drawing 互不引用，让 Drawing（插件契约的一部分）依赖 Library 不划算，改为把 Drawing 版的修复移植到 Library 版，两份行为一致）
+- [x] `Rect`、`Point2f`、`Rect2f`、`Size2f`、`TransExpV2`、`SerializeConvert` 只有测试在用，决定删除还是保留。（全部删除，连同各自的测试；`SerializeConvert.NewtonsoftJsonFirst` 这个可写静态开关随之消失）
 
 ---
 
-## 七、验证方式
+## 4. 验收标准
 
-依据 `build-and-test-commands.md`：**以构建 `DotNet.VisionMaster` 为准**验证改动（`DotNet.HWindows` 原始即编译失败，不在本次范围内，也不处理）。注意 Halcon 需 x64 平台。
+- [x] **新增一个算法 = 新增一个 `.cs` 文件**（策略类 + 参数类），打上 `[Algo]`，继承 `ParaStrategyBase<TPara>`（或同族中间基类），按需实现能力接口。**不修改任何已有文件，包括 Designer。**（样例插件即是一个文件）
+- [x] **外置插件可用**：只引用 Drawing + HalconCore 编译出的 dll 放进 `plugins\`，重启后可添加、配置、运行、保存、重新加载。
+- [x] `MainForm`、`ParaForm` 中不出现任何具体策略类型名、`AlgoEnum` 或 `cmb_1xx` 槽位；算法类中不出现任何控件名字符串。
+- [x] 每个参数只在 `DeclareParams` 里出现一次；每个输出只在 `DeclareOutputs` 里出现一次。
+- [x] 每个策略的 `Execute` 可以在单元测试里无界面运行，失败原因通过 `RunResult` 返回，而不是只画在屏幕上。
+- [x] 每个策略都会被释放（基类实现 `IDisposable`），长时间循环运行时内存平稳，不泄漏 HObject 或 HTuple 句柄。（`SoakTests`：真实流程跑 2000 轮，私有内存增长 < 8 MB）
+- [x] `inPara` 只包含可序列化的配置：没有运行结果、没有 Halcon 句柄、没有界面文字。
+- [x] 方案保存后重新打开，参数、ROI、模板、工具之间的引用全部还原；重命名工具不会断开引用；插件缺失时配置不丢。
+- [x] HalconAlgo 只引用 Drawing、HalconCore、halcondotnet 和 BCL（架构测试守住）。（`AlgoCatalogTests.HalconAlgo_ReferencesOnlyContractAndHalcon`）
+- [x] Core 和 Algo 中没有可写的 public static 字段。（`AlgoCatalogTests.CoreAndAlgo_HaveNoWritablePublicStatics`）
+- [x] 现有测试全部通过，或者已迁移到新的写法。
 
-每个阶段结束后：
+## 5. 风险与注意事项
 
-1. MSBuild 构建 `DotNet.VisionMaster` 通过；
-2. 手工跑通「取像 → 建 ROI → 拟合直线 / 拟合圆弧中点 → 模板匹配」主流程；
-3. 用 `HOperatorSet.CountObj` 在流程前后各采一次，确认 Halcon 对象数不增长；
-4. 阶段 2 之后开始补单元测试，阶段 5 前几何部分测试覆盖率不低于 70%。
+- **测试依赖私有实现**：VisionMaster 的测试通过 `Infrastructure/Priv.cs` 反射私有成员。阶段 1 删除槽位控件后，依赖 `cmb_1xx` 的测试会大面积失效，需要改为针对 `ParamItem` 列表（纯数据，无需窗体）断言，反而更好测。
+- **动态面板的观感**：自动布局在像素级上不会和现在的 Designer 一模一样。先定好统一的行高、标签宽度和每页最大行数（超出时滚动），在 FitArc（参数最多的策略）上确认观感后再批量迁移。
+- **参数写回时机变化**：现在是「点运行 → `SavePara`」，改为控件值变化即写回。要确认没有策略依赖「运行前才回存」的副作用（目前已知只有 MergeRegion 的示教态清空，阶段 1 用 `OnParamsChanged` 替代）。
+- **反射扫描的范围**：`AlgoCatalog` 只扫描显式传入的程序集和 `plugins\` 目录，不要扫描整个 AppDomain，避免把测试替身也注册进来。
+- **插件的依赖冲突**：所有插件与宿主共用一个 AppDomain，共用同一份 halcondotnet 和 Core。插件不得自带这两个 dll 的副本；`AlgoCatalog` 检测到插件目录里有它们时直接报错。
+- **Core 的兼容性**：Core 是插件的 ABI，阶段 1～3 期间还会频繁改动。在阶段 3 结束之前，不对外承诺插件兼容性；阶段 3 结束后冻结 Core 公开成员，此后只增不改。
+- **稳定键一经发布不能改**：方案文件靠 `[Algo]` 的键找类型。命名约定建议用 `分组.算法`（小写、连字符），在代码评审时检查。
+- **旧方案兼容**：目前没有持久化，所以没有旧数据需要兼容，这是调整 `inPara` 结构（`SourceRef`、枚举化、移出运行结果）的最好时机。**阶段 4 之前必须完成这些调整。**
+- **Halcon 线程**：`FlowRunner` 如果放到后台线程执行，`Render` 必须切回 UI 线程；HWindow 只能在 UI 线程操作。`Execute` 和 `Render` 分开以后，这一点很好实现。

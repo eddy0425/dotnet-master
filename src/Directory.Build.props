@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    第三方 dll（halcondotnet、Newtonsoft.Json、SunnyUI 等）不进仓库，统一从 DotNetDllDir 引用。
+    优先级：命令行 /p:DotNetDllDir=... > 环境变量 DOTNET_DLL_DIR > 仓库内 src\..\lib（存在时）> C:\DotNet\.dll。
+    换一台机器只需设置环境变量或把依赖放到 lib\ 下，不必改任何 csproj。
+  -->
+  <PropertyGroup>
+    <DotNetDllDir Condition=" '$(DotNetDllDir)' == '' and '$(DOTNET_DLL_DIR)' != '' ">$(DOTNET_DLL_DIR)</DotNetDllDir>
+    <DotNetDllDir Condition=" '$(DotNetDllDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\lib') ">$(MSBuildThisFileDirectory)..\lib</DotNetDllDir>
+    <DotNetDllDir Condition=" '$(DotNetDllDir)' == '' ">C:\DotNet\.dll</DotNetDllDir>
+  </PropertyGroup>
+</Project>

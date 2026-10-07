@@ -142,8 +142,13 @@ namespace DotNet.Library.Extension
         }
 
         /// <summary>
-        /// 将 Unicode 数字转换为半角数字（支持汉字、全角等）
+        /// 将 Unicode 数字转换为半角数字（全角、带圈数字等）
         /// </summary>
+        /// <remarks>
+        /// 与 DotNet.Drawing 的同名实现保持一致（以那份为准）：按字符逐个换成其数值后拼接。
+        /// 原实现对数值只取 <c>ToString()</c> 的首字符，大于 9 的数字（如「⑫」= 12）被截成 "1"；
+        /// 非整数值和无数值的字符直接跳过，不再拼出 "0" / "-"。
+        /// </remarks>
         private static string ConvertToWesternDigit(string input)
         {
             return input.Aggregate(new StringBuilder(), (sb, c) =>
@@ -151,7 +156,10 @@ namespace DotNet.Library.Extension
                 if (char.IsNumber(c))
                 {
                     var num = char.GetNumericValue(c);
-                    sb.Append(num.ToString(CultureInfo.InvariantCulture).FirstOrDefault());
+                    if (num >= 0 && num == Math.Floor(num))
+                    {
+                        sb.Append(((long)num).ToString(CultureInfo.InvariantCulture));
+                    }
                 }
                 return sb;
             }).ToString();

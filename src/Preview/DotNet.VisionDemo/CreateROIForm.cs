@@ -1,7 +1,6 @@
 using DotNet.HalconAlgo;
 using DotNet.HalconUI;
 using DotNet.HalconCore;
-using DotNet.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,13 +16,11 @@ namespace DotNet.VisionDemo
         private int _index;
         private IParaStrategy _currentStrategy => _strategys[_index];
         private List<IParaStrategy> _strategys = new List<IParaStrategy>();
-        private readonly Dictionary<string, VsControlModel> _vsControls = new Dictionary<string, VsControlModel>();
 
 
         public CreateROIForm()
         {
             InitializeComponent();
-            AlgoPaths.UIBlock = false;
 
             _display = new HDisplayUI();
             panel1.Controls.Add(_display);
@@ -43,10 +40,7 @@ namespace DotNet.VisionDemo
             for (int i = 0; i < _strategys.Count; i++)
             {
                 _strategys[i].Init(_display);
-                _strategys[i].RunIndex = i;
             }
-
-            LogFile logFile = new LogFile();
 
             var fileImage = ((FileImageStrategy)_strategys[0]).inPara;
             fileImage.ImageFolder = "D:\\testImage\\123";
@@ -88,12 +82,7 @@ namespace DotNet.VisionDemo
             }
 
             _index = index;
-            _vsControls.ClearAll();
-            _formPara.SelectPara(_index, _strategys);
-            if (_currentStrategy is IParaBinding binding)
-                binding.DispPara(new WinFormsParaUiHost(_formPara, _vsControls));
-            if (_currentStrategy is IRoiEditable roi)
-                roi.DispROI(_display);
+            _formPara.ShowTool(_currentStrategy, _strategys);
         }
 
         private void but_Run_Click(object sender, EventArgs e)
@@ -101,19 +90,8 @@ namespace DotNet.VisionDemo
             try
             {
                 _display.ReDispImage();
-
-                switch (_strategys[_index].Name)
-                {
-                    case "ShapeMode":
-                        {
-                            //_display.SetDrawMode("ShapeMode", DrawEnum.DispModel);
-                        }
-                        break;
-                }
-
-                if (_currentStrategy is IParaBinding binding)
-                    binding.SavePara(new WinFormsParaUiHost(_formPara, _vsControls));
-                _currentStrategy.Fun_action(_display.Display, _strategys);
+                var step = new FlowRunner(_strategys).RunStep(_index, _display.Display.HoImage, _display.Display);
+                if (step.Result.Status == RunStatus.Error) MessageBox.Show(step.Result.Message);
             }
             catch (Exception ex)
             {
@@ -125,10 +103,8 @@ namespace DotNet.VisionDemo
         {
             try
             {
-                for (int i = 0; i < _strategys.Count; i++)
-                {
-                    _strategys[i].Fun_action(_display.Display, _strategys);
-                }
+                var error = new FlowRunner(_strategys).Run(_display.Display.HoImage, _display.Display).FirstError;
+                if (error != null) MessageBox.Show($"{error.Tool.Name}: {error.Result.Message}");
             }
             catch (Exception ex)
             {
