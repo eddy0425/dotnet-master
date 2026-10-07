@@ -164,6 +164,35 @@ namespace DotNet.VisionMaster.Tests
         /// <summary>
         /// 验收：只引用 Drawing + HalconCore 编译出的插件，出现在工具箱里，参数页按它的声明生成。
         /// </summary>
+        /// <summary> 坏插件只拒绝它自己：加载报告写进信息窗口、状态栏提一句，不弹框，好插件照常可用 </summary>
+        [TestMethod]
+        public void Plugin_Rejected_ReportedInInfoWindow_WithoutPrompt()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "VisionMasterTests_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(dir, "DotNet.SamplePlugin"));
+            try
+            {
+                File.Copy(SamplePlugin.Dll(), Path.Combine(dir, "DotNet.SamplePlugin", "DotNet.SamplePlugin.dll"));
+                File.WriteAllBytes(Path.Combine(dir, "broken.dll"), new byte[] { 0x4D, 0x5A, 0, 0 });
+                var catalog = AlgoCatalog.Load(new[] { typeof(FileImageStrategy).Assembly }, dir);
+
+                using (var prompts = new PromptLog())
+                {
+                    Run(form =>
+                    {
+                        Assert.IsNotNull(form.Catalog.Find("sample.region-area"), "好插件照常可用");
+                        Assert.AreEqual("错误(1)", Priv.Get<ToolStripButton>(Info(form), "tsb_error").Text);
+                        StringAssert.Contains(Status(form), "1 个插件未加载");
+                    }, catalog, defaultFlow: false);
+                    CollectionAssert.AreEqual(new string[0], prompts.Messages, "不再弹大对话框");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
+
         [TestMethod]
         public void Plugin_AppearsInToolbox_AndItsParamsAreShown()
         {

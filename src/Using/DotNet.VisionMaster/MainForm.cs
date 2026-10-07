@@ -64,6 +64,7 @@ namespace DotNet.VisionMaster
             _formInfo = new InfoForm();
             panel2.Controls.Add(_formInfo);
             ShowInfo();
+            ReportPlugins();
 
             _formTool = new ToolForm(Catalog);
             _formTool.ToolSelected += AddToolFromToolbox;
@@ -109,21 +110,19 @@ namespace DotNet.VisionMaster
         internal Func<string, string> SchemeDirPicker { get; set; } = PickFolder;
 
         /// <summary>
-        /// 扫描内置算法与插件目录。插件有问题时提示并退回只用内置算法 —— 内置算法本身有问题则直接抛出（属于程序错误）。
+        /// 扫描内置算法与插件目录。坏插件只拒绝它自己，其余插件照常可用（见 <see cref="ReportPlugins"/>）；
+        /// 内置算法本身有问题则直接抛出（属于程序错误）。
         /// </summary>
-        internal static AlgoCatalog LoadCatalog()
+        internal static AlgoCatalog LoadCatalog() => AlgoCatalog.Load(new[] { typeof(FileImageStrategy).Assembly }, PluginDir);
+
+        /// <summary> 插件加载报告写进信息窗口：每个插件一行；有被拒绝的插件时状态栏也提一句，不弹框 </summary>
+        private void ReportPlugins()
         {
-            var builtIn = new[] { typeof(FileImageStrategy).Assembly };
-            try
-            {
-                return AlgoCatalog.Load(builtIn, PluginDir);
-            }
-            catch (AlgoCatalogException ex)
-            {
-                Log.Error(nameof(MainForm), "插件加载失败, 只使用内置算法.", ex);
-                Prompt.Show(ex.Message);
-                return AlgoCatalog.Load(builtIn);
-            }
+            var report = Catalog.Report;
+            foreach (var plugin in report.Plugins)
+                _formInfo.Write(plugin.Status == PluginStatus.Loaded ? InfoLevel.Info : InfoLevel.Error, "插件 " + plugin);
+            int rejected = report.Rejected.Count();
+            if (rejected > 0) ShowStatus($"{rejected} 个插件未加载, 原因见信息窗口", InfoLevel.Warn);
         }
 
         #region 工具列表

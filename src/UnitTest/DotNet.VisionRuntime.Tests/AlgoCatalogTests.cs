@@ -117,36 +117,123 @@ namespace DotNet.VisionRuntime.Tests
             }
         }
 
-        /// <summary> 契约程序集是 Core（插件引用的那一个），不是 Runtime </summary>
-        [TestMethod]
-        public void Plugin_DirWithSharedAssemblyCopy_Rejected()
+        /// <summary> 在插件目录下建一个子目录插件，放进样例插件（可改名）与额外文件 </summary>
+        private string SubdirPlugin(string folder, string entryName = "DotNet.SamplePlugin.dll")
         {
+            string dir = Path.Combine(_dir, folder);
+            Directory.CreateDirectory(dir);
+            File.Copy(SamplePluginDll(), Path.Combine(dir, entryName));
+            return dir;
+        }
+
+        private static PluginLoadResult Plugin(AlgoCatalog catalog, string name)
+            => catalog.Report.Plugins.Single(p => p.Name == name);
+
+        /// <summary> 根目录下的共享程序集副本只拒绝它自己，不再连累整个插件目录 </summary>
+        [TestMethod]
+        public void Plugin_SharedCopyInRoot_RejectedAlone_OthersStillLoad()
+        {
+            // 契约程序集是 Core（插件引用的那一个），不是 Runtime
             File.Copy(typeof(IParaStrategy).Assembly.Location, Path.Combine(_dir, "DotNet.HalconCore.dll"));
-
-            var ex = Assert.ThrowsException<AlgoCatalogException>(() => AlgoCatalog.Load(new[] { BuiltIn }, _dir));
-
-            StringAssert.Contains(ex.Message, "DotNet.HalconCore.dll");
-            StringAssert.Contains(ex.Message, "副本");
-        }
-
-        [TestMethod]
-        public void Plugin_DirWithRuntimeCopy_Rejected()
-        {
             File.Copy(typeof(AlgoCatalog).Assembly.Location, Path.Combine(_dir, "DotNet.VisionRuntime.dll"));
+            SubdirPlugin("DotNet.SamplePlugin");
 
-            var ex = Assert.ThrowsException<AlgoCatalogException>(() => AlgoCatalog.Load(new[] { BuiltIn }, _dir));
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
 
-            StringAssert.Contains(ex.Message, "DotNet.VisionRuntime.dll");
+            Assert.IsNotNull(catalog.Find("sample.region-area"), "好插件照常加载");
+            Assert.AreEqual(12, catalog.Algorithms.Count);
+            StringAssert.Contains(string.Join(";", Plugin(catalog, "DotNet.HalconCore").Problems), "副本");
+            StringAssert.Contains(string.Join(";", Plugin(catalog, "DotNet.VisionRuntime").Problems), "DotNet.VisionRuntime.dll");
+            Assert.AreEqual(2, catalog.Report.Rejected.Count());
+            Assert.IsFalse(catalog.Report.AllLoaded);
+        }
+
+        /// <summary> 子目录里带了共享程序集副本：只拒绝这一个插件 </summary>
+        [TestMethod]
+        public void Plugin_SharedCopyInSubdir_RejectsThatPluginOnly()
+        {
+            string dir = SubdirPlugin("DotNet.SamplePlugin");
+            File.Copy(typeof(IParaStrategy).Assembly.Location, Path.Combine(dir, "DotNet.HalconCore.dll"));
+
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
+
+            var plugin = Plugin(catalog, "DotNet.SamplePlugin");
+            Assert.AreEqual(PluginStatus.Rejected, plugin.Status);
+            StringAssert.Contains(plugin.Problems.Single(), "DotNet.HalconCore.dll");
+            Assert.AreEqual(0, plugin.Algorithms.Count);
+            Assert.AreEqual(11, catalog.Algorithms.Count, "内置算法不受影响");
         }
 
         [TestMethod]
-        public void Plugin_NotADotNetAssembly_Rejected()
+        public void Plugin_NotADotNetAssembly_RejectedAlone()
         {
             File.WriteAllBytes(Path.Combine(_dir, "native.dll"), new byte[] { 0x4D, 0x5A, 0, 0 });
+            SubdirPlugin("DotNet.SamplePlugin");
 
-            var ex = Assert.ThrowsException<AlgoCatalogException>(() => AlgoCatalog.Load(new[] { BuiltIn }, _dir));
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
 
-            StringAssert.Contains(ex.Message, "native.dll");
+            StringAssert.Contains(Plugin(catalog, "native").Problems.Single(), "native.dll");
+            Assert.IsNotNull(catalog.Find("sample.region-area"));
+        }
+
+        /// <summary> 子目录插件：入口与目录同名；目录里其余 dll 是私有依赖，不扫描（原生 dll 不会被报成坏插件） </summary>
+        [TestMethod]
+        public void Plugin_Subdir_EntryByFolderName_PrivateDependenciesNotScanned()
+        {
+            string dir = SubdirPlugin("DotNet.SamplePlugin");
+            File.WriteAllBytes(Path.Combine(dir, "native_dep.dll"), new byte[] { 0x4D, 0x5A, 0, 0 });
+
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
+
+            var plugin = Plugin(catalog, "DotNet.SamplePlugin");
+            Assert.AreEqual(PluginStatus.Loaded, plugin.Status, string.Join(";", plugin.Problems));
+            Assert.AreEqual("sample.region-area", plugin.Algorithms.Single().Key);
+            Assert.AreEqual(1, catalog.Report.Plugins.Count, "私有依赖不是候选插件");
+            Assert.IsTrue(catalog.Report.AllLoaded);
+        }
+
+        [TestMethod]
+        public void Plugin_Subdir_EntryFromManifest()
+        {
+            string dir = SubdirPlugin("样例");
+            File.WriteAllText(Path.Combine(dir, AlgoCatalog.ManifestFileName), "{ \"entry\": \"DotNet.SamplePlugin.dll\", \"version\": \"1.0\" }");
+
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
+
+            Assert.AreEqual(PluginStatus.Loaded, Plugin(catalog, "样例").Status);
+            Assert.IsNotNull(catalog.Find("sample.region-area"));
+        }
+
+        [DataTestMethod]
+        [DataRow(null, "找不到入口程序集")]
+        [DataRow("{ 坏了", "plugin.json 无效")]
+        [DataRow("{ \"entry\": \"..\\\\x.dll\" }", "本目录下的文件名")]
+        [DataRow("{ }", "entry")]
+        public void Plugin_Subdir_BadLayout_Rejected(string manifest, string expected)
+        {
+            string dir = SubdirPlugin("样例", "其它名字.dll");
+            if (manifest != null) File.WriteAllText(Path.Combine(dir, AlgoCatalog.ManifestFileName), manifest);
+
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
+
+            StringAssert.Contains(Plugin(catalog, "样例").Problems.Single(), expected);
+            Assert.AreEqual(11, catalog.Algorithms.Count);
+        }
+
+        /// <summary> 键与已加载的算法重复：后来的整个插件被拒绝，先来的不受影响 </summary>
+        [TestMethod]
+        public void Plugin_DuplicateKey_LaterPluginRejected()
+        {
+            SubdirPlugin("A");
+            File.WriteAllText(Path.Combine(_dir, "A", AlgoCatalog.ManifestFileName), "{ \"entry\": \"DotNet.SamplePlugin.dll\" }");
+            SubdirPlugin("B");
+            File.WriteAllText(Path.Combine(_dir, "B", AlgoCatalog.ManifestFileName), "{ \"entry\": \"DotNet.SamplePlugin.dll\" }");
+
+            var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
+
+            Assert.AreEqual(PluginStatus.Loaded, Plugin(catalog, "A").Status);
+            StringAssert.Contains(Plugin(catalog, "B").Problems.Single(), "重复");
+            Assert.AreEqual(12, catalog.Algorithms.Count);
         }
 
         [TestMethod]
