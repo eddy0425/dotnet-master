@@ -295,7 +295,12 @@ namespace DotNet.HalconUI
             if (!IsWindowUsable() || _hWindowFont == null) return;
             try
             {
-                if (style?.Size != null) _hWindowFont.SetFontSize(style.Size.Value);
+                // 设字号失败（例如找不到对应字体）时沿用当前字体继续出字，不让整行文字消失
+                if (style?.Size != null)
+                {
+                    try { _hWindowFont.SetFontSize(style.Size.Value); }
+                    catch (Exception ex) { Log.Warn(nameof(HDisplay), "设置字号失败, 沿用当前字体.", ex); }
+                }
                 _hWindowFont.DispText(message, position.Y, position.X, ResolveTextColor(style).Name);
             }
             catch (Exception ex) { Log.Warn(nameof(HDisplay), "显示文本失败.", ex); }

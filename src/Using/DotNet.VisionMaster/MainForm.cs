@@ -325,7 +325,8 @@ namespace DotNet.VisionMaster
                     if (IsDisposed) return step.Result;
                     _display.ShowResult(frame.Image, frame.TakeOverlay());
                     ShowCycleTime(step.Result.Elapsed);
-                    ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}", LevelOf(step.Result.Status));
+                    ShowStatus($"{step.Tool.Name}: {Describe(step.Result, withMessage: false)}", LevelOf(step.Result.Status),
+                        $"{step.Tool.Name}: {Describe(step.Result, withMessage: true)}");
                     OnFlowChanged();
                     return step.Result;
                 }
@@ -358,10 +359,13 @@ namespace DotNet.VisionMaster
             _display.ShowResult(frame.Image, frame.TakeOverlay());
             string summary = $"流程: {result.Steps.Count}/{_tools.Count} 步, 用时 {result.Elapsed.TotalMilliseconds:F0} ms";
             var error = result.FirstError;
-            if (error != null) summary += Environment.NewLine + $"失败: {error.Tool.Name}: {error.Result.Message}";
-            if (issues.Count > 0) summary += Environment.NewLine + $"引用问题 {issues.Count} 处: {issues[0]}";
+            // 状态栏只写失败的工具名，运行消息只进悬停提示与信息窗口
+            string errorLine = error != null ? Environment.NewLine + $"失败: {error.Tool.Name}" : string.Empty;
+            string errorDetail = error != null ? errorLine + $": {error.Result.Message}" : string.Empty;
+            string issueLine = issues.Count > 0 ? Environment.NewLine + $"引用问题 {issues.Count} 处: {issues[0]}" : string.Empty;
             ShowCycleTime(result.Elapsed);
-            ShowStatus(summary, error != null ? InfoLevel.Error : issues.Count > 0 ? InfoLevel.Warn : InfoLevel.Info);
+            ShowStatus(summary + errorLine + issueLine, error != null ? InfoLevel.Error : issues.Count > 0 ? InfoLevel.Warn : InfoLevel.Info,
+                summary + errorDetail + issueLine);
             OnFlowChanged();
         }
 
@@ -486,28 +490,32 @@ namespace DotNet.VisionMaster
             }
         }
 
-        private static string Describe(RunResult result)
+        /// <summary> 运行结果的简述。状态栏不带消息：消息由策略画在图像上（见 ParaStrategyBase.DrawStatus），完整内容进信息窗口 </summary>
+        private static string Describe(RunResult result, bool withMessage)
         {
             string text = result.Status == RunStatus.Ok ? "OK" : result.Status == RunStatus.Warning ? "警告" : "失败";
-            return $"{text} {result.Message} ({result.Elapsed.TotalMilliseconds:F0} ms)";
+            if (withMessage && !string.IsNullOrEmpty(result.Message)) text += " " + result.Message;
+            return $"{text} ({result.Elapsed.TotalMilliseconds:F0} ms)";
         }
 
         private static InfoLevel LevelOf(RunStatus status) =>
             status == RunStatus.Ok ? InfoLevel.Info : status == RunStatus.Warning ? InfoLevel.Warn : InfoLevel.Error;
 
         /// <summary>
-        /// 状态栏只有一行：多行内容压成一行显示，完整内容放在悬停提示里。同时记入信息窗口与日志文件
+        /// 状态栏只有一行：多行内容压成一行显示，完整内容放在悬停提示里。
+        /// 同时记入信息窗口与日志文件；给了 <paramref name="detail"/> 时悬停提示与记录用它（比状态栏更详细，例如带上运行消息）
         /// </summary>
-        private void ShowStatus(string text, InfoLevel level = InfoLevel.Info)
+        private void ShowStatus(string text, InfoLevel level = InfoLevel.Info, string detail = null)
         {
+            detail = detail ?? text;
             lbl_status.Text = text.Replace(Environment.NewLine, "    ");
-            toolTip1.SetToolTip(lbl_status, text);
-            _formInfo.Write(level, text);
+            toolTip1.SetToolTip(lbl_status, detail);
+            _formInfo.Write(level, detail);
             switch (level)
             {
-                case InfoLevel.Warn: Log.Warn(nameof(MainForm), text); break;
-                case InfoLevel.Error: Log.Error(nameof(MainForm), text); break;
-                default: Log.Info(nameof(MainForm), text); break;
+                case InfoLevel.Warn: Log.Warn(nameof(MainForm), detail); break;
+                case InfoLevel.Error: Log.Error(nameof(MainForm), detail); break;
+                default: Log.Info(nameof(MainForm), detail); break;
             }
         }
 

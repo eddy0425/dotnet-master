@@ -55,6 +55,10 @@ namespace DotNet.VisionMaster.Tests
 
         private static InfoForm Info(MainForm form) => Priv.Get<InfoForm>(form, "_formInfo");
 
+        /// <summary> 信息窗口当前视图里的全部消息，合成一个字符串便于断言 </summary>
+        private static string InfoText(MainForm form) => string.Join(Environment.NewLine,
+            Priv.Get<ListView>(Info(form), "lst_log").Items.Cast<ListViewItem>().Select(i => i.SubItems[i.SubItems.Count - 1].Text));
+
         /// <summary> 主窗右侧嵌入的流程窗口 </summary>
         private static JobForm Jobs(MainForm form) => Priv.Get<JobForm>(form, "_formJob");
 
@@ -365,7 +369,9 @@ namespace DotNet.VisionMaster.Tests
                 Assert.AreEqual(RunStatus.Error, result.Status);
                 Assert.AreEqual(0, a.Runs);
                 Assert.AreEqual(1, b.Runs);
-                StringAssert.Contains(Status(form), "B: 失败 运行失败原因");
+                StringAssert.Contains(Status(form), "B: 失败");
+                Assert.IsFalse(Status(form).Contains("运行失败原因"), "运行消息画在图像上, 不进状态栏");
+                StringAssert.Contains(InfoText(form), "B: 失败 运行失败原因", "完整消息记入信息窗口");
                 StringAssert.EndsWith(ToolList(Jobs(form)).Items[1].ToString(), "✘", "失败的工具在列表里标出来");
             }, defaultFlow: false);
         }
@@ -385,7 +391,9 @@ namespace DotNet.VisionMaster.Tests
                 Assert.IsTrue(result.Stopped);
                 Assert.AreEqual(1, a.Runs);
                 Assert.AreEqual(0, c.Runs);
-                StringAssert.Contains(Status(form), "失败: B: 坏了");
+                StringAssert.Contains(Status(form), "失败: B");
+                Assert.IsFalse(Status(form).Contains("坏了"), "运行消息画在图像上, 不进状态栏");
+                StringAssert.Contains(InfoText(form), "失败: B: 坏了");
                 Assert.AreEqual("错误(1)", Priv.Get<ToolStripButton>(Info(form), "tsb_error").Text, "失败记入信息窗口");
             }, defaultFlow: false);
         }
@@ -423,7 +431,8 @@ namespace DotNet.VisionMaster.Tests
                 WaitIdle(form);
                 Assert.AreEqual(1, tool.Runs, "失败后自动停下; 连续运行期间单次运行不生效");
                 Assert.IsTrue(Info(form).Visible, "因失败停下时切到信息窗口");
-                StringAssert.Contains(Status(form), "失败: 失败工具: 失败", "失败的那一帧也显示出来");
+                StringAssert.Contains(Status(form), "失败: 失败工具", "失败的那一帧也显示出来");
+                StringAssert.Contains(InfoText(form), "失败: 失败工具: 失败");
 
                 tool.RunError = null;
                 tool.RunDelayMs = 0;

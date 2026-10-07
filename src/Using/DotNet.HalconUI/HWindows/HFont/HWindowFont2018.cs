@@ -8,13 +8,63 @@ namespace DotNet.HalconUI
     {
         HWindow hWindow;
 
-        public HWindowFont2018(HWindow _hWindow)
+        /// <summary> 读取窗口当前字体名；测试可替换，用来模拟新式命名的窗口 </summary>
+        readonly Func<string> _currentFont;
+
+        /// <summary> 创建新式命名下的设字号实现；测试可替换，用来确认委托与跳过行为 </summary>
+        readonly Func<IHWindowFont> _createModernFont;
+
+        /// <summary> 新式字体命名时的设字号实现；首次设字号时按窗口当前字体判断，之后不再查询 </summary>
+        IHWindowFont _modernFont;
+        bool _fontNamingChecked;
+        /// <summary>
+        /// 新式命名下上次设置的参数（不论成败）；相同则跳过：2022 版每次都会 query_font，代价高，
+        /// 失败多是字体不存在，同参数重试结果不变，只会让每次重放都 query_font 并刷日志。
+        /// 前提：窗口字体只经本实例修改。
+        /// </summary>
+        string _lastModernKey;
+
+        public HWindowFont2018(HWindow _hWindow) : this(_hWindow, null) { }
+
+        internal HWindowFont2018(HWindow _hWindow, Func<string> currentFont, Func<IHWindowFont> createModernFont = null)
         {
             hWindow = _hWindow;
+            _currentFont = currentFont ?? (() =>
+            {
+                HOperatorSet.GetFont(hWindow, out HTuple current);
+                return current.S;
+            });
+            _createModernFont = createModernFont ?? (() => new HWindowFont2022(hWindow));
         }
 
+        /// <summary>
+        /// 旧式（X 风格）字体名以 '-' 开头，例如 <c>-Arial-15-*-0-*-*-1-</c>；新式为 <c>Arial-Bold-15</c>。
+        /// </summary>
+        internal static bool IsLegacyFontName(string font) => !string.IsNullOrEmpty(font) && font[0] == '-';
+
+        /// <remarks>
+        /// 同是 WIN32-Window，HALCON 用哪种字体命名取决于进程环境：测试宿主里是旧式（当前字体 <c>-fixed-</c>），
+        /// 产品里是新式（<c>default-Normal-12</c>），这时旧式字体名报 #5137，文本整行消失。
+        /// 因此按窗口当前字体名的格式选择：新式命名交给 <see cref="HWindowFont2022.SetFontSize"/>（set_font 与图形栈无关，
+        /// 只有 disp_text 才区分），文本仍由本类的 write_string 输出。
+        /// 命名方式在窗口生命周期内不变，只在首次设字号（尚未 set_font）时判断一次：叠加层每次重放都会设字号。
+        /// </remarks>
         public void SetFontSize(HTuple hv_Size, string font, string bold, string slant)
         {
+            if (!_fontNamingChecked)
+            {
+                if (!IsLegacyFontName(_currentFont())) _modernFont = _createModernFont();
+                _fontNamingChecked = true;
+            }
+            if (_modernFont != null)
+            {
+                string key = $"{hv_Size}|{font}|{bold}|{slant}";
+                if (key == _lastModernKey) return;
+                _lastModernKey = key;   // 先记再设：失败也不重试，异常只在首次抛出
+                _modernFont.SetFontSize(hv_Size, font, bold, slant);
+                return;
+            }
+
             HTuple hv_Font = new HTuple(font);
             HTuple hv_Bold = new HTuple(bold);
             HTuple hv_Slant = new HTuple(slant);

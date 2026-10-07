@@ -103,6 +103,98 @@ namespace DotNet.HalconUI.Tests
             });
         }
 
+        /// <summary>
+        /// 产品进程里 WIN32-Window 用的是新式字体命名（当前字体 default-Normal-12），旧式名报 #5137 导致文本不显示；
+        /// 测试宿主是旧式命名，造不出新式窗口，这里只校验格式判断。
+        /// </summary>
+        [TestMethod]
+        public void Font2018_IsLegacyFontName_ByLeadingDash()
+        {
+            Assert.IsTrue(HWindowFont2018.IsLegacyFontName("-fixed-"));
+            Assert.IsTrue(HWindowFont2018.IsLegacyFontName("-Arial-15-*-0-*-*-1-"));
+            Assert.IsFalse(HWindowFont2018.IsLegacyFontName("default-Normal-12"));
+            Assert.IsFalse(HWindowFont2018.IsLegacyFontName("Arial-Bold-15"));
+            Assert.IsFalse(HWindowFont2018.IsLegacyFontName(""));
+            Assert.IsFalse(HWindowFont2018.IsLegacyFontName(null));
+        }
+
+        /// <summary> 记录设字号调用的假实现；可设成每次都失败 </summary>
+        private sealed class RecordingFont : IHWindowFont
+        {
+            public readonly System.Collections.Generic.List<string> Calls = new System.Collections.Generic.List<string>();
+            public bool Fail;
+
+            public void SetFontSize(HTuple hv_Size, string font, string bold, string slant)
+            {
+                Calls.Add($"{hv_Size}|{font}|{bold}|{slant}");
+                if (Fail) throw new HalconException("Wrong value of control parameter Font");
+            }
+
+            public void DispText(string message, HTuple hv_Row, HTuple hv_Column, string color, string coordSystem) { }
+        }
+
+        /// <summary>
+        /// 注入当前字体名模拟新式命名的窗口：设字号应交给新式实现，不走旧式 "-Arial-..." 拼接。
+        /// 命名方式只判断一次，后续设字号不再读当前字体；同参数重复设置直接跳过。
+        /// </summary>
+        [TestMethod]
+        public void Font2018_ModernFontNaming_DelegatesToModern_CheckedOnce()
+        {
+            WindowHost.Run(host =>
+            {
+                HOperatorSet.GetFont(host.Window, out HTuple before);
+                int reads = 0;
+                var modern = new RecordingFont();
+                var font = new HWindowFont2018(host.Window, () => { reads++; return "default-Normal-12"; }, () => modern);
+
+                font.SetFontSize(15, "sans", "true", "false");
+                font.SetFontSize(15, "sans", "true", "false");
+                font.SetFontSize(30, "sans", "true", "false");
+
+                CollectionAssert.AreEqual(new[] { "15|sans|true|false", "30|sans|true|false" }, modern.Calls);
+                Assert.AreEqual(1, reads);
+                HOperatorSet.GetFont(host.Window, out HTuple after);
+                Assert.AreEqual(before.S, after.S, "新式命名下不应走旧式 set_font");
+            });
+        }
+
+        /// <summary>
+        /// 新式实现设字号失败（字体不存在）时只在首次抛出；同参数不再重试，避免每次重放都 query_font 并刷日志。
+        /// 换了参数仍会再试。
+        /// </summary>
+        [TestMethod]
+        public void Font2018_ModernFontNaming_FailureNotRetriedForSameArgs()
+        {
+            WindowHost.Run(host =>
+            {
+                var modern = new RecordingFont { Fail = true };
+                var font = new HWindowFont2018(host.Window, () => "default-Normal-12", () => modern);
+
+                Assert.ThrowsException<HalconException>(() => font.SetFontSize(15, "sans", "true", "false"));
+                font.SetFontSize(15, "sans", "true", "false");
+                Assert.ThrowsException<HalconException>(() => font.SetFontSize(30, "sans", "true", "false"));
+
+                Assert.AreEqual(2, modern.Calls.Count);
+            });
+        }
+
+        [TestMethod]
+        public void Font2018_LegacyFontNaming_UsesXStyleName_CheckedOnce()
+        {
+            WindowHost.Run(host =>
+            {
+                int reads = 0;
+                var font = new HWindowFont2018(host.Window, () => { reads++; return "-fixed-"; });
+
+                font.SetFontSize(15, "sans", "true", "false");
+                font.SetFontSize(30, "sans", "true", "false");
+
+                HOperatorSet.GetFont(host.Window, out HTuple current);
+                Assert.AreEqual("-Arial-30-*-0-*-*-1-", current.S);
+                Assert.AreEqual(1, reads);
+            });
+        }
+
         [TestMethod]
         public void Font2018_SetFontFailure_RethrowsHalconException()
         {
