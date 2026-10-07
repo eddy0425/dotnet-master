@@ -8,7 +8,7 @@ using DotNet.HalconCore;
 using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// <see cref="OverlayList"/>：复制句柄、按顺序重放、释放后句柄归零。

@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 using DotNet.Drawing;
-using DotNet.VisionRuntime;
+using DotNet.HalconRuntime;
 using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

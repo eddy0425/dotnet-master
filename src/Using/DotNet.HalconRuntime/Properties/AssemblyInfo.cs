@@ -1,11 +1,11 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("DotNet.VisionRuntime")]
+[assembly: AssemblyTitle("DotNet.HalconRuntime")]
 [assembly: AssemblyDescription("无界面的宿主内核：插件加载、算法目录、流程引擎、方案读写；不依赖 System.Windows.Forms")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("DotNet.VisionRuntime")]
+[assembly: AssemblyProduct("DotNet.HalconRuntime")]
 [assembly: AssemblyCopyright("Copyright ©  2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

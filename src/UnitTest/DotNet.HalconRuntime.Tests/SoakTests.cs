@@ -8,7 +8,7 @@ using DotNet.HalconCore;
 using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// 验收：长时间循环运行时内存平稳 —— 流程里每个工具每轮都换新的 HObject，旧的必须及时释放。
@@ -20,7 +20,7 @@ namespace DotNet.VisionRuntime.Tests
         [TestCategory("Soak")]
         public void Flow_RepeatedRuns_MemoryStaysFlat()
         {
-            string dir = Path.Combine(Path.GetTempPath(), "DotNet.VisionRuntime.Tests", Guid.NewGuid().ToString("N"));
+            string dir = Path.Combine(Path.GetTempPath(), "DotNet.HalconRuntime.Tests", Guid.NewGuid().ToString("N"));
             var shape = new ShapeModelStrategy { DataDir = Path.Combine(dir, "shape") };
             var roi = new CreateROIStrategy();
             var fit = new FitLineStrategy();

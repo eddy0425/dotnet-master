@@ -9,7 +9,7 @@ using DotNet.HalconCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// 端到端：外置插件放进 <c>plugins\&lt;名称&gt;\</c> → 建工具 → 存方案 → 重新加载；参数版本迁移；插件缺失 / 版本更新时原样保留。
@@ -28,7 +28,7 @@ namespace DotNet.VisionRuntime.Tests
         [TestInitialize]
         public void SetUp()
         {
-            _root = Path.Combine(Path.GetTempPath(), "DotNet.VisionRuntime.Tests", Guid.NewGuid().ToString("N"));
+            _root = Path.Combine(Path.GetTempPath(), "DotNet.HalconRuntime.Tests", Guid.NewGuid().ToString("N"));
             _plugins = Path.Combine(_root, "plugins");
             _scheme = Path.Combine(_root, "方案");
             string dir = Path.Combine(_plugins, "DotNet.SamplePlugin");

@@ -8,7 +8,7 @@ using System.Windows.Forms;
 using DotNet.Drawing;
 using DotNet.HalconAlgo;
 using DotNet.HalconCore;
-using DotNet.VisionRuntime;
+using DotNet.HalconRuntime;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace DotNet.VisionMaster.Tests

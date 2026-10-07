@@ -7,15 +7,15 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>DotNet.VisionRuntime.Tests</RootNamespace>
-    <AssemblyName>DotNet.VisionRuntime.Tests</AssemblyName>
+    <RootNamespace>DotNet.HalconRuntime.Tests</RootNamespace>
+    <AssemblyName>DotNet.HalconRuntime.Tests</AssemblyName>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <ProjectTypeGuids>{3AC096D0-A1C2-E12C-1390-A8335801FDAB};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
-  <!-- 被测的 DotNet.VisionRuntime 引用 halcondotnet（x64），测试程序集与测试宿主必须同为 x64。 -->
+  <!-- 被测的 DotNet.HalconRuntime 引用 halcondotnet（x64），测试程序集与测试宿主必须同为 x64。 -->
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>x64</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
@@ -81,9 +81,9 @@
       <Project>{7B2E4C10-9D6A-4F31-A5C8-3E0B1D742F96}</Project>
       <Name>DotNet.HalconCore</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\Using\DotNet.VisionRuntime\DotNet.VisionRuntime.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.HalconRuntime\DotNet.HalconRuntime.csproj">
       <Project>{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481}</Project>
-      <Name>DotNet.VisionRuntime</Name>
+      <Name>DotNet.HalconRuntime</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\Using\DotNet.HalconAlgo\DotNet.HalconAlgo.csproj">
       <Project>{90FFD348-89AE-46AD-995F-780490A7865F}</Project>

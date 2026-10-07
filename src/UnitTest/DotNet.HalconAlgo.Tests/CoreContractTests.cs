@@ -13,7 +13,7 @@ namespace DotNet.HalconAlgo.Tests
 {
     /// <summary>
     /// 程序集依赖边界：契约（Core）与内置算法（HalconAlgo）只依赖允许的程序集。
-    /// 目录扫描 / 插件加载的测试在 DotNet.VisionRuntime.Tests。
+    /// 目录扫描 / 插件加载的测试在 DotNet.HalconRuntime.Tests。
     /// </summary>
     [TestClass]
     public class ArchitectureTests

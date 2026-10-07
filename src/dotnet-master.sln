@@ -43,9 +43,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.Drawing", "Using\Dot
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.SamplePlugin", "UnitTest\DotNet.SamplePlugin\DotNet.SamplePlugin.csproj", "{6E4B0C1A-3F7D-4A52-9C8E-2B1D5F0A7E31}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.VisionRuntime", "Using\DotNet.VisionRuntime\DotNet.VisionRuntime.csproj", "{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.HalconRuntime", "Using\DotNet.HalconRuntime\DotNet.HalconRuntime.csproj", "{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.VisionRuntime.Tests", "UnitTest\DotNet.VisionRuntime.Tests\DotNet.VisionRuntime.Tests.csproj", "{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.HalconRuntime.Tests", "UnitTest\DotNet.HalconRuntime.Tests\DotNet.HalconRuntime.Tests.csproj", "{D82F4B19-3E6A-4C07-B5D1-9A0E7C6F2B53}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet.HalconKit", "Using\DotNet.HalconKit\DotNet.HalconKit.csproj", "{B6E2A7D4-91C3-4F58-A0D2-5C7E8F1B3A69}"
 EndProject

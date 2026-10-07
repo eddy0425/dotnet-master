@@ -86,9 +86,9 @@
       <Project>{7B2E4C10-9D6A-4F31-A5C8-3E0B1D742F96}</Project>
       <Name>DotNet.HalconCore</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\Using\DotNet.VisionRuntime\DotNet.VisionRuntime.csproj">
+    <ProjectReference Include="..\..\Using\DotNet.HalconRuntime\DotNet.HalconRuntime.csproj">
       <Project>{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481}</Project>
-      <Name>DotNet.VisionRuntime</Name>
+      <Name>DotNet.HalconRuntime</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\Using\DotNet.HalconAlgo\DotNet.HalconAlgo.csproj">
       <Project>{90FFD348-89AE-46AD-995F-780490A7865F}</Project>

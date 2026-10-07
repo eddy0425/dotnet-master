@@ -85,6 +85,8 @@ plugins\*.dll             ← 只引用 Drawing + HalconCore（SamplePlugin 已�
 
 ### 2.1 总体：微内核 + 三层契约
 
+> 运行时现统一命名为 `DotNet.HalconRuntime`（原 `DotNet.VisionRuntime`），下文任务记录同步使用现名。程序集名称和公共类型命名空间变更后，直接引用旧运行时的外部程序需要更新引用并重新编译；仅依赖 Core（可选 Kit）的算法插件不直接受此影响。
+
 ```
 ┌──────────────────────────── Shell（WinForms 外壳）────────────────────────────┐
 │ DotNet.VisionMaster   组合根：主窗、流程窗、工具箱、信息窗；只组装，不含业务     │
@@ -92,7 +94,7 @@ plugins\*.dll             ← 只引用 Drawing + HalconCore（SamplePlugin 已�
 └───────────────────────────────────────────────────────────────────────────────┘
                  ↓ 只依赖 Runtime + SDK
 ┌──────────────────────────── Runtime（无界面内核）─────────────────────────────┐
-│ DotNet.VisionRuntime（新）  插件加载、算法目录、流程引擎、执行会话（工作线程）、   │
+│ DotNet.HalconRuntime（新）  插件加载、算法目录、流程引擎、执行会话（工作线程）、   │
 │                            方案读写、参数迁移；可以被控制台 / 服务 / 测试直接使用  │
 └───────────────────────────────────────────────────────────────────────────────┘
                  ↓ 只依赖 SDK
@@ -116,13 +118,13 @@ plugins\*.dll             ← 只引用 Drawing + HalconCore（SamplePlugin 已�
 | HalconCore（SDK） | 上面 + Drawing |
 | HalconKit | 上面 + HalconCore，**不得**引用 WinForms |
 | HalconAlgo / 外置插件 | 上面 + HalconCore，可选 HalconKit |
-| VisionRuntime | 上面 + HalconCore，**不得**引用 System.Windows.Forms，**不得**引用 HalconAlgo |
-| HalconUI | 上面 + HalconCore + VisionRuntime + WinForms，**不得**引用 HalconAlgo |
+| HalconRuntime | 上面 + HalconCore，**不得**引用 System.Windows.Forms，**不得**引用 HalconAlgo |
+| HalconUI | 上面 + HalconCore + HalconRuntime + WinForms，**不得**引用 HalconAlgo |
 | VisionMaster | 全部（它是组合根），内置算法程序集只用来传给 `AlgoCatalog.Load` |
 
 ### 2.2 SDK 收窄（解决 A1、A11、A14）
 
-**移出 Core → VisionRuntime**：`AlgoCatalog`、`AlgoCatalogException`、`FlowRunner` 及其结果类型、`FlowScheme`、`MissingTool`。
+**移出 Core → HalconRuntime**：`AlgoCatalog`、`AlgoCatalogException`、`FlowRunner` 及其结果类型、`FlowScheme`、`MissingTool`。
 
 **留在 Core**：插件编写时需要的一切——`AlgoAttribute`、`AlgoInfo`（只读元数据）、`ParaStrategyBase`、能力接口、`ParamBuilder`/`ParamItem`、`OutputBuilder`/`OutputItem`、`RunContext`、`CoordFollow`、`RunResult`、`SourceRef`、`DisplayOptions`、`IOverlay`（新）。`StrategyExtensions`（`FindTool`、`Describe`）**也留在 Core**：`RunContext.Describe` / `Find` 依赖它，算法的报错文字（如 `LineRotImageStrategy` 的 `context.Describe(...)`）也经由它生成。
 
@@ -316,10 +318,10 @@ public class RegionAreaStrategy : ParaStrategyBase<RegionAreaPara>
 
 ### 阶段 7：拆出 Runtime（3～4 天，低风险，纯搬家）
 
-- [x] 新建 `src/Using/DotNet.VisionRuntime`（.NET Framework 4.5.2，x64，与其它项目一致），加入解决方案。
-- [x] 把 `AlgoCatalog`、`AlgoCatalogException`、`FlowRunner`（含 `FlowFailurePolicy`、`FlowStepResult`、`FlowRunResult`、`FlowIssue`）、`FlowScheme`、`MissingTool` 移过去，命名空间改为 `DotNet.VisionRuntime`。`StrategyExtensions` 留在 Core（`RunContext` 依赖它）。
-- [x] 处理跨程序集访问点（实测只有这些）：`AlgoInfo` 的 `internal` 构造函数（`AlgoCatalog` 在用）改为公开的 `AlgoInfo.From(AlgoAttribute, Type)`；`ContractMajorVersion` 改为读 Core 程序集的版本号；`SharedAssemblies` 加上 `DotNet.VisionRuntime`。`RunContext.CurrentImage` 的 `internal set` 没有任何调用方，直接改成只读即可。不加 `InternalsVisibleTo`。
-- [x] HalconUI、VisionMaster、测试项目改引用；新建 `DotNet.VisionRuntime.Tests`，迁入 `FlowTests`、`SoakTests`，以及 `CoreContractTests` 里关于目录 / 插件加载的部分（`BuiltIn_*`、`Create_*`、`Load_*`、`Plugin_*`）；契约部分（`ParamBuilder`、`OutputBuilder`、`SourceRef`、`RunContext`、基类执行顺序）留在原处。`Plugin_DirWithSharedAssemblyCopy_Rejected` 现在复制的是 `typeof(AlgoCatalog).Assembly`，要改成复制 Core 程序集。
+- [x] 新建 `src/Using/DotNet.HalconRuntime`（.NET Framework 4.5.2，x64，与其它项目一致），加入解决方案。
+- [x] 把 `AlgoCatalog`、`AlgoCatalogException`、`FlowRunner`（含 `FlowFailurePolicy`、`FlowStepResult`、`FlowRunResult`、`FlowIssue`）、`FlowScheme`、`MissingTool` 移过去，命名空间改为 `DotNet.HalconRuntime`。`StrategyExtensions` 留在 Core（`RunContext` 依赖它）。
+- [x] 处理跨程序集访问点（实测只有这些）：`AlgoInfo` 的 `internal` 构造函数（`AlgoCatalog` 在用）改为公开的 `AlgoInfo.From(AlgoAttribute, Type)`；`ContractMajorVersion` 改为读 Core 程序集的版本号；`SharedAssemblies` 加上 `DotNet.HalconRuntime`。`RunContext.CurrentImage` 的 `internal set` 没有任何调用方，直接改成只读即可。不加 `InternalsVisibleTo`。
+- [x] HalconUI、VisionMaster、测试项目改引用；新建 `DotNet.HalconRuntime.Tests`，迁入 `FlowTests`、`SoakTests`，以及 `CoreContractTests` 里关于目录 / 插件加载的部分（`BuiltIn_*`、`Create_*`、`Load_*`、`Plugin_*`）；契约部分（`ParamBuilder`、`OutputBuilder`、`SourceRef`、`RunContext`、基类执行顺序）留在原处。`Plugin_DirWithSharedAssemblyCopy_Rejected` 现在复制的是 `typeof(AlgoCatalog).Assembly`，要改成复制 Core 程序集。
 - [x] 架构测试补齐：Core 不引用 WinForms；Runtime 不引用 WinForms、不引用 HalconAlgo；HalconUI 不引用 HalconAlgo（现在只有 HalconAlgo 的白名单测试）。
 - [x] 删除 `ITreeNodeProvider` / `ITreeVisualizer` / `ITreeBranch`，`ValueForm` 改为直接遍历 `Outputs`；`HalconUI.TreeVisualizer` 一并删除。HalconAlgo.Tests 里 6 处 `GenTreeNode` 测试与 `FakeTree` 改为断言 `Outputs`。
 - [x] 公开 API 快照测试（Core 一份基线文件）。

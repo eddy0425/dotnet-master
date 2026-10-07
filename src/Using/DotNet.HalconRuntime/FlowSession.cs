@@ -8,7 +8,7 @@ using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
 
-namespace DotNet.VisionRuntime
+namespace DotNet.HalconRuntime
 {
     /// <summary>
     /// 一帧运行结果，可以安全地交给别的线程：底图是副本，叠加层已按执行顺序合成，二者都归本对象所有。

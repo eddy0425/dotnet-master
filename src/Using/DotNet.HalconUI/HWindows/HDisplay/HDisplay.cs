@@ -4,8 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using DotNet.HalconCore;
-using DotNet.HalconUI.Draw;
-using DotNet.VisionRuntime;
+using DotNet.HalconRuntime;
 
 namespace DotNet.HalconUI
 {

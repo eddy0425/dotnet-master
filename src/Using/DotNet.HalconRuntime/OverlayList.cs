@@ -5,7 +5,7 @@ using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
 
-namespace DotNet.VisionRuntime
+namespace DotNet.HalconRuntime
 {
     /// <summary> 叠加层图元的种类 </summary>
     public enum OverlayKind

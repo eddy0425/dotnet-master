@@ -2,8 +2,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-[assembly: AssemblyTitle("DotNet.VisionRuntime.Tests")]
-[assembly: AssemblyProduct("DotNet.VisionRuntime.Tests")]
+[assembly: AssemblyTitle("DotNet.HalconRuntime.Tests")]
+[assembly: AssemblyProduct("DotNet.HalconRuntime.Tests")]
 [assembly: AssemblyCopyright("Copyright ©  2026")]
 [assembly: ComVisible(false)]
 [assembly: Guid("d82f4b19-3e6a-4c07-b5d1-9a0e7c6f2b53")]

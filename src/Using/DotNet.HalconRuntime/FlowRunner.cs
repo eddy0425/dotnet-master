@@ -7,7 +7,7 @@ using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
 
-namespace DotNet.VisionRuntime
+namespace DotNet.HalconRuntime
 {
     /// <summary> 流程里某个工具失败之后怎么办 </summary>
     public enum FlowFailurePolicy

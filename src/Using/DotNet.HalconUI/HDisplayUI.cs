@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 using DotNet.HalconCore;
-using DotNet.VisionRuntime;
+using DotNet.HalconRuntime;
 
 
 namespace DotNet.HalconUI

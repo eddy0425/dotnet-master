@@ -8,7 +8,7 @@ using DotNet.HalconAlgo.Tests;
 using DotNet.HalconCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// 插件契约：目录扫描、启动校验、稳定键、外置插件。
@@ -22,7 +22,7 @@ namespace DotNet.VisionRuntime.Tests
         [TestInitialize]
         public void SetUp()
         {
-            _dir = Path.Combine(Path.GetTempPath(), "DotNet.VisionRuntime.Tests", Guid.NewGuid().ToString("N"));
+            _dir = Path.Combine(Path.GetTempPath(), "DotNet.HalconRuntime.Tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_dir);
         }
 
@@ -135,7 +135,7 @@ namespace DotNet.VisionRuntime.Tests
         {
             // 契约程序集是 Core（插件引用的那一个），不是 Runtime
             File.Copy(typeof(IParaStrategy).Assembly.Location, Path.Combine(_dir, "DotNet.HalconCore.dll"));
-            File.Copy(typeof(AlgoCatalog).Assembly.Location, Path.Combine(_dir, "DotNet.VisionRuntime.dll"));
+            File.Copy(typeof(AlgoCatalog).Assembly.Location, Path.Combine(_dir, "DotNet.HalconRuntime.dll"));
             SubdirPlugin("DotNet.SamplePlugin");
 
             var catalog = AlgoCatalog.Load(new[] { BuiltIn }, _dir);
@@ -143,7 +143,7 @@ namespace DotNet.VisionRuntime.Tests
             Assert.IsNotNull(catalog.Find("sample.region-area"), "好插件照常加载");
             Assert.AreEqual(12, catalog.Algorithms.Count);
             StringAssert.Contains(string.Join(";", Plugin(catalog, "DotNet.HalconCore").Problems), "副本");
-            StringAssert.Contains(string.Join(";", Plugin(catalog, "DotNet.VisionRuntime").Problems), "DotNet.VisionRuntime.dll");
+            StringAssert.Contains(string.Join(";", Plugin(catalog, "DotNet.HalconRuntime").Problems), "DotNet.HalconRuntime.dll");
             Assert.AreEqual(2, catalog.Report.Rejected.Count());
             Assert.IsFalse(catalog.Report.AllLoaded);
         }
@@ -251,7 +251,7 @@ namespace DotNet.VisionRuntime.Tests
     }
 }
 
-namespace DotNet.VisionRuntime.Tests.BadAlgos
+namespace DotNet.HalconRuntime.Tests.BadAlgos
 {
     // 只在 Load_InvalidTypes_ReportsAllProblems 里被显式扫描: 目录不扫整个 AppDomain, 平时不会被登记
 

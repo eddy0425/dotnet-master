@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using DotNet.Drawing;
 using DotNet.HalconCore;
-using DotNet.VisionRuntime;
+using DotNet.HalconRuntime;
 
 namespace DotNet.VisionMaster
 {

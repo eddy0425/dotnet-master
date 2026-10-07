@@ -10,7 +10,7 @@ using DotNet.HalconCore;
 using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// <see cref="FlowSession"/>：专用线程、请求严格串行、取消在两个工具之间生效、连续运行、参数写回排在两帧之间。

@@ -8,7 +8,7 @@ using DotNet.HalconCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace DotNet.VisionRuntime
+namespace DotNet.HalconRuntime
 {
     /// <summary> 一个插件的加载结果 </summary>
     public enum PluginStatus
@@ -79,7 +79,7 @@ namespace DotNet.VisionRuntime
     public sealed class AlgoCatalog
     {
         /// <summary> 插件不得自带副本的程序集：它们必须与宿主共用同一份 </summary>
-        internal static readonly string[] SharedAssemblies = { "halcondotnet", "DotNet.HalconCore", "DotNet.Drawing", "DotNet.VisionRuntime", "DotNet.HalconKit", "Newtonsoft.Json" };
+        internal static readonly string[] SharedAssemblies = { "halcondotnet", "DotNet.HalconCore", "DotNet.Drawing", "DotNet.HalconRuntime", "DotNet.HalconKit", "Newtonsoft.Json" };
 
         /// <summary> 契约程序集（DotNet.HalconCore），插件编译时引用的就是它 </summary>
         private static readonly AssemblyName Contract = typeof(IParaStrategy).Assembly.GetName();

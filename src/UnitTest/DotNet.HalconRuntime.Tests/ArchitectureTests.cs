@@ -2,7 +2,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// 架构守卫：Runtime 是无界面的宿主内核 —— 不引用 WinForms，也不认识任何具体算法。

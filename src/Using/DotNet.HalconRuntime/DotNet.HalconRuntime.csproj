@@ -6,8 +6,8 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481}</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>DotNet.VisionRuntime</RootNamespace>
-    <AssemblyName>DotNet.VisionRuntime</AssemblyName>
+    <RootNamespace>DotNet.HalconRuntime</RootNamespace>
+    <AssemblyName>DotNet.HalconRuntime</AssemblyName>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>

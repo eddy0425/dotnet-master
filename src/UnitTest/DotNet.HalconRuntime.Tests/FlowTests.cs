@@ -10,7 +10,7 @@ using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 
-namespace DotNet.VisionRuntime.Tests
+namespace DotNet.HalconRuntime.Tests
 {
     /// <summary>
     /// <see cref="FlowRunner"/>：顺序执行、只给上游、当前图像随图像工具前进、失败策略、运行前校验。
@@ -329,7 +329,7 @@ namespace DotNet.VisionRuntime.Tests
         [TestInitialize]
         public void SetUp()
         {
-            _root = Path.Combine(Path.GetTempPath(), "DotNet.VisionRuntime.Tests", Guid.NewGuid().ToString("N"));
+            _root = Path.Combine(Path.GetTempPath(), "DotNet.HalconRuntime.Tests", Guid.NewGuid().ToString("N"));
             _catalog = AlgoCatalog.Load(new[] { typeof(FileImageStrategy).Assembly });
         }
 

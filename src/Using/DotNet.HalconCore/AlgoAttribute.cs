@@ -5,7 +5,7 @@ using DotNet.Drawing;
 namespace DotNet.HalconCore
 {
     /// <summary>
-    /// 把一个策略类登记为算法：宿主启动时由算法目录（<c>DotNet.VisionRuntime.AlgoCatalog</c>）扫描带本特性的类型，自动生成工具箱。
+    /// 把一个策略类登记为算法：宿主启动时由算法目录（<c>DotNet.HalconRuntime.AlgoCatalog</c>）扫描带本特性的类型，自动生成工具箱。
     /// </summary>
     /// <remarks>
     /// 取代原来的 <c>AlgoEnum</c> 与宿主里手写的 <c>new</c>。新增一个算法只需要写一个类并打上本特性，
