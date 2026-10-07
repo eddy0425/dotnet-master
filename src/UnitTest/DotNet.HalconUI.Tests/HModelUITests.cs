@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using DotNet.Drawing;
 using DotNet.HalconCore;
+using DotNet.HalconRuntime;
 using HalconDotNet;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -43,6 +44,8 @@ namespace DotNet.HalconUI.Tests
 
         private static T Field<T>(HModelUI ui, string name) =>
             (T)typeof(HModelUI).GetField(name, Private).GetValue(ui);
+
+        private static OverlayList Overlay(HModelUI ui) => Field<HDisplay>(ui, "display").Overlay;
 
         private static HObject TemplateRect() => Rectangle1(ResultRow - 10, ResultCol - 10, ResultRow + 10, ResultCol + 10);
 
@@ -97,7 +100,7 @@ namespace DotNet.HalconUI.Tests
 
                     Assert.AreEqual(0, CountObj(Field<HObject>(ui, "_modeRect")));
                     Assert.AreEqual(0, CountObj(Field<HObject>(ui, "_contour")));
-                    ui.OnMouseMove(null, Mouse.Move(0, 0));
+                    Assert.AreEqual(1, Overlay(ui).Count, "空区域 / 轮廓不进叠加层，只剩坐标系");
                 }
             });
         }
@@ -128,7 +131,7 @@ namespace DotNet.HalconUI.Tests
         [TestMethod]
         public void DisplayModel_MissingImage_KeepsPreviousModel()
         {
-            // 读图失败时，已显示的模板不能被拆成半释放状态：之后鼠标移动还要拿这些字段重绘
+            // 读图失败时，已显示的模板不能被拆成半释放状态：这些字段之后还要随控件释放
             Run(ui =>
             {
                 using (var rect = TemplateRect())
@@ -151,9 +154,53 @@ namespace DotNet.HalconUI.Tests
         }
 
         [TestMethod]
-        public void MouseMove_BeforeDisplayModel_DoesNotThrow()
+        public void ClearModel_ReleasesModelAndHidesWindow_DisplayModelShowsAgain()
         {
-            Run(ui => ui.OnMouseMove(null, Mouse.Move(10, 10)));
+            // 切到没有模板的工具时清空：不能留着上一个工具的模板图
+            Run(ui =>
+            {
+                using (var rect = TemplateRect())
+                using (var contour = TemplateContour())
+                {
+                    ui.DisplayModel(_imagePath, rect, contour, Result);
+                    var names = new[] { "_srcImage", "_modeRect", "_contour" };
+                    var before = Array.ConvertAll(names, n => Field<HObject>(ui, n));
+                    var window = ui.hWindowControl;
+
+                    ui.ClearModel();
+
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        Assert.IsFalse(before[i].IsInitialized(), names[i] + " 的旧对象应被释放");
+                        Assert.AreEqual(0, CountObj(Field<HObject>(ui, names[i])), names[i] + " 应为空对象");
+                    }
+                    Assert.IsFalse(window.Visible, "清空后窗口应隐藏");
+                    Assert.IsNull(Overlay(ui), "清空后不应留着上一个模板的叠加层");
+
+                    ui.DisplayModel(_imagePath, rect, contour, Result);
+                    Assert.IsTrue(window.Visible, "再次显示模板时窗口应恢复");
+                }
+            });
+        }
+
+        [TestMethod]
+        public void DisplayModel_WhileHidden_KeepsOverlayForReplay()
+        {
+            // 模版设置页未选中时就显示模板：窗口画不了，区域 / 轮廓 / 坐标系要留在叠加层里，
+            // 等页面切过来重画图像时一起重放（原来直接画在窗口上，要等鼠标移动才出来）
+            Run(ui =>
+            {
+                using (var rect = TemplateRect())
+                using (var contour = TemplateContour())
+                {
+                    ui.Visible = false;
+                    ui.DisplayModel(_imagePath, rect, contour, Result);
+                    Assert.AreEqual(3, Overlay(ui).Count);
+
+                    ui.Visible = true;
+                    Assert.AreEqual(3, Overlay(ui).Count, "重新可见后叠加层仍在，随图像重放");
+                }
+            });
         }
 
         [TestMethod]

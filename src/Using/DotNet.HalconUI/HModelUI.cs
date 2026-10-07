@@ -3,6 +3,7 @@ using HalconDotNet;
 using System;
 using System.Windows.Forms;
 using DotNet.HalconCore;
+using DotNet.HalconRuntime;
 
 
 namespace DotNet.HalconUI
@@ -26,8 +27,6 @@ namespace DotNet.HalconUI
             HOperatorSet.GenEmptyObj(out _srcImage);
             HOperatorSet.GenEmptyObj(out _modeRect);
             HOperatorSet.GenEmptyObj(out _contour);
-
-            hWindowControl.HMouseMove += OnMouseMove;
         }
 
         /// <remarks>
@@ -36,8 +35,6 @@ namespace DotNet.HalconUI
         /// </remarks>
         public void DisplayModel(string modelPath, HObject ho_ModeRect, HObject ho_Contour, ModelResult result)
         {
-            hWindowControl.Focus();
-
             using (var preview = TemplatePreview.Load(modelPath, ho_ModeRect, ho_Contour, result))
             {
                 _coord = preview.Coord;
@@ -47,10 +44,44 @@ namespace DotNet.HalconUI
                 Replace(ref _contour, ref contour);
             }
 
-            display.DispImage(_srcImage);
-            display.Disp(_modeRect, DrawStyle.Of(HColor.Blue));
-            display.Disp(_contour, DrawStyle.Of(HColor.Green));
-            display.Disp(_coord, DrawStyle.Of(HColor.Red));
+            // 区域 / 轮廓 / 坐标系交给叠加层，由显示对象在每次重画图像后重放。原来直接画在窗口上：
+            // 所在页未选中时画不上，切到页面后只补画了图像，要等鼠标移动（OnMouseMove 重画）才出来。
+            // 叠加层先建好再显示：建失败时不换窗口里的图（字段已是新模板，窗口仍停在上一帧）
+            var overlay = new OverlayList();
+            try
+            {
+                overlay.Add(_modeRect, DrawStyle.Of(HColor.Blue));
+                overlay.Add(_contour, DrawStyle.Of(HColor.Green));
+                overlay.Add(_coord, DrawStyle.Of(HColor.OrangeRed));
+            }
+            catch
+            {
+                overlay.Dispose();
+                throw;
+            }
+            // 先恢复可见再显示：隐藏时窗口画不了，这一帧会被挂起
+            hWindowControl.Visible = true;
+            display.ShowFrame(_srcImage, overlay);
+        }
+
+        /// <summary> 清空缩略图（工具还没有模板或匹配结果时），下次 <see cref="DisplayModel"/> 再显示 </summary>
+        /// <remarks>
+        /// 窗口里的图由 <see cref="HWindowImage"/> 持有，尺寸变化时会重画；只清窗会让上一张模板图又冒出来，
+        /// 所以直接把窗口藏起来。
+        /// </remarks>
+        public void ClearModel()
+        {
+            // 建一个换一个：中途失败时已建好的空对象不会没人接手
+            HOperatorSet.GenEmptyObj(out HObject srcImage);
+            Replace(ref _srcImage, ref srcImage);
+            HOperatorSet.GenEmptyObj(out HObject modeRect);
+            Replace(ref _modeRect, ref modeRect);
+            HOperatorSet.GenEmptyObj(out HObject contour);
+            Replace(ref _contour, ref contour);
+            _coord = default(CvCoord);
+            // 先藏再清：清叠加层会重画图像，窗口还可见时上一张模板图会闪一下
+            hWindowControl.Visible = false;
+            display.ClearOverlay();
         }
 
         /// <summary> 用 <paramref name="value"/> 换下 <paramref name="field"/> 并释放旧对象；<paramref name="value"/> 置空，所有权转入字段。 </summary>
@@ -71,8 +102,6 @@ namespace DotNet.HalconUI
         /// </remarks>
         private void ReleaseDisplayResources()
         {
-            hWindowControl.HMouseMove -= OnMouseMove;
-
             try { mouse?.Dispose(); }
             catch (Exception ex) { Log.Error(nameof(HModelUI), "释放鼠标交互资源失败.", ex); }
 
@@ -87,13 +116,5 @@ namespace DotNet.HalconUI
             }
             catch (Exception ex) { Log.Error(nameof(HModelUI), "释放图像资源失败.", ex); }
         }
-
-        public void OnMouseMove(object sender, HMouseEventArgs e)
-        {
-            display.Disp(_modeRect, DrawStyle.Of(HColor.Blue));
-            display.Disp(_contour, DrawStyle.Of(HColor.Green));
-            display.Disp(_coord, DrawStyle.Of(HColor.OrangeRed));
-        }
-
     }
 }

@@ -572,6 +572,117 @@ namespace DotNet.VisionMaster.Tests
             finally { File.Delete(modelPath); }
         }
 
+        private static string WriteModelImage()
+        {
+            string modelPath = Path.Combine(Path.GetTempPath(), "VisionMasterTests_" + Guid.NewGuid().ToString("N") + ".png");
+            HOperatorSet.GenImageConst(out HObject image, "byte", 64, 64);
+            try { HOperatorSet.WriteImage(image, "png", 0, modelPath); }
+            finally { image.Dispose(); }
+            return modelPath;
+        }
+
+        /// <summary> 缩略图里当前有没有模板图（<see cref="HModelUI"/> 清空后是空对象） </summary>
+        private static bool ThumbnailHasImage(Ctx ctx)
+        {
+            var thumbnail = Priv.Get<HModelUI>(Template(ctx), "_thumbnail");
+            return Priv.Get<HObject>(thumbnail, "_srcImage").CountObj() > 0;
+        }
+
+        /// <summary>切到另一个匹配工具：缩略图跟着换，没有模板的那个不留上一个工具的模板图。</summary>
+        [TestMethod]
+        public void ShowTool_SwitchBetweenTemplateTools_RefreshesThumbnail()
+        {
+            string modelPath = WriteModelImage();
+            try
+            {
+                var withTemplate = new FakeStrategy("a") { View = new TemplateView(modelPath, null, null, new ModelResult(32, 32, 0, 1)) };
+                var withoutTemplate = new FakeStrategy("b");
+                Run(withTemplate, ctx =>
+                {
+                    Assert.IsTrue(ThumbnailHasImage(ctx), "有模板的工具应显示缩略图");
+
+                    ctx.Para.ShowTool(withoutTemplate, new IParaStrategy[] { withTemplate, withoutTemplate });
+                    Assert.IsFalse(ThumbnailHasImage(ctx), "没有模板的工具不能留着上一个工具的模板图");
+
+                    ctx.Para.ShowTool(withTemplate, new IParaStrategy[] { withTemplate, withoutTemplate });
+                    Assert.IsTrue(ThumbnailHasImage(ctx));
+                    CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
+                }, new IParaStrategy[] { withTemplate, withoutTemplate });
+            }
+            finally { File.Delete(modelPath); }
+        }
+
+        /// <summary>模板图文件不在了：切换工具时缩略图清空。</summary>
+        [TestMethod]
+        public void ShowTool_MissingModelImage_ClearsThumbnail()
+        {
+            string modelPath = WriteModelImage();
+            try
+            {
+                var good = new FakeStrategy("a") { View = new TemplateView(modelPath, null, null, new ModelResult(32, 32, 0, 1)) };
+                var missing = new FakeStrategy("b") { View = new TemplateView(modelPath + ".missing", null, null, new ModelResult(32, 32, 0, 1)) };
+                Run(good, ctx =>
+                {
+                    Assert.IsTrue(ThumbnailHasImage(ctx));
+
+                    ctx.Para.ShowTool(missing, new IParaStrategy[] { good, missing });
+
+                    Assert.IsFalse(ThumbnailHasImage(ctx));
+                }, new IParaStrategy[] { good, missing });
+            }
+            finally { File.Delete(modelPath); }
+        }
+
+        /// <summary>模板图读不出来不挡住切换工具，缩略图清空，只记日志不弹提示。</summary>
+        [TestMethod]
+        public void ShowTool_UnreadableModelImage_ClearsThumbnailWithoutThrowing()
+        {
+            string modelPath = WriteModelImage();
+            // 文件存在但不是图像：越过 File.Exists 检查，让读图真正失败
+            string brokenPath = Path.Combine(Path.GetTempPath(), "VisionMasterTests_" + Guid.NewGuid().ToString("N") + ".png");
+            File.WriteAllText(brokenPath, "not an image");
+            try
+            {
+                var good = new FakeStrategy("a") { View = new TemplateView(modelPath, null, null, new ModelResult(32, 32, 0, 1)) };
+                var broken = new FakeStrategy("b") { View = new TemplateView(brokenPath, null, null, new ModelResult(32, 32, 0, 1)) };
+                Run(good, ctx =>
+                {
+                    Assert.IsTrue(ThumbnailHasImage(ctx));
+
+                    ctx.Para.ShowTool(broken, new IParaStrategy[] { good, broken });
+
+                    Assert.IsFalse(ThumbnailHasImage(ctx));
+                    CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages, "缩略图失败只记日志，不弹提示");
+                }, new IParaStrategy[] { good, broken });
+            }
+            finally
+            {
+                File.Delete(modelPath);
+                File.Delete(brokenPath);
+            }
+        }
+
+        /// <summary>切到不支持模板的工具：缩略图清空。</summary>
+        [TestMethod]
+        public void ShowTool_SwitchToNonTemplateTool_ClearsThumbnail()
+        {
+            string modelPath = WriteModelImage();
+            try
+            {
+                var fake = new FakeStrategy { View = new TemplateView(modelPath, null, null, new ModelResult(32, 32, 0, 1)) };
+                var plain = new FileImageStrategy();
+                Run(fake, ctx =>
+                {
+                    Assert.IsTrue(ThumbnailHasImage(ctx));
+
+                    ctx.Para.ShowTool(plain, new IParaStrategy[] { fake, plain });
+
+                    Assert.IsFalse(ThumbnailHasImage(ctx));
+                }, new IParaStrategy[] { fake, plain });
+            }
+            finally { File.Delete(modelPath); }
+        }
+
         [TestMethod]
         public void TemplateChanged_FromNonCurrentTool_Ignored()
         {

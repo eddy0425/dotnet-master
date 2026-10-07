@@ -60,7 +60,17 @@ namespace DotNet.VisionMaster
         public void Bind(IParaStrategy tool)
         {
             Watch(tool as ITemplateEditable);
-            if (tool is ITemplateEditable template) ShowTemplate(template, thumbnail: false);
+            // 缩略图也要跟着换: 原来只在模板变了才刷新, 切到另一个匹配工具时还显示上一个工具的模板
+            if (!(tool is ITemplateEditable template))
+            {
+                _thumbnail?.ClearModel();
+                return;
+            }
+            var view = template.GetTemplateView();
+            ShowOnDisplay(view);
+            // 模板图读不出来不该挡住切换工具: 缩略图已清空, 记一笔即可; 主窗口的异常照旧抛出
+            try { ShowThumbnail(view); }
+            catch (Exception ex) { Log.Warn(nameof(TemplateEditor), "显示模板缩略图失败.", ex); }
         }
 
         public void UpdateState()
@@ -135,20 +145,38 @@ namespace DotNet.VisionMaster
         private void Template_Changed(object sender, EventArgs e)
         {
             if (_context == null || !ReferenceEquals(sender, _context.Tool) || !(sender is ITemplateEditable template)) return;
-            try { ShowTemplate(template, thumbnail: true); }
+            try
+            {
+                var view = template.GetTemplateView();
+                ShowOnDisplay(view);
+                ShowThumbnail(view);
+            }
             catch (Exception ex) { Prompt.Show(ex.Message); }
         }
 
-        /// <summary>
-        /// 在显示窗口上持续显示查找 ROI + 模板轮廓 + 坐标系；<paramref name="thumbnail"/> 时一并刷新模板缩略图。
-        /// </summary>
-        private void ShowTemplate(ITemplateEditable template, bool thumbnail)
+        /// <summary> 在显示窗口上持续显示查找 ROI + 模板轮廓 + 坐标系 </summary>
+        private void ShowOnDisplay(TemplateView view)
         {
-            var view = template.GetTemplateView();
             var roi = _context.Tool is IRoiEditable ? _context.Host.ShownRoi?.HoRegion : null;
             _context.Display.SetModelPara(roi, view.Contour, view.Best?.Coord ?? default(CvCoord));
-            if (thumbnail && view.Best.HasValue)
-                _thumbnail.DisplayModel(view.ModelPath, view.ModelRegion, view.Contour, view.Best.Value);
+        }
+
+        /// <summary> 刷新模板缩略图；没有模板图或匹配结果时清空，不留上一个工具的模板 </summary>
+        private void ShowThumbnail(TemplateView view)
+        {
+            if (!view.Best.HasValue || string.IsNullOrEmpty(view.ModelPath) || !File.Exists(view.ModelPath))
+            {
+                _thumbnail.ClearModel();
+                return;
+            }
+            try { _thumbnail.DisplayModel(view.ModelPath, view.ModelRegion, view.Contour, view.Best.Value); }
+            catch
+            {
+                // 清空再失败也只记一笔: 不能盖掉原来读图失败的异常
+                try { _thumbnail.ClearModel(); }
+                catch (Exception clearEx) { Log.Warn(nameof(TemplateEditor), "清空模板缩略图失败.", clearEx); }
+                throw;
+            }
         }
     }
 }
