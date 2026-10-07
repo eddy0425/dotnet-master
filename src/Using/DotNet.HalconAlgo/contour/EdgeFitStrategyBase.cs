@@ -138,9 +138,9 @@ namespace DotNet.HalconAlgo
             }
         }
 
-        public Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);
+        public Task DrawROIAsync(IInteractionHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);
 
-        public void DispROI(IRoiHost host) => host.SetRectPara(inPara.HoRect);
+        public void DispROI(IInteractionHost host) => host.ShowRoi(inPara.HoRect);
 
         protected override void Dispose(bool disposing)
         {

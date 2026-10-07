@@ -71,12 +71,12 @@ namespace DotNet.HalconAlgo
             if (inPara.DispRegion && Region.IsUsableRegion()) overlay.Add(Region, DrawStyle.Of(HColor.Blue));
         }
 
-        public Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);
+        public Task DrawROIAsync(IInteractionHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);
 
-        public void DispROI(IRoiHost host) => host.SetRectPara(inPara.HoRect);
+        public void DispROI(IInteractionHost host) => host.ShowRoi(inPara.HoRect);
 
         /// <summary> 工具页关闭：只清运行结果，重新打开仍可复用配置 ROI </summary>
-        public override void Close(IRoiHost host)
+        public override void Close(IInteractionHost host)
         {
             if (!IsDisposed) ResetOutputs();
         }

@@ -10,7 +10,7 @@ namespace DotNet.HalconAlgo
     internal static class RoiEditing
     {
         /// <returns>用户确认返回 true；取消 / 超时返回 false，此时 ROI 的几何与类型都保持原样。</returns>
-        public static async Task<bool> DrawAsync(IRoiHost host, CvRegion roi, RectEnum type, bool newROI)
+        public static async Task<bool> DrawAsync(IInteractionHost host, CvRegion roi, RectEnum type, bool newROI)
         {
             bool confirmed;
             if (newROI)
@@ -24,9 +24,9 @@ namespace DotNet.HalconAlgo
             }
             else confirmed = await host.DrawRegionModAsync(roi);
 
-            // 这里故意不短路: 取消后仍要把原 ROI 重画回去(宿主事先 ReDispImage 已清屏)
-            host.Display.Disp(roi, DrawStyle.Of(HColor.Blue));
-            host.SetRectPara(roi);
+            // 这里故意不短路: 取消后仍要把原 ROI 重画回去(宿主事先已清屏)
+            host.Feedback.Add(roi, DrawStyle.Of(HColor.Blue));
+            host.ShowRoi(roi);
             return confirmed;
         }
     }

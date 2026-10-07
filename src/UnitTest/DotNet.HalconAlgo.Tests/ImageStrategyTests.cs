@@ -58,7 +58,7 @@ namespace DotNet.HalconAlgo.Tests
             WriteImage("10", 100);
             WriteImage("2", 20);
             WriteImage("1", 10);
-            _strategy.Init(new FakeRoiHost());
+            _strategy.Init(new FakeInteractionHost());
 
             var grays = Enumerable.Range(0, 4).Select(_ =>
             {
@@ -84,7 +84,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             WriteImage("1", 10);
             WriteImage("2", 20);
-            _strategy.Init(new FakeRoiHost());
+            _strategy.Init(new FakeInteractionHost());
 
             Assert.IsTrue(_strategy.On(_display).IsOk);
             var first = _strategy.Image;
@@ -183,7 +183,7 @@ namespace DotNet.HalconAlgo.Tests
 
             using (var log = new CapturingLogger())
             {
-                _strategy.Init(new FakeRoiHost());
+                _strategy.Init(new FakeInteractionHost());
 
                 var entry = log.Entries.Single();
                 Assert.AreEqual(LogLevel.Error, entry.Level);
@@ -200,7 +200,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             using (new CapturingLogger())
             {
-                _strategy.Init(new FakeRoiHost());
+                _strategy.Init(new FakeInteractionHost());
             }
             var result = _strategy.On(_display);
             Assert.AreEqual(RunStatus.Error, result.Status);
@@ -213,7 +213,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             WriteImage("1", 10);
             WriteImage("2", 20);
-            _strategy.Init(new FakeRoiHost());
+            _strategy.Init(new FakeInteractionHost());
             Assert.IsTrue(_strategy.On(_display).IsOk);
             Assert.AreEqual(10, CurrentGray());
 
@@ -236,7 +236,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             WriteImage("1", 10);
             WriteImage("2", 20);
-            _strategy.Init(new FakeRoiHost());
+            _strategy.Init(new FakeInteractionHost());
             Assert.IsTrue(_strategy.On(_display).IsOk);
 
             Assert.IsFalse(_strategy.SetParam("图片路径", _dir), "目录没变不算改动");
@@ -250,7 +250,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             WriteImage("1", 10);
             File.WriteAllBytes(Path.Combine(_dir, "2.bmp"), new byte[] { 1, 2, 3, 4 });
-            _strategy.Init(new FakeRoiHost());
+            _strategy.Init(new FakeInteractionHost());
 
             Assert.IsTrue(_strategy.On(_display).IsOk);
             var before = _strategy.Image;

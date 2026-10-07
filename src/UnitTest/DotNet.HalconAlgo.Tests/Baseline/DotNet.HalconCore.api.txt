@@ -91,6 +91,12 @@ interface DotNet.HalconCore.IHDisplay : System.IDisposable
     public void SetImage(HalconDotNet.HObject image)
 interface DotNet.HalconCore.IImageProducer
     public HalconDotNet.HObject Image { get; }
+interface DotNet.HalconCore.IInteractionHost
+    public DotNet.HalconCore.IOverlay Feedback { get; }
+    public HalconDotNet.HObject CurrentImage { get; }
+    public System.Threading.Tasks.Task<System.Boolean> DrawRegionAsync(DotNet.Drawing.CvRegion region)
+    public System.Threading.Tasks.Task<System.Boolean> DrawRegionModAsync(DotNet.Drawing.CvRegion region)
+    public void ShowRoi(DotNet.Drawing.CvRegion roi)
 interface DotNet.HalconCore.IOutputProvider
     public DotNet.HalconCore.OutputItem FindOutput(System.String path)
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Outputs { get; }
@@ -111,21 +117,15 @@ interface DotNet.HalconCore.IParaBinding
 interface DotNet.HalconCore.IParaStrategy : DotNet.HalconCore.IAlgoStrategy, DotNet.HalconCore.IOutputProvider, System.IDisposable
     public System.Object Para { get; set; }
     public System.String DataDir { get; set; }
-    public void Close(DotNet.HalconCore.IRoiHost host)
-    public void Init(DotNet.HalconCore.IRoiHost host)
+    public void Close(DotNet.HalconCore.IInteractionHost host)
+    public void Init(DotNet.HalconCore.IInteractionHost host)
 interface DotNet.HalconCore.IRoiEditable
-    public System.Threading.Tasks.Task DrawROIAsync(DotNet.HalconCore.IRoiHost host, DotNet.Drawing.RectEnum type, System.Boolean newROI)
-    public void DispROI(DotNet.HalconCore.IRoiHost host)
-interface DotNet.HalconCore.IRoiHost
-    public DotNet.HalconCore.IHDisplay Display { get; }
-    public System.Threading.Tasks.Task<System.Boolean> DrawRegionAsync(DotNet.Drawing.CvRegion hRegion)
-    public System.Threading.Tasks.Task<System.Boolean> DrawRegionModAsync(DotNet.Drawing.CvRegion hRegion)
-    public void DrawDone(System.String modelPath, HalconDotNet.HObject ho_ModeRect, HalconDotNet.HObject ho_Contour, DotNet.HalconCore.ModelResult result)
-    public void SetModelPara(HalconDotNet.HObject shrFindMode, HalconDotNet.HObject shrContour, DotNet.Drawing.CvCoord shrCoord)
-    public void SetRectPara(DotNet.Drawing.CvRegion shrRegion)
+    public System.Threading.Tasks.Task DrawROIAsync(DotNet.HalconCore.IInteractionHost host, DotNet.Drawing.RectEnum type, System.Boolean newROI)
+    public void DispROI(DotNet.HalconCore.IInteractionHost host)
 interface DotNet.HalconCore.ITemplateEditable
     public DotNet.HalconCore.TemplateView GetTemplateView()
-    public System.Threading.Tasks.Task SetTemplateAsync(DotNet.HalconCore.IRoiHost host, DotNet.Drawing.RectEnum type, System.Boolean newModel)
+    public System.Threading.Tasks.Task SetTemplateAsync(DotNet.HalconCore.IInteractionHost host, DotNet.Drawing.RectEnum type, System.Boolean newModel)
+    public event System.EventHandler TemplateChanged
 struct DotNet.HalconCore.ModelResult
     public .ctor(System.Double row, System.Double column, System.Double angle, System.Double score)
     public DotNet.Drawing.CvCoord Coord { get; }
@@ -220,8 +220,8 @@ abstract class DotNet.HalconCore.ParaStrategyBase<TPara> : DotNet.HalconCore.IPa
     public const System.String DisplayGroup = "显示设置"
     public const System.String FontGroup = "字体设置"
     public override System.String ToString()
-    public virtual void Close(DotNet.HalconCore.IRoiHost host)
-    public virtual void Init(DotNet.HalconCore.IRoiHost host)
+    public virtual void Close(DotNet.HalconCore.IInteractionHost host)
+    public virtual void Init(DotNet.HalconCore.IInteractionHost host)
     public void Dispose()
     public void ParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
 sealed class DotNet.HalconCore.ParamBuilder

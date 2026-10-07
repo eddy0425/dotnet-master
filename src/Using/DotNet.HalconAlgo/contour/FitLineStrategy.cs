@@ -113,7 +113,7 @@ namespace DotNet.HalconAlgo
         }
 
         /// <summary> 工具页关闭：丢弃显示数据，配置 ROI 保留 </summary>
-        public override void Close(IRoiHost host) => ClearRenderData();
+        public override void Close(IInteractionHost host) => ClearRenderData();
 
         protected override void Dispose(bool disposing)
         {

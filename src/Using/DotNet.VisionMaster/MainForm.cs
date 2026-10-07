@@ -244,7 +244,7 @@ namespace DotNet.VisionMaster
 
         private void InitTool(IParaStrategy tool)
         {
-            try { tool.Init(_display); }
+            try { tool.Init(_formPara.Host); }
             catch (Exception ex) { Log.Warn(nameof(MainForm), $"工具 '{tool.Name}' 初始化失败.", ex); }
         }
 

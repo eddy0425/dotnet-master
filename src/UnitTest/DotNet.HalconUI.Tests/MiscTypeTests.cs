@@ -25,22 +25,5 @@ namespace DotNet.HalconUI.Tests
                 new[] { DrawEnum.None, DrawEnum.Erase, DrawEnum.DispRect, DrawEnum.DispModel },
                 (DrawEnum[])Enum.GetValues(typeof(DrawEnum)));
         }
-
-        [TestMethod]
-        public void DrawModelUIArgs_ExposesConstructorArguments()
-        {
-            var rect = new HObject();
-            var contour = new HObject();
-            var result = new ModelResult { Row = 1, Column = 2, Angle = 0.5, Score = 0.9 };
-
-            var args = new DrawModelUIArgs("model.shm", rect, contour, result);
-
-            Assert.AreEqual("model.shm", args.ModelPath);
-            Assert.AreSame(rect, args.HoModeRect);
-            Assert.AreSame(contour, args.HoContour);
-            Assert.AreEqual(2, args.Result.Column);
-            Assert.AreEqual(0.9, args.Result.Score);
-            Assert.IsInstanceOfType(args, typeof(EventArgs));
-        }
     }
 }

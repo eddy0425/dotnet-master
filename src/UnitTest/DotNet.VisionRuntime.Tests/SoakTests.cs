@@ -32,7 +32,7 @@ namespace DotNet.VisionRuntime.Tests
                 try
                 {
                     // 匹配: 模板框住亮块左上角; 创建ROI 跟随匹配坐标系; 拟合直线测亮块左边缘 (列 100)
-                    var host = new FakeRoiHost
+                    var host = new FakeInteractionHost
                     {
                         OnDraw = r =>
                         {

@@ -219,7 +219,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            _strategy.Close(new FakeRoiHost());
+            _strategy.Close(new FakeInteractionHost());
 
             Assert.IsFalse(_strategy.Region.IsUsableRegion());
             Assert.AreEqual(new CvCoord(), _strategy.Coord);
@@ -235,7 +235,7 @@ namespace DotNet.HalconAlgo.Tests
 
             _strategy.Dispose();
             _strategy.Dispose();
-            _strategy.Close(new FakeRoiHost()); // Dispose 后 Close 为空操作
+            _strategy.Close(new FakeInteractionHost()); // Dispose 后 Close 为空操作
 
             Assert.IsFalse(result.IsInitialized());
             Assert.IsFalse(roi.IsInitialized(), "工具生命周期结束时连配置 ROI 一起释放（宿主先保存再释放）");
@@ -245,20 +245,20 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void DrawROIAsync_Cancel_RestoresType()
         {
-            var host = new FakeRoiHost { Confirm = false };
+            var host = new FakeInteractionHost { Confirm = false };
 
             _strategy.DrawROIAsync(host, RectEnum.Circle, true).GetAwaiter().GetResult();
 
             Assert.AreEqual(RectEnum.Circle, host.TypeDuringDraw);
             Assert.AreEqual(RectEnum.Rectangle, _strategy.inPara.HoRect.Type);
             Assert.AreEqual(1, host.FakeDisplay.Regions.Count, "取消后仍把原 ROI 重画回去");
-            Assert.AreEqual(1, host.SetRectParaCount);
+            Assert.AreEqual(1, host.ShowRoiCount);
         }
 
         [TestMethod]
         public void DrawROIAsync_Confirm_KeepsType_ModifyUsesModDraw()
         {
-            var host = new FakeRoiHost();
+            var host = new FakeInteractionHost();
 
             _strategy.DrawROIAsync(host, RectEnum.Circle, true).GetAwaiter().GetResult();
             Assert.AreEqual(RectEnum.Circle, _strategy.inPara.HoRect.Type);
@@ -267,16 +267,16 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(1, host.DrawCount);
             Assert.AreEqual(1, host.DrawModCount);
             Assert.AreEqual(RectEnum.Circle, _strategy.inPara.HoRect.Type, "修改模式不改类型");
-            Assert.AreEqual(2, host.SetRectParaCount);
+            Assert.AreEqual(2, host.ShowRoiCount);
         }
 
         [TestMethod]
         public void DispROI_KeepsType()
         {
-            var host = new FakeRoiHost();
+            var host = new FakeInteractionHost();
             _strategy.DispROI(host);
             Assert.AreEqual(RectEnum.Rectangle, _strategy.inPara.HoRect.Type);
-            Assert.AreEqual(1, host.SetRectParaCount);
+            Assert.AreEqual(1, host.ShowRoiCount);
             Assert.AreEqual(0, host.FakeDisplay.Regions.Count + host.FakeDisplay.Objects.Count);
         }
 

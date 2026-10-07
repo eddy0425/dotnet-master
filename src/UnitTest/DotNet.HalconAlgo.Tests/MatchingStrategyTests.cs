@@ -116,9 +116,9 @@ namespace DotNet.HalconAlgo.Tests
             if (Directory.Exists(_projectDir)) Directory.Delete(_projectDir, true);
         }
 
-        private FakeRoiHost TemplateHost(bool confirm = true)
+        private FakeInteractionHost TemplateHost(bool confirm = true)
         {
-            var host = new FakeRoiHost
+            var host = new FakeInteractionHost
             {
                 Confirm = confirm,
                 OnDraw = r =>
@@ -128,10 +128,11 @@ namespace DotNet.HalconAlgo.Tests
                 },
             };
             host.FakeDisplay.SetImage(_image);
+            host.Listen(Strategy);
             return host;
         }
 
-        private protected FakeRoiHost CreateTemplate()
+        private protected FakeInteractionHost CreateTemplate()
         {
             var host = TemplateHost();
             Strategy.SetTemplateAsync(host, RectEnum.Rectangle, true).GetAwaiter().GetResult();
@@ -181,11 +182,11 @@ namespace DotNet.HalconAlgo.Tests
 
             string expectedPath = Path.Combine(Strategy.DataDir, "matching.bmp");
             Assert.AreEqual(expectedPath, Strategy.GetTemplateView().ModelPath);
-            Assert.AreEqual(expectedPath, host.DonePath);
+            Assert.AreEqual(expectedPath, host.ChangedView.ModelPath, "模板变化通知之后宿主读到的就是新模板");
             Assert.IsTrue(File.Exists(expectedPath), "模板图应落盘到工具的数据目录");
             Assert.AreEqual(2, Directory.GetFiles(Strategy.DataDir).Length, "模板图 + 模型文件, 不留临时文件");
-            Assert.IsTrue(host.DoneResult.HasValue);
-            Assert.AreEqual(1, host.SetModelParaCount);
+            Assert.IsTrue(host.ChangedView.Best.HasValue);
+            Assert.AreEqual(1, host.TemplateChanges);
 
             Assert.AreEqual("新建模板成功！", host.FakeDisplay.LastText);
             Assert.AreEqual(HColor.Green.Name, host.FakeDisplay.Texts[0].ColorName);
@@ -204,8 +205,7 @@ namespace DotNet.HalconAlgo.Tests
             Assert.IsFalse(Strategy.HasModel);
             Assert.AreEqual(string.Empty, Strategy.GetTemplateView().ModelPath);
             Assert.IsNull(Strategy.inPara.TmplPoint);
-            Assert.IsNull(host.DonePath);
-            Assert.AreEqual(0, host.SetModelParaCount);
+            Assert.AreEqual(0, host.TemplateChanges);
             Assert.AreEqual(1, host.FakeDisplay.Regions.Count, "原模板区域重画回去");
             Assert.AreEqual(HColor.Orange.Name, host.FakeDisplay.Regions[0].ColorName);
             Assert.IsFalse(Directory.Exists(Strategy.DataDir));
@@ -599,8 +599,7 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(HColor.Red.Name, host.FakeDisplay.Texts[0].ColorName);
             Assert.AreSame(id, Strategy.ModelID, "试匹配失败不能丢掉旧模板");
             Assert.AreEqual(tmpl, Tmpl, "旧模板与旧示教原点必须仍是一对");
-            Assert.IsNull(host.DonePath);
-            Assert.AreEqual(0, host.SetModelParaCount);
+            Assert.AreEqual(0, host.TemplateChanges);
 
             // 旧模板句柄仍然可用: 恢复查找参数后照常匹配到示教位置
             SetSearchRange(-90, 180, 0.6);
@@ -669,7 +668,7 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreSame(id, Strategy.ModelID, "保存失败不能换掉旧模板");
             Assert.AreEqual(tmpl, Tmpl);
             Assert.AreEqual(TemplateBounds, Strategy.inPara.ModeRect.Bounds, "模板区域与仍在用的旧模板一致");
-            Assert.IsNull(host.DonePath);
+            Assert.AreEqual(0, host.TemplateChanges);
 
             UseFullImageRoi();
             _display.SetImage(_image);
@@ -725,7 +724,7 @@ namespace DotNet.HalconAlgo.Tests
             // 示教原点就落到了另一个工件上
             using (var twin = TwinLImage())
             {
-                var host = new FakeRoiHost
+                var host = new FakeInteractionHost
                 {
                     OnDraw = r =>
                     {
@@ -779,7 +778,7 @@ namespace DotNet.HalconAlgo.Tests
                 reopened.inPara = Newtonsoft.Json.JsonConvert.DeserializeObject<TPara>(json);
                 Assert.IsFalse(reopened.HasModel);
 
-                reopened.Init(new FakeRoiHost());
+                reopened.Init(new FakeInteractionHost());
                 Assert.IsTrue(reopened.HasModel, "Init 从模型文件重建句柄");
 
                 reopened.inPara.HoRect.Dispose();
@@ -811,22 +810,23 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void DrawROIAsync_Cancel_RestoresType_StillRedraws()
         {
-            var host = new FakeRoiHost { Confirm = false };
+            var host = new FakeInteractionHost { Confirm = false };
 
             Strategy.DrawROIAsync(host, RectEnum.Circle, true).GetAwaiter().GetResult();
 
             Assert.AreEqual(RectEnum.Rectangle, Strategy.inPara.HoRect.Type);
             Assert.AreEqual(1, host.FakeDisplay.Regions.Count);
-            Assert.AreEqual(1, host.SetRectParaCount);
+            Assert.AreEqual(1, host.ShowRoiCount);
         }
 
+        /// <summary> 只交出查找 ROI；模板轮廓与坐标系由宿主按 TemplateView 叠加，不再走匹配专用的回调 </summary>
         [TestMethod]
-        public void DispROI_PushesModelPara()
+        public void DispROI_ShowsSearchRoi()
         {
-            var host = new FakeRoiHost();
+            var host = new FakeInteractionHost();
             Strategy.DispROI(host);
-            Assert.AreEqual(1, host.SetModelParaCount);
-            Assert.AreEqual(0, host.SetRectParaCount);
+            Assert.AreEqual(1, host.ShowRoiCount);
+            Assert.AreSame(Strategy.inPara.HoRect, host.ShownRoi);
         }
 
         [TestMethod]

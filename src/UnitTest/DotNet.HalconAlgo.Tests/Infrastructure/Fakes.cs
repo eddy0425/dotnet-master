@@ -138,12 +138,16 @@ namespace DotNet.HalconAlgo.Tests
     }
 
     /// <summary>
-    /// 可编排的 <see cref="IRoiHost"/>：「用户画框」由 <see cref="OnDraw"/> 模拟，返回值模拟确认 / 取消。
+    /// 可编排的 <see cref="IInteractionHost"/>：「用户画框」由 <see cref="OnDraw"/> 模拟，返回值模拟确认 / 取消。
+    /// 提示图形记在 <see cref="FakeDisplay"/> 上（它同时是叠加层）。
     /// </summary>
-    internal sealed class FakeRoiHost : IRoiHost
+    internal sealed class FakeInteractionHost : IInteractionHost
     {
         public FakeDisplay FakeDisplay { get; } = new FakeDisplay();
-        public IHDisplay Display => FakeDisplay;
+
+        public HObject CurrentImage => FakeDisplay.HoImage;
+
+        public IOverlay Feedback => FakeDisplay;
 
         /// <summary>绘制时对区域做的修改（模拟用户拖出的几何）。</summary>
         public Action<CvRegion> OnDraw { get; set; }
@@ -151,10 +155,22 @@ namespace DotNet.HalconAlgo.Tests
         /// <summary>DrawRegionAsync / DrawRegionModAsync 的返回值：false 表示用户取消。</summary>
         public bool Confirm { get; set; } = true;
 
-        public int DrawCount, DrawModCount, SetRectParaCount, SetModelParaCount;
+        public int DrawCount, DrawModCount, ShowRoiCount, TemplateChanges;
         public RectEnum? TypeDuringDraw;
-        public string DonePath;
-        public ModelResult? DoneResult;
+        public CvRegion ShownRoi;
+
+        /// <summary> 最近一次模板变化后读到的模板视图（<see cref="Listen"/> 之后才记） </summary>
+        public TemplateView ChangedView;
+
+        /// <summary> 像宿主的模板编辑器一样订阅模板变化 </summary>
+        public void Listen(ITemplateEditable template)
+        {
+            template.TemplateChanged += (s, e) =>
+            {
+                TemplateChanges++;
+                ChangedView = template.GetTemplateView();
+            };
+        }
 
         public Task<bool> DrawRegionAsync(CvRegion hRegion)
         {
@@ -172,14 +188,10 @@ namespace DotNet.HalconAlgo.Tests
             return Task.FromResult(Confirm);
         }
 
-        public void SetRectPara(CvRegion shrRegion) => SetRectParaCount++;
-
-        public void SetModelPara(HObject shrFindMode, HObject shrContour, CvCoord shrCoord) => SetModelParaCount++;
-
-        public void DrawDone(string modelPath, HObject ho_ModeRect, HObject ho_Contour, ModelResult result)
+        public void ShowRoi(CvRegion roi)
         {
-            DonePath = modelPath;
-            DoneResult = result;
+            ShowRoiCount++;
+            ShownRoi = roi;
         }
     }
 

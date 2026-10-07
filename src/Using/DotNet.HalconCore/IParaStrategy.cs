@@ -56,10 +56,10 @@ namespace DotNet.HalconCore
         /// 交互式绘制 / 修改 ROI。要等用户在画面上右键确认，因此是异步的：
         /// 调用方必须在 UI 线程 await，不要 .Wait()（会死锁）。
         /// </summary>
-        Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI);
+        Task DrawROIAsync(IInteractionHost host, RectEnum type, bool newROI);
 
-        /// <summary>把已有 ROI 画到画面上，无交互，保持同步。</summary>
-        void DispROI(IRoiHost host);
+        /// <summary> 把已有 ROI 交给宿主显示（<see cref="IInteractionHost.ShowRoi"/>），无交互，保持同步 </summary>
+        void DispROI(IInteractionHost host);
     }
 
     /// <summary>
@@ -70,10 +70,13 @@ namespace DotNet.HalconCore
         /// <summary>
         /// 交互式框选模板区域并创建模板。内含 ROI 绘制交互，故为异步；调用方须在 UI 线程 await。
         /// </summary>
-        Task SetTemplateAsync(IRoiHost host, RectEnum type, bool newModel);
+        Task SetTemplateAsync(IInteractionHost host, RectEnum type, bool newModel);
 
         /// <summary> 模板的只读视图，供宿主的模板编辑窗 / 缩略图使用 </summary>
         TemplateView GetTemplateView();
+
+        /// <summary> 模板换了（新建 / 修改成功）；宿主的模板编辑器据此重读 <see cref="GetTemplateView"/>，在 UI 线程上触发 </summary>
+        event EventHandler TemplateChanged;
     }
 
     /// <summary>
@@ -102,11 +105,11 @@ namespace DotNet.HalconCore
         /// <summary> 本工具的数据目录（模板图等），宿主按方案设置；未设置时按 <see cref="IAlgoStrategy.Id"/> 推导 </summary>
         string DataDir { get; set; }
 
-        /// <summary> 工具页打开：申请运行期资源 </summary>
-        void Init(IRoiHost host);
+        /// <summary> 工具加入流程（新建 / 打开方案）：申请运行期资源 </summary>
+        void Init(IInteractionHost host);
 
         /// <summary> 工具页关闭：只释放运行期临时对象，不销毁配置态 </summary>
-        void Close(IRoiHost host);
+        void Close(IInteractionHost host);
     }
 
     #endregion
@@ -326,9 +329,9 @@ namespace DotNet.HalconCore
 
         #region 生命周期
 
-        public virtual void Init(IRoiHost host) { }
+        public virtual void Init(IInteractionHost host) { }
 
-        public virtual void Close(IRoiHost host) { }
+        public virtual void Close(IInteractionHost host) { }
 
         /// <summary> 幂等。子类覆盖 <see cref="Dispose(bool)"/> 释放自己的句柄，并调用基类实现 </summary>
         public void Dispose()

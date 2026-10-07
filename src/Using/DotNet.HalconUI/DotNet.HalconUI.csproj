@@ -55,11 +55,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="HWindows\HDisplay\HDisplay.cs" />
+    <Compile Include="HWindows\HDisplay\DisplayInteractionHost.cs" />
     <Compile Include="HWindows\HFont\HWindowFont2018.cs" />
     <Compile Include="HWindows\HFont\HWindowFont2022.cs" />
     <Compile Include="HWindows\HFont\IHWindowFont.cs" />
     <Compile Include="HModel\ZoomImage.cs" />
-    <Compile Include="HWindows\HMouse\DrawEvent.cs" />
     <Compile Include="HWindows\HMouse\DrawEnum.cs" />
     <Compile Include="HWindows\HMouse\DrawHelper.cs" />
     <Compile Include="HWindows\HMouse\Draw\DrawGeometry.cs" />

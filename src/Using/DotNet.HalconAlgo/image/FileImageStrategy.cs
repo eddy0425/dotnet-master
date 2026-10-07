@@ -131,7 +131,7 @@ namespace DotNet.HalconAlgo
         }
 
         /// <summary> 预扫图像目录。目录无效属于可恢复的配置问题：只记日志，执行时再报错 </summary>
-        public override void Init(IRoiHost host)
+        public override void Init(IInteractionHost host)
         {
             try
             {

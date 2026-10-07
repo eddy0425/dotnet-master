@@ -91,13 +91,13 @@ namespace DotNet.VisionMaster.Tests
             return RunResult.Ok("完成");
         }
 
-        public Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI)
+        public Task DrawROIAsync(IInteractionHost host, RectEnum type, bool newROI)
         {
             RoiDraws.Add(Tuple.Create(type, newROI));
             return DrawError != null ? Faulted() : _pending.Task;
         }
 
-        public Task SetTemplateAsync(IRoiHost host, RectEnum type, bool newModel)
+        public Task SetTemplateAsync(IInteractionHost host, RectEnum type, bool newModel)
         {
             TemplateDraws.Add(Tuple.Create(type, newModel));
             return DrawError != null ? Faulted() : _pending.Task;
@@ -105,7 +105,20 @@ namespace DotNet.VisionMaster.Tests
 
         public TemplateView GetTemplateView() => View;
 
-        public void DispROI(IRoiHost host) => DispRoiCount++;
+        private EventHandler _templateChanged;
+
+        public event EventHandler TemplateChanged
+        {
+            add => _templateChanged += value;
+            remove => _templateChanged -= value;
+        }
+
+        /// <summary> 订阅了模板变化的个数（宿主应只订阅当前工具） </summary>
+        public int TemplateListeners => _templateChanged?.GetInvocationList().Length ?? 0;
+
+        public void RaiseTemplateChanged() => _templateChanged?.Invoke(this, EventArgs.Empty);
+
+        public void DispROI(IInteractionHost host) => DispRoiCount++;
 
         private Task Faulted()
         {

@@ -40,7 +40,7 @@ namespace DotNet.VisionDemo
 
             for (int i = 0; i < _strategys.Count; i++)
             {
-                _strategys[i].Init(_display);
+                _strategys[i].Init(new DisplayInteractionHost(_display));
             }
 
             var fileImage = ((FileImageStrategy)_strategys[0]).inPara;

@@ -328,7 +328,7 @@ namespace DotNet.HalconAlgo.Tests
             Sources(_a.Ref("区域"));
             Assert.IsTrue(_strategy.On(_display, _a).IsOk);
 
-            _strategy.Close(new FakeRoiHost());
+            _strategy.Close(new FakeInteractionHost());
 
             Assert.IsFalse(_strategy.Region.IsUsableRegion());
             Assert.AreEqual(new CvCoord(), _strategy.Coord);
@@ -344,7 +344,7 @@ namespace DotNet.HalconAlgo.Tests
 
             _strategy.Dispose();
             _strategy.Dispose();
-            _strategy.Close(new FakeRoiHost());
+            _strategy.Close(new FakeInteractionHost());
 
             Assert.IsFalse(result.IsInitialized());
         }

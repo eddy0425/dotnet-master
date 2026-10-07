@@ -411,7 +411,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Close_And_Dispose_AreSafeWithoutRenderData()
         {
-            _strategy.Close(new FakeRoiHost());
+            _strategy.Close(new FakeInteractionHost());
             var roi = _strategy.inPara.HoRect;
             _strategy.Dispose();
             _strategy.Dispose();

@@ -138,7 +138,7 @@ namespace DotNet.HalconAlgo
         }
 
         /// <summary> 工具页关闭：只清运行结果，配置与示教原点保留 </summary>
-        public override void Close(IRoiHost host)
+        public override void Close(IInteractionHost host)
         {
             if (!IsDisposed) ResetOutputs();
         }

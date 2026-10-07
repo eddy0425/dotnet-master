@@ -251,9 +251,12 @@ namespace DotNet.HalconAlgo
 
         #region ROI / 模板
 
-        public Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);
+        public Task DrawROIAsync(IInteractionHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);
 
-        public void DispROI(IRoiHost host) => host.SetModelPara(inPara.HoRect.HoRegion, Contour, Coord);
+        /// <summary> 只交出查找 ROI；模板轮廓与坐标系由宿主的模板编辑器按 <see cref="GetTemplateView"/> 叠加 </summary>
+        public void DispROI(IInteractionHost host) => host.ShowRoi(inPara.HoRect);
+
+        public event EventHandler TemplateChanged;
 
         public TemplateView GetTemplateView()
             => new TemplateView(File.Exists(ModelImagePath) ? ModelImagePath : string.Empty,
@@ -263,7 +266,7 @@ namespace DotNet.HalconAlgo
         /// 框选模板区域并重建模板。事务式：快照 → 绘制 → 训练 → 试匹配 → 落盘 → 提交；
         /// 走不到"提交"（取消、试匹配失败、任何异常）时模板区域换回快照，旧模型、旧示教点、旧文件原样保留。
         /// </summary>
-        public async Task SetTemplateAsync(IRoiHost host, RectEnum type, bool newModel)
+        public async Task SetTemplateAsync(IInteractionHost host, RectEnum type, bool newModel)
         {
             HObject reduced = null;
             HTuple modelId = null;
@@ -282,11 +285,11 @@ namespace DotNet.HalconAlgo
                 if (!confirmed)
                 {
                     RestoreModeRect(ref snapshot);
-                    host.Display.Disp(inPara.ModeRect, DrawStyle.Of(HColor.Orange));
+                    host.Feedback.Add(inPara.ModeRect, DrawStyle.Of(HColor.Orange));
                     return;
                 }
 
-                var image = host.Display.HoImage.RequireImage(Name);
+                var image = host.CurrentImage.RequireImage(Name);
                 HOperatorSet.ReduceDomain(image, inPara.ModeRect.HoRegion, out reduced);
                 modelId = CreateModel(reduced);
 
@@ -298,8 +301,8 @@ namespace DotNet.HalconAlgo
                 if (trial == null)
                 {
                     RestoreModeRect(ref snapshot);
-                    host.Display.Disp(inPara.ModeRect, DrawStyle.Of(HColor.Orange));
-                    host.Display.DispText("新建模板失败！", new Point2d(10, 10), DrawStyle.Of(HColor.Red));
+                    host.Feedback.Add(inPara.ModeRect, DrawStyle.Of(HColor.Orange));
+                    host.Feedback.Text("新建模板失败！", new Point2d(10, 10), DrawStyle.Of(HColor.Red));
                     return;
                 }
 
@@ -320,10 +323,10 @@ namespace DotNet.HalconAlgo
                 snapshot.Dispose();
                 snapshot = null;
 
-                host.SetModelPara(inPara.HoRect.HoRegion, Contour, Coord);
-                host.Display.Disp(inPara.ModeRect, DrawStyle.Of(HColor.Orange));
-                host.DrawDone(imagePath, inPara.ModeRect.HoRegion, Contour, Results[0]);
-                host.Display.DispText("新建模板成功！", new Point2d(10, 10), DrawStyle.Of(HColor.Green));
+                // 先通知 (宿主据此重画模板轮廓、刷新缩略图), 再画提示: 提示画在最新的画面上
+                TemplateChanged?.Invoke(this, EventArgs.Empty);
+                host.Feedback.Add(inPara.ModeRect, DrawStyle.Of(HColor.Orange));
+                host.Feedback.Text("新建模板成功！", new Point2d(10, 10), DrawStyle.Of(HColor.Green));
             }
             finally
             {
@@ -350,7 +353,7 @@ namespace DotNet.HalconAlgo
         /// 工具页打开：模型句柄是运行态、不随参数落盘，从数据目录里的模型文件重建。
         /// 文件缺失或损坏只记日志，执行时报"未建立模板"。
         /// </summary>
-        public override void Init(IRoiHost host)
+        public override void Init(IInteractionHost host)
         {
             if (HasModel || !File.Exists(ModelFilePath)) return;
             try
@@ -364,7 +367,7 @@ namespace DotNet.HalconAlgo
         }
 
         /// <summary> 工具页关闭：丢弃显示数据；模型与配置保留 </summary>
-        public override void Close(IRoiHost host) => ClearRenderData();
+        public override void Close(IInteractionHost host) => ClearRenderData();
 
         protected override void Dispose(bool disposing)
         {

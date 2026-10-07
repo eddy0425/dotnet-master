@@ -232,9 +232,9 @@ namespace DotNet.VisionRuntime
             return LastResult;
         }
 
-        public void Init(IRoiHost host) { }
+        public void Init(IInteractionHost host) { }
 
-        public void Close(IRoiHost host) { }
+        public void Close(IInteractionHost host) { }
 
         public void Dispose() { }
 

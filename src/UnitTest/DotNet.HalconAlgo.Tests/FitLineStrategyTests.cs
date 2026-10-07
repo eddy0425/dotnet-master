@@ -481,20 +481,20 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public async Task DrawROIAsync_Cancelled_RestoresType()
         {
-            var host = new FakeRoiHost { Confirm = false };
+            var host = new FakeInteractionHost { Confirm = false };
 
             await _strategy.DrawROIAsync(host, RectEnum.Circle, true);
 
             Assert.AreEqual(RectEnum.Circle, host.TypeDuringDraw, "绘制前要先写入 Type");
             Assert.AreEqual(RectEnum.AffRect, _strategy.inPara.HoRect.Type, "取消后 Type 还原");
             Assert.AreEqual(1, host.FakeDisplay.Regions.Count, "取消后仍把原 ROI 画回去");
-            Assert.AreEqual(1, host.SetRectParaCount);
+            Assert.AreEqual(1, host.ShowRoiCount);
         }
 
         [TestMethod]
         public async Task DrawROIAsync_Confirmed_KeepsNewType()
         {
-            var host = new FakeRoiHost();
+            var host = new FakeInteractionHost();
 
             await _strategy.DrawROIAsync(host, RectEnum.Rectangle, true);
 
@@ -505,7 +505,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public async Task DrawROIAsync_Modify_UsesModApi()
         {
-            var host = new FakeRoiHost();
+            var host = new FakeInteractionHost();
 
             await _strategy.DrawROIAsync(host, RectEnum.Rectangle, false);
 
@@ -519,12 +519,12 @@ namespace DotNet.HalconAlgo.Tests
         public void DispROI_DoesNotMutateConfig()
         {
             _strategy.inPara.HoRect.Type = RectEnum.Circle;
-            var host = new FakeRoiHost();
+            var host = new FakeInteractionHost();
 
             _strategy.DispROI(host);
 
             Assert.AreEqual(RectEnum.Circle, _strategy.inPara.HoRect.Type);
-            Assert.AreEqual(1, host.SetRectParaCount);
+            Assert.AreEqual(1, host.ShowRoiCount);
         }
 
         [TestMethod]

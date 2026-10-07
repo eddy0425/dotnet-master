@@ -65,6 +65,7 @@ namespace DotNet.VisionMaster
             InitializeComponent();
             Dock = DockStyle.Fill;
             _display = displayUI;
+            Host = new DisplayInteractionHost(displayUI);
 
             Register(Pages.Region, tabRegion, regionPanel);
             Register(Pages.Template, tabMatching, matchingPanel);
@@ -88,7 +89,6 @@ namespace DotNet.VisionMaster
 
             tabControl1.TabPages.Clear();
             _display.RoiShown += Display_RoiShown;
-            _display.DrawDoneEvent += DrawDoneEvent;
         }
 
         private void ParaForm_Load(object sender, EventArgs e)
@@ -115,7 +115,7 @@ namespace DotNet.VisionMaster
             if (!Disposing && !IsDisposed) return;
 
             _display.RoiShown -= Display_RoiShown;
-            _display.DrawDoneEvent -= DrawDoneEvent;
+            Watch(null);
 
             try { _editModel?.Dispose(); }
             catch (Exception ex) { Log.Warn(nameof(ParaForm), "释放模板编辑窗失败.", ex); }
@@ -181,6 +181,9 @@ namespace DotNet.VisionMaster
             return names;
         }
 
+        /// <summary> 交给策略的交互宿主（画 ROI、建模板、工具初始化） </summary>
+        public DisplayInteractionHost Host { get; }
+
         /// <summary> 当前显示的工具；还没选过时为 null </summary>
         public IParaStrategy Tool => _tool;
 
@@ -226,6 +229,7 @@ namespace DotNet.VisionMaster
         {
             bool switched = !ReferenceEquals(tool, _tool);
             _tool = tool;
+            Watch(tool as ITemplateEditable);
             _flow = flow ?? new IParaStrategy[0];
 
             var items = (tool as IParaBinding)?.DescribeParams() ?? new ParamItem[0];
@@ -240,8 +244,9 @@ namespace DotNet.VisionMaster
             if (tabControl1.TabPages.Count > 0) tabControl1.SelectedIndex = 0;
 
             ShowRoiInfo(null);
-            if (tool is IRoiEditable roi) roi.DispROI(_display);
+            if (tool is IRoiEditable roi) roi.DispROI(Host);
             else _display.SetNonePara();
+            if (tool is ITemplateEditable template) ShowTemplate(template, thumbnail: false);
 
             if (switched) BeginEdit();
         }
@@ -423,17 +428,17 @@ namespace DotNet.VisionMaster
             var shape = AlgoInfo.Of(_tool)?.DefaultRoi ?? RectEnum.Rectangle;
             var radio = _rectDrawMap.FirstOrDefault(kv => kv.Value == shape).Key;
             if (radio != null) radio.Checked = true;
-            RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(_display, Checked(_rectDrawMap), true));
+            RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(Host, Checked(_rectDrawMap), true));
         }
 
         private void but_editRegion_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(_display, Checked(_rectDrawMap), false));
+            => RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(Host, Checked(_rectDrawMap), false));
 
         private void btn_newModel_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(_display, Checked(_modelDrawMap), true), commitsData: true);
+            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(Host, Checked(_modelDrawMap), true), commitsData: true);
 
         private void but_modifyModel_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(_display, Checked(_modelDrawMap), false), commitsData: true);
+            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(Host, Checked(_modelDrawMap), false), commitsData: true);
 
         private static RectEnum Checked(Dictionary<RadioButton, RectEnum> map)
             => map.FirstOrDefault(kv => kv.Key.Checked).Value;
@@ -530,15 +535,35 @@ namespace DotNet.VisionMaster
             catch (Exception ex) { Prompt.Show(ex.Message); }
         }
 
-        private void DrawDoneEvent(object sender, DrawModelUIArgs e)
+        private ITemplateEditable _watched;
+
+        /// <summary> 只听当前工具的模板变化：换工具时退订上一个 </summary>
+        private void Watch(ITemplateEditable template)
         {
-            // 只有模板工具会发起模板绘制; 其它工具在场时收到的完成通知与本页无关
-            if (!(_tool is ITemplateEditable)) return;
-            try
-            {
-                _hModel?.DisplayModel(e.ModelPath, e.HoModeRect, e.HoContour, e.Result);
-            }
+            if (ReferenceEquals(template, _watched)) return;
+            if (_watched != null) _watched.TemplateChanged -= Template_Changed;
+            _watched = template;
+            if (_watched != null) _watched.TemplateChanged += Template_Changed;
+        }
+
+        private void Template_Changed(object sender, EventArgs e)
+        {
+            if (!ReferenceEquals(sender, _tool) || !(sender is ITemplateEditable template)) return;
+            try { ShowTemplate(template, thumbnail: true); }
             catch (Exception ex) { Prompt.Show(ex.Message); }
+        }
+
+        /// <summary>
+        /// 在显示窗口上持续显示查找 ROI + 模板轮廓 + 坐标系；<paramref name="thumbnail"/> 时一并刷新模板缩略图。
+        /// 原来由匹配算法自己调宿主的 <c>SetModelPara</c> / <c>DrawDone</c>，现在宿主按 <see cref="TemplateView"/> 自己画。
+        /// </summary>
+        private void ShowTemplate(ITemplateEditable template, bool thumbnail)
+        {
+            var view = template.GetTemplateView();
+            var roi = _tool is IRoiEditable ? Host.ShownRoi?.HoRegion : null;
+            _display.SetModelPara(roi, view.Contour, view.Best?.Coord ?? default(CvCoord));
+            if (thumbnail && view.Best.HasValue)
+                _hModel?.DisplayModel(view.ModelPath, view.ModelRegion, view.Contour, view.Best.Value);
         }
 
         #endregion

@@ -403,7 +403,7 @@ namespace DotNet.VisionRuntime.Tests
             using (var s1 = Paint(image, bar, 255))
             using (var lImage = Paint(s1, bar2, 255))
             {
-                var host = new FakeRoiHost
+                var host = new FakeInteractionHost
                 {
                     OnDraw = r =>
                     {
@@ -423,7 +423,7 @@ namespace DotNet.VisionRuntime.Tests
                 var shape2 = (ShapeModelStrategy)loaded.Single();
                 try
                 {
-                    shape2.Init(new FakeRoiHost());
+                    shape2.Init(new FakeInteractionHost());
                     Assert.IsTrue(shape2.HasModel, "模型文件随方案保存, 重新打开即可用");
                     Assert.IsTrue(File.Exists(shape2.GetTemplateView().ModelPath));
                     Assert.AreEqual(shape.inPara.TmplPoint, shape2.inPara.TmplPoint);

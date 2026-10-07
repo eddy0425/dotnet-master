@@ -417,7 +417,7 @@ namespace DotNet.VisionMaster.Tests
             {
                 foreach (var handler in AllHandlers)
                     Priv.Click(ctx.Para, handler);
-                Priv.Call(ctx.Para, "DrawDoneEvent", ctx.Display, new DrawModelUIArgs("", null, null, default(ModelResult)));
+                Priv.Call(ctx.Para, "Template_Changed", new FakeStrategy(), EventArgs.Empty);
                 WindowHost.Pump();
 
                 CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
@@ -516,11 +516,11 @@ namespace DotNet.VisionMaster.Tests
         }
 
         [TestMethod]
-        public void DrawDone_NonTemplateTool_Ignored()
+        public void TemplateChanged_FromNonCurrentTool_Ignored()
         {
             Run(new CreateROIStrategy(), ctx =>
             {
-                ctx.Display.DrawDone("", null, null, default(ModelResult));
+                Priv.Call(ctx.Para, "Template_Changed", new FakeStrategy(), EventArgs.Empty);
 
                 CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
             });
@@ -756,8 +756,45 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.DrawDoneEvent)).Any(d => d.Target == ctx.Para));
                 Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
+                Assert.AreEqual(1, ctx.Strategy.TemplateListeners, "订阅当前工具的模板变化");
+            });
+        }
+
+        /// <summary> 只听当前工具：换工具时退订上一个，免得旧工具的模板变化改写当前画面 </summary>
+        [TestMethod]
+        public void ShowTool_SwitchingTools_MovesTemplateSubscription()
+        {
+            var first = new FakeStrategy("A");
+            var second = new FakeStrategy("B");
+            Run(first, ctx =>
+            {
+                Assert.AreEqual(1, first.TemplateListeners);
+
+                ctx.Para.ShowTool(second, new IParaStrategy[] { first, second });
+
+                Assert.AreEqual(0, first.TemplateListeners);
+                Assert.AreEqual(1, second.TemplateListeners);
+                first.RaiseTemplateChanged();   // 已退订, 不该有任何反应
+                second.RaiseTemplateChanged();
+                WindowHost.Pump();
+                CollectionAssert.AreEqual(new string[0], ctx.Prompts.Messages);
+            }, new IParaStrategy[] { first, second });
+        }
+
+        /// <summary> 策略交给宿主的是适配器，不是显示控件本身 </summary>
+        [TestMethod]
+        public void Host_IsAdapter_NotTheDisplayControl()
+        {
+            Run(ctx =>
+            {
+                Assert.IsInstanceOfType(ctx.Para.Host, typeof(IInteractionHost));
+                Assert.IsFalse(typeof(IInteractionHost).IsAssignableFrom(typeof(HDisplayUI)), "HDisplayUI 不再实现交互契约");
+
+                var roi = new CvRegion { Type = RectEnum.Rectangle };
+                ctx.Para.Host.ShowRoi(roi);
+                Assert.AreSame(roi, ctx.Para.Host.ShownRoi);
+                Assert.AreEqual(DrawEnum.DispRect, ctx.Display.DrawType, "ShowRoi 让显示窗口持续显示 ROI");
             });
         }
 
@@ -773,9 +810,9 @@ namespace DotNet.VisionMaster.Tests
 
                 Assert.IsTrue(valueForm.IsDisposed, "_valueForm 没有父容器，只能由 ParaForm 释放");
                 Assert.IsTrue(editModel.IsDisposed, "_editModel 没有父容器，只能由 ParaForm 释放");
-                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.DrawDoneEvent)).Any(d => d.Target == ctx.Para),
+                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para),
                     "不退订的话 HDisplayUI 会一直引着已销毁的 ParaForm");
-                Assert.IsFalse(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
+                Assert.AreEqual(0, ctx.Strategy.TemplateListeners, "工具也不能引着已销毁的 ParaForm");
             });
         }
 
@@ -795,7 +832,8 @@ namespace DotNet.VisionMaster.Tests
 
                 Assert.IsFalse(valueForm.IsDisposed);
                 Assert.IsFalse(editModel.IsDisposed);
-                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.DrawDoneEvent)).Any(d => d.Target == ctx.Para));
+                Assert.IsTrue(Subscribers(ctx.Display, nameof(HDisplayUI.RoiShown)).Any(d => d.Target == ctx.Para));
+                Assert.AreEqual(1, ctx.Strategy.TemplateListeners);
             });
         }
 
