@@ -281,8 +281,7 @@ namespace DotNet.HalconAlgo.Tests
             _display.SetImage(_image);
             Assert.IsTrue(Strategy.On(_display).IsOk);
 
-            var tree = new FakeTree();
-            Strategy.GenTreeNode(tree);
+            var tree = FakeTree.Of(Strategy);
             CollectionAssert.IsSubsetOf(new[] { ExpectedName + "/坐标系", ExpectedName + "/坐标系/原点/行", ExpectedName + "/坐标系/角度" }, tree.Paths);
 
             var ctx = new RunContext(null, new IParaStrategy[] { Strategy });

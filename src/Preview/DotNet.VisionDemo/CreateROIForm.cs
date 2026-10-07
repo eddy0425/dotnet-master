@@ -1,6 +1,7 @@
 using DotNet.HalconAlgo;
 using DotNet.HalconUI;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 using System;
 using System.Collections.Generic;
 using System.IO;

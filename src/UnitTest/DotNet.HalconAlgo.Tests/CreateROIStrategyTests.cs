@@ -172,8 +172,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Outputs_TreeAndResolution()
         {
-            var tree = new FakeTree();
-            _strategy.GenTreeNode(tree);
+            var tree = FakeTree.Of(_strategy);
             CollectionAssert.IsSubsetOf(new[]
             {
                 "创建ROI/坐标系", "创建ROI/坐标系/原点", "创建ROI/坐标系/原点/行", "创建ROI/坐标系/原点/列",

@@ -1,6 +1,5 @@
 using Sunny.UI;
 using System;
-using DotNet.HalconUI;
 using DotNet.HalconCore;
 using System.Windows.Forms;
 using System.Collections.Generic;
@@ -67,15 +66,22 @@ namespace DotNet.VisionMaster
             if (allowLocal) treeView1.Nodes.Add(new TreeNode("默认") { Tag = LocalTag });
             if (upstream == null) return;
 
-            var visualizer = new TreeVisualizer(treeView1);
             foreach (var tool in upstream)
             {
-                if (!(tool is ITreeNodeProvider provider)) continue;
-                int before = treeView1.Nodes.Count;
-                provider.GenTreeNode(visualizer);
+                if (tool == null) continue;
                 // 工具根节点记下 Id: 选中结果按 Id 定位, 不按可重名 / 可改名的显示名
-                for (int i = before; i < treeView1.Nodes.Count; i++) treeView1.Nodes[i].Tag = tool.Id;
+                var root = treeView1.Nodes.Add(tool.Name);
+                root.Tag = tool.Id;
+                foreach (var item in tool.Outputs) AddOutput(root.Nodes, item);
             }
+        }
+
+        /// <summary> 一个输出一个节点，<see cref="TreeNode.Name"/> 记输出类型（<see cref="Matches"/> 按它判断） </summary>
+        private static void AddOutput(TreeNodeCollection nodes, OutputItem item)
+        {
+            var node = nodes.Add(item.Name);
+            node.Name = item.Type.ToString();
+            foreach (var child in item.Children) AddOutput(node.Nodes, child);
         }
 
         /// <summary>

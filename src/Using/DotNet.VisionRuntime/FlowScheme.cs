@@ -5,10 +5,11 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using DotNet.Drawing;
+using DotNet.HalconCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace DotNet.HalconCore
+namespace DotNet.VisionRuntime
 {
     /// <summary>
     /// 方案的读写：一个方案是一个目录，里面是 <c>scheme.json</c>（工具列表与各自的参数）

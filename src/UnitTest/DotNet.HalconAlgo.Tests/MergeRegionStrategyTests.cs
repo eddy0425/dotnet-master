@@ -219,8 +219,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Outputs_TemplateOnlyAfterTeaching()
         {
-            var tree = new FakeTree();
-            _strategy.GenTreeNode(tree);
+            var tree = FakeTree.Of(_strategy);
             CollectionAssert.IsSubsetOf(new[] { "区域合并/坐标系", "区域合并/坐标系/原点/行", "区域合并/坐标系/角度", "区域合并/区域" }, tree.Paths);
 
             var ctx = new RunContext(null, new IParaStrategy[] { _a, _strategy });

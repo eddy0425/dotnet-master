@@ -16,3 +16,5 @@
 /.vscode/settings.json
 /ref
 /src/packages
+# 公开 API 快照测试失败时写出的实际结果
+*.received.txt

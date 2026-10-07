@@ -74,7 +74,6 @@
     <Compile Include="DrawHelperTests.cs" />
     <Compile Include="DrawSafeTests.cs" />
     <Compile Include="MouseHandlerTests.cs" />
-    <Compile Include="TreeVisualizerTests.cs" />
     <Compile Include="MiscTypeTests.cs" />
     <Compile Include="HDisplayTests.cs" />
     <Compile Include="HDisplayUITests.cs" />

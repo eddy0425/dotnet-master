@@ -1,0 +1,291 @@
+sealed class DotNet.HalconCore.AlgoAttribute : System.Attribute
+    public .ctor(System.String key, System.String displayName)
+    public DotNet.Drawing.RectEnum DefaultRoi { get; set; }
+    public System.Int32 Order { get; set; }
+    public System.String DisplayName { get; }
+    public System.String Group { get; set; }
+    public System.String Key { get; }
+    public static DotNet.HalconCore.AlgoAttribute Of(System.Type type)
+sealed class DotNet.HalconCore.AlgoInfo
+    public DotNet.Drawing.RectEnum DefaultRoi { get; }
+    public System.Int32 Order { get; }
+    public System.String DisplayName { get; }
+    public System.String Group { get; }
+    public System.String Key { get; }
+    public System.Type Type { get; }
+    public override System.String ToString()
+    public static DotNet.HalconCore.AlgoInfo From(DotNet.HalconCore.AlgoAttribute attribute, System.Type type)
+    public static DotNet.HalconCore.AlgoInfo Of(System.Object strategy)
+class DotNet.HalconCore.AlgoOutputNotFoundException : System.Exception
+    public .ctor(System.String fullPath, System.Type expectedType)
+    public .ctor(System.String fullPath, System.Type expectedType, System.Type actualType)
+    public System.String Path { get; }
+    public System.Type ActualType { get; }
+    public System.Type ExpectedType { get; }
+sealed class DotNet.HalconCore.ChoiceParam : DotNet.HalconCore.ParamItem
+    protected override void SetValue(System.Object value)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamOption> Options { get; }
+    public System.Int32 SelectedIndex { get; }
+    public override System.Object GetValue()
+struct DotNet.HalconCore.CoordFollow
+    public .ctor(DotNet.Drawing.Point2d template, DotNet.Drawing.CvCoord current)
+    public DotNet.Drawing.Angle TransAngle(DotNet.Drawing.Angle angle)
+    public DotNet.Drawing.CvCoord Current { get; }
+    public DotNet.Drawing.Point2d Template { get; }
+    public DotNet.Drawing.Point2d TransPoint(DotNet.Drawing.Point2d point)
+    public HalconDotNet.HObject TransRegion(HalconDotNet.HObject region)
+    public System.Boolean IsActive { get; }
+    public static readonly DotNet.HalconCore.CoordFollow None
+class DotNet.HalconCore.DisplayOptions
+    public .ctor()
+    public System.Boolean DispText { get; set; }
+    public System.Int32 FontSize { get; set; }
+    public System.Int32 FontX { get; set; }
+    public System.Int32 FontY { get; set; }
+sealed class DotNet.HalconCore.FlagParam : DotNet.HalconCore.ParamItem<System.Boolean>
+sealed class DotNet.HalconCore.FolderParam : DotNet.HalconCore.ParamItem<System.String>
+interface DotNet.HalconCore.IAlgoStrategy
+    public DotNet.HalconCore.RunResult LastResult { get; }
+    public DotNet.HalconCore.RunResult Run(DotNet.HalconCore.RunContext context, DotNet.HalconCore.IHDisplay display)
+    public System.Guid Id { get; set; }
+    public System.String Name { get; set; }
+interface DotNet.HalconCore.IHDisplay : System.IDisposable
+    public DotNet.Drawing.HColor GetColor()
+    public DotNet.Drawing.Point2d HoCentre { get; }
+    public DotNet.Drawing.Size2d HoSize { get; }
+    public HalconDotNet.HObject HoImage { get; }
+    public System.Boolean Adaptive { get; set; }
+    public System.Boolean IsCross { get; set; }
+    public System.Double HoHeight { get; }
+    public System.Double HoWidth { get; }
+    public System.Threading.Tasks.Task<HalconDotNet.HObject> DrawRegionAsync(DotNet.Drawing.RectEnum type)
+    public System.Threading.Tasks.Task<System.Boolean> DrawRegionAsync(DotNet.Drawing.CvRegion region)
+    public System.Threading.Tasks.Task<System.Boolean> DrawRegionModAsync(DotNet.Drawing.CvRegion region)
+    public void ClearWinDisp(HalconDotNet.HObject objectVal)
+    public void Disp(DotNet.Drawing.CvArrow arrow, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(DotNet.Drawing.CvCircle circle, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(DotNet.Drawing.CvCoord coord, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(DotNet.Drawing.CvLine line, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(DotNet.Drawing.CvRegion region, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(DotNet.Drawing.Point2d point, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(HalconDotNet.HObject region, DotNet.Drawing.DrawStyle style = null)
+    public void Disp(System.Collections.Generic.IReadOnlyList<DotNet.Drawing.Point2d> points, DotNet.Drawing.DrawStyle style = null)
+    public void DispImage(HalconDotNet.HObject image)
+    public void DispImage(HalconDotNet.HObject image, System.Boolean isSetPart)
+    public void DispLineWithEndMarker(DotNet.Drawing.CvLine line, System.Double markerRadius, DotNet.Drawing.DrawStyle style = null)
+    public void DispRect2(DotNet.Drawing.Point2d center, System.Double phi, System.Double length1, System.Double length2, DotNet.Drawing.DrawStyle style = null)
+    public void DispRegionOutline(DotNet.Drawing.CvRegion region, DotNet.Drawing.DrawStyle style = null)
+    public void DispSegmentWithCrosses(DotNet.Drawing.Point2d start, DotNet.Drawing.Point2d end, System.Double armLength, DotNet.Drawing.DrawStyle style = null)
+    public void DispText(System.String message, DotNet.Drawing.Point2d position, DotNet.Drawing.DrawStyle style = null)
+    public void ReDispImage()
+    public void SetColor(DotNet.Drawing.HColor color)
+    public void SetDraw(System.String mode)
+    public void SetFontSize(HalconDotNet.HTuple size)
+    public void SetImage(HalconDotNet.HObject image)
+interface DotNet.HalconCore.IImageProducer
+    public HalconDotNet.HObject Image { get; }
+interface DotNet.HalconCore.IOutputProvider
+    public DotNet.HalconCore.OutputItem FindOutput(System.String path)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Outputs { get; }
+interface DotNet.HalconCore.IParaBinding
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> DescribeParams()
+    public void ParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
+interface DotNet.HalconCore.IParaStrategy : DotNet.HalconCore.IAlgoStrategy, DotNet.HalconCore.IOutputProvider, System.IDisposable
+    public System.Object Para { get; set; }
+    public System.String DataDir { get; set; }
+    public void Close(DotNet.HalconCore.IRoiHost host)
+    public void Init(DotNet.HalconCore.IRoiHost host)
+interface DotNet.HalconCore.IRoiEditable
+    public System.Threading.Tasks.Task DrawROIAsync(DotNet.HalconCore.IRoiHost host, DotNet.Drawing.RectEnum type, System.Boolean newROI)
+    public void DispROI(DotNet.HalconCore.IRoiHost host)
+interface DotNet.HalconCore.IRoiHost
+    public DotNet.HalconCore.IHDisplay Display { get; }
+    public System.Threading.Tasks.Task<System.Boolean> DrawRegionAsync(DotNet.Drawing.CvRegion hRegion)
+    public System.Threading.Tasks.Task<System.Boolean> DrawRegionModAsync(DotNet.Drawing.CvRegion hRegion)
+    public void DrawDone(System.String modelPath, HalconDotNet.HObject ho_ModeRect, HalconDotNet.HObject ho_Contour, DotNet.HalconCore.ModelResult result)
+    public void SetModelPara(HalconDotNet.HObject shrFindMode, HalconDotNet.HObject shrContour, DotNet.Drawing.CvCoord shrCoord)
+    public void SetRectPara(DotNet.Drawing.CvRegion shrRegion)
+interface DotNet.HalconCore.ITemplateEditable
+    public DotNet.HalconCore.TemplateView GetTemplateView()
+    public System.Threading.Tasks.Task SetTemplateAsync(DotNet.HalconCore.IRoiHost host, DotNet.Drawing.RectEnum type, System.Boolean newModel)
+struct DotNet.HalconCore.ModelResult
+    public .ctor(System.Double row, System.Double column, System.Double angle, System.Double score)
+    public DotNet.Drawing.CvCoord Coord { get; }
+    public System.Double Angle { get; set; }
+    public System.Double Column { get; set; }
+    public System.Double Row { get; set; }
+    public System.Double Score { get; set; }
+    public System.Double ToDegrees { get; }
+    public System.Double X { get; }
+    public System.Double Y { get; }
+    public System.String ToString(System.String format)
+    public override System.String ToString()
+sealed class DotNet.HalconCore.NumberParam : DotNet.HalconCore.ParamItem
+    protected override void SetValue(System.Object value)
+    public System.Boolean IsInteger { get; }
+    public System.Boolean TryParse(System.String text, out System.Object value, out System.String error)
+    public System.Collections.Generic.IReadOnlyList<System.String> Presets { get; }
+    public System.Nullable<System.Double> Max { get; }
+    public System.Nullable<System.Double> Min { get; }
+    public System.String Format()
+    public override System.Object GetValue()
+static class DotNet.HalconCore.Option
+    public static DotNet.HalconCore.Option<T> Of<T>(T value, System.String text)
+sealed class DotNet.HalconCore.Option<T>
+    public System.String Text { get; }
+    public T Value { get; }
+enum DotNet.HalconCore.OutEnum : System.Int32
+    Angle = 10
+    Array = 13
+    CalOrOut = 15
+    Circle = 5
+    Coord = 6
+    Distance = 11
+    HTuple = 1
+    Image = 8
+    Line = 4
+    Number = 12
+    Outline = 2
+    Point = 3
+    Region = 7
+    Result = 16
+    Size = 9
+    String = 14
+    Undefined = 0
+sealed class DotNet.HalconCore.OutputBuilder
+    public .ctor()
+    public DotNet.HalconCore.OutputBuilder Coord(System.String name, System.Func<DotNet.Drawing.CvCoord> current, System.Func<System.Nullable<DotNet.Drawing.Point2d>> template)
+    public DotNet.HalconCore.OutputBuilder Image(System.String name, System.Func<HalconDotNet.HObject> get)
+    public DotNet.HalconCore.OutputBuilder Line(System.String name, System.Func<DotNet.Drawing.CvLine> get)
+    public DotNet.HalconCore.OutputBuilder Number(System.String name, System.Func<System.Double> get)
+    public DotNet.HalconCore.OutputBuilder Point(System.String name, System.Func<DotNet.Drawing.Point2d> get)
+    public DotNet.HalconCore.OutputBuilder Region(System.String name, System.Func<HalconDotNet.HObject> get)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Roots { get; }
+sealed class DotNet.HalconCore.OutputItem
+    public DotNet.HalconCore.OutEnum Type { get; }
+    public System.Boolean TryGetTemplate(out DotNet.Drawing.Point2d template)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Children { get; }
+    public System.Object GetValue()
+    public System.String Name { get; }
+    public System.String Path { get; }
+    public override System.String ToString()
+abstract class DotNet.HalconCore.ParaStrategyBase<TPara> : DotNet.HalconCore.IParaBinding, DotNet.HalconCore.IParaStrategy
+    protected .ctor()
+    protected System.Boolean IsDisposed { get; }
+    protected abstract DotNet.HalconCore.RunResult Execute(DotNet.HalconCore.RunContext context)
+    protected abstract void DeclareOutputs(DotNet.HalconCore.OutputBuilder o)
+    protected abstract void DeclareParams(DotNet.HalconCore.ParamBuilder p)
+    protected abstract void ResetOutputs()
+    protected virtual void Dispose(System.Boolean disposing)
+    protected virtual void OnParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
+    protected virtual void Render(DotNet.HalconCore.IHDisplay display, DotNet.HalconCore.RunResult result)
+    public DotNet.HalconCore.OutputItem FindOutput(System.String path)
+    public DotNet.HalconCore.RunResult LastResult { get; }
+    public DotNet.HalconCore.RunResult Run(DotNet.HalconCore.RunContext context, DotNet.HalconCore.IHDisplay display)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Outputs { get; }
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> DescribeParams()
+    public System.Guid Id { get; set; }
+    public System.String DataDir { get; set; }
+    public System.String Name { get; set; }
+    public TPara inPara { get; set; }
+    public const System.String DisplayGroup = "显示设置"
+    public const System.String FontGroup = "字体设置"
+    public override System.String ToString()
+    public virtual void Close(DotNet.HalconCore.IRoiHost host)
+    public virtual void Init(DotNet.HalconCore.IRoiHost host)
+    public void Dispose()
+    public void ParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
+sealed class DotNet.HalconCore.ParamBuilder
+    public .ctor()
+    public DotNet.HalconCore.ParamBuilder Choice<T>(System.String label, System.Func<T> get, System.Action<T> set, params DotNet.HalconCore.Option<T>[] options)
+    public DotNet.HalconCore.ParamBuilder Double(System.String label, System.Func<System.Double> get, System.Action<System.Double> set, System.Double[] presets = null, System.Nullable<System.Double> min = null, System.Nullable<System.Double> max = null)
+    public DotNet.HalconCore.ParamBuilder Flag(System.String label, System.Func<System.Boolean> get, System.Action<System.Boolean> set)
+    public DotNet.HalconCore.ParamBuilder Folder(System.String label, System.Func<System.String> get, System.Action<System.String> set)
+    public DotNet.HalconCore.ParamBuilder Group(System.String title)
+    public DotNet.HalconCore.ParamBuilder Int(System.String label, System.Func<System.Int32> get, System.Action<System.Int32> set, System.Int32[] presets = null, System.Nullable<System.Int32> min = null, System.Nullable<System.Int32> max = null)
+    public DotNet.HalconCore.ParamBuilder Source(System.String label, System.Func<DotNet.HalconCore.SourceRef> get, System.Action<DotNet.HalconCore.SourceRef> set, DotNet.HalconCore.OutEnum type)
+    public DotNet.HalconCore.ParamBuilder Tab(DotNet.HalconCore.TabPageEnum tab)
+    public DotNet.HalconCore.ParamBuilder When(System.Func<System.Boolean> visible)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> Items { get; }
+abstract class DotNet.HalconCore.ParamItem
+    protected abstract void SetValue(System.Object value)
+    public DotNet.HalconCore.ParamKind Kind { get; }
+    public DotNet.HalconCore.TabPageEnum Tab { get; }
+    public System.Boolean IsVisible { get; }
+    public System.Boolean TrySetValue(System.Object value)
+    public System.String Group { get; }
+    public System.String Label { get; }
+    public abstract System.Object GetValue()
+    public override System.String ToString()
+abstract class DotNet.HalconCore.ParamItem<T> : DotNet.HalconCore.ParamItem
+    protected override void SetValue(System.Object value)
+    public T Value { get; }
+    public override System.Object GetValue()
+enum DotNet.HalconCore.ParamKind : System.Int32
+    Choice = 1
+    Double = 3
+    Flag = 4
+    Folder = 5
+    Int = 2
+    Source = 0
+sealed class DotNet.HalconCore.ParamOption
+    public System.Object Value { get; }
+    public System.String Text { get; }
+    public override System.String ToString()
+sealed class DotNet.HalconCore.RunContext
+    public .ctor(HalconDotNet.HObject currentImage, System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.IParaStrategy> upstream = null, System.Threading.CancellationToken cancellation = null)
+    public DotNet.HalconCore.CoordFollow ResolveCoord(DotNet.HalconCore.SourceRef source)
+    public HalconDotNet.HObject CurrentImage { get; }
+    public HalconDotNet.HObject ResolveImage(DotNet.HalconCore.SourceRef source)
+    public HalconDotNet.HObject ResolveRegion(DotNet.HalconCore.SourceRef source, DotNet.Drawing.CvRegion local)
+    public System.Boolean TryResolve<T>(DotNet.HalconCore.SourceRef source, out T value)
+    public System.Boolean TryResolveRegion(DotNet.HalconCore.SourceRef source, out HalconDotNet.HObject region)
+    public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.IParaStrategy> Upstream { get; }
+    public System.String Describe(DotNet.HalconCore.SourceRef source)
+    public System.Threading.CancellationToken Cancellation { get; }
+    public T Resolve<T>(DotNet.HalconCore.SourceRef source)
+    public static DotNet.HalconCore.RunContext ForImage(HalconDotNet.HObject image)
+sealed class DotNet.HalconCore.RunResult
+    public DotNet.HalconCore.RunStatus Status { get; }
+    public System.Boolean IsOk { get; }
+    public System.String Message { get; }
+    public System.TimeSpan Elapsed { get; }
+    public override System.String ToString()
+    public static DotNet.HalconCore.RunResult Fail(System.String message)
+    public static DotNet.HalconCore.RunResult Ok(System.String message = null)
+    public static DotNet.HalconCore.RunResult Warn(System.String message)
+enum DotNet.HalconCore.RunStatus : System.Int32
+    Error = 2
+    Ok = 0
+    Warning = 1
+sealed class DotNet.HalconCore.SourceParam : DotNet.HalconCore.ParamItem<DotNet.HalconCore.SourceRef>
+    public DotNet.HalconCore.OutEnum SourceType { get; }
+    public System.Boolean AllowsLocal { get; }
+struct DotNet.HalconCore.SourceRef : System.IEquatable<DotNet.HalconCore.SourceRef>
+    public .ctor(System.Guid toolId, System.String output)
+    public System.Boolean Equals(DotNet.HalconCore.SourceRef other)
+    public System.Boolean IsLocal { get; }
+    public System.Guid ToolId { get; }
+    public System.String Output { get; }
+    public override System.Boolean Equals(System.Object obj)
+    public override System.Int32 GetHashCode()
+    public override System.String ToString()
+    public static DotNet.HalconCore.SourceRef To(DotNet.HalconCore.IAlgoStrategy tool, System.String output)
+    public static System.Boolean op_Equality(DotNet.HalconCore.SourceRef left, DotNet.HalconCore.SourceRef right)
+    public static System.Boolean op_Inequality(DotNet.HalconCore.SourceRef left, DotNet.HalconCore.SourceRef right)
+    public static readonly DotNet.HalconCore.SourceRef Local
+static class DotNet.HalconCore.StrategyExtensions
+    public static DotNet.HalconCore.IParaStrategy FindTool(System.Collections.Generic.IEnumerable<DotNet.HalconCore.IParaStrategy> tools, System.Guid id)
+    public static System.String Describe(System.Collections.Generic.IEnumerable<DotNet.HalconCore.IParaStrategy> tools, DotNet.HalconCore.SourceRef source)
+enum DotNet.HalconCore.TabPageEnum : System.Int32
+    Display = 4
+    FileImage = 0
+    Matching = 3
+    Parameter = 1
+    Region = 2
+sealed class DotNet.HalconCore.TemplateView
+    public .ctor(System.String modelPath, HalconDotNet.HObject modelRegion, HalconDotNet.HObject contour, System.Nullable<DotNet.HalconCore.ModelResult> best)
+    public HalconDotNet.HObject Contour { get; }
+    public HalconDotNet.HObject ModelRegion { get; }
+    public System.Nullable<DotNet.HalconCore.ModelResult> Best { get; }
+    public System.String ModelPath { get; }

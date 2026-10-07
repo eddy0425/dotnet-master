@@ -410,8 +410,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Outputs_TreeAndResolution()
         {
-            var tree = new FakeTree();
-            _strategy.GenTreeNode(tree);
+            var tree = FakeTree.Of(_strategy);
             Assert.IsTrue(_strategy.On(_display).IsOk);
 
             CollectionAssert.IsSubsetOf(new[] { "拟合直线", "拟合直线/直线", "拟合直线/直线/起点/行", "拟合直线/直线/终点/列", "拟合直线/结果" }, tree.Paths);

@@ -1,6 +1,7 @@
 using DotNet.Drawing;
 using DotNet.HalconUI;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 using System;
 using System.IO;
 using System.Linq;

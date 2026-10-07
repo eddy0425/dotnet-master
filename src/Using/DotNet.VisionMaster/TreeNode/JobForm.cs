@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using DotNet.Drawing;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 
 namespace DotNet.VisionMaster
 {

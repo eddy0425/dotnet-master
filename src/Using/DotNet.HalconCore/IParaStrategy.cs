@@ -90,14 +90,6 @@ namespace DotNet.HalconCore
     }
 
     /// <summary>
-    /// 输出变量树节点的声明。
-    /// </summary>
-    public interface ITreeNodeProvider
-    {
-        void GenTreeNode(ITreeVisualizer tree);
-    }
-
-    /// <summary>
     /// 宿主眼中的一个工具：执行、输出、生命周期。可选能力按接口判断，例如
     /// <c>if (s is IRoiEditable roi) await roi.DrawROIAsync(...)</c>。
     /// </summary>
@@ -132,7 +124,7 @@ namespace DotNet.HalconCore
     /// <item>声明：<see cref="DeclareOutputs"/>，一次声明同时生成变量树和解析器。</item>
     /// </list>
     /// </remarks>
-    public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding, ITreeNodeProvider
+    public abstract class ParaStrategyBase<TPara> : IParaStrategy, IParaBinding
         where TPara : DisplayOptions, new()
     {
         private TPara _para = new TPara();
@@ -324,25 +316,6 @@ namespace DotNet.HalconCore
             o.AddCommon("文本显示", OutEnum.String, () => LastResult?.Message);
             _outputs = o.Roots.ToList();
             _outputIndex = OutputBuilder.Index(_outputs);
-        }
-
-        public void GenTreeNode(ITreeVisualizer tree)
-        {
-            tree.Branch(Name, branch =>
-            {
-                foreach (var item in Outputs) AddNode(branch, item);
-            });
-        }
-
-        private static void AddNode(ITreeBranch branch, OutputItem item)
-        {
-            if (item.Children.Count == 0)
-                branch.Node(item.Name, item.Type);
-            else
-                branch.Node(item.Name, item.Type, child =>
-                {
-                    foreach (var c in item.Children) AddNode(child, c);
-                });
         }
 
         #endregion

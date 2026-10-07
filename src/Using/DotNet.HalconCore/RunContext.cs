@@ -29,7 +29,7 @@ namespace DotNet.HalconCore
         public static RunContext ForImage(HObject image) => new RunContext(image);
 
         /// <summary> 本地图像来源对应的图像；单图验证时就是传入的图 </summary>
-        public HObject CurrentImage { get; internal set; }
+        public HObject CurrentImage { get; }
 
         /// <summary> 当前工具之前的工具 </summary>
         public IReadOnlyList<IParaStrategy> Upstream { get; }

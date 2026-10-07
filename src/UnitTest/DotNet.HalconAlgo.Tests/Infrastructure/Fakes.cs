@@ -143,53 +143,26 @@ namespace DotNet.HalconAlgo.Tests
         }
     }
 
-    /// <summary>把树结构拍平成 "策略/节点/子节点" 路径，便于断言。</summary>
-    internal sealed class FakeTree : ITreeVisualizer
+    /// <summary>把工具的输出树（<see cref="IOutputProvider.Outputs"/>）拍平成 "工具/节点/子节点" 路径，便于断言。</summary>
+    internal sealed class FakeTree
     {
         public readonly List<string> Paths = new List<string>();
         public readonly Dictionary<string, OutEnum> Types = new Dictionary<string, OutEnum>();
 
-        public ITreeVisualizer Branch(string text, Action<ITreeBranch> config)
+        public static FakeTree Of(IParaStrategy tool)
         {
-            Paths.Add(text);
-            config?.Invoke(new FakeBranch(this, text));
-            return this;
+            var tree = new FakeTree();
+            tree.Paths.Add(tool.Name);
+            foreach (var item in tool.Outputs) tree.Add(tool.Name, item);
+            return tree;
         }
 
-        public ITreeVisualizer Branches(params string[] texts)
+        private void Add(string prefix, OutputItem item)
         {
-            Paths.AddRange(texts);
-            return this;
-        }
-
-        private sealed class FakeBranch : ITreeBranch
-        {
-            private readonly FakeTree _tree;
-            private readonly string _prefix;
-
-            public FakeBranch(FakeTree tree, string prefix)
-            {
-                _tree = tree;
-                _prefix = prefix;
-            }
-
-            public ITreeBranch Node(string text, OutEnum type, Action<ITreeBranch> config = null)
-            {
-                _tree.Types[_prefix + "/" + text] = type;
-                return Branch(text, config);
-            }
-
-            public ITreeBranch Branch(string text, Action<ITreeBranch> config)
-            {
-                var path = _prefix + "/" + text;
-                _tree.Paths.Add(path);
-                config?.Invoke(new FakeBranch(_tree, path));
-                return this;
-            }
-
-            public ITreeBranch ReusePointStructure(string pointName) => this;
-
-            public ITreeBranch CommonNodes() => this;
+            string path = prefix + "/" + item.Name;
+            Paths.Add(path);
+            Types[path] = item.Type;
+            foreach (var child in item.Children) Add(path, child);
         }
     }
 

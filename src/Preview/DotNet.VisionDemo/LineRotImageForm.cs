@@ -1,6 +1,7 @@
 using System;
 using DotNet.HalconUI;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 using DotNet.HalconAlgo;
 using System.Windows.Forms;
 using System.Collections.Generic;

@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using DotNet.HalconCore;
 
-namespace DotNet.HalconCore
+namespace DotNet.VisionRuntime
 {
     /// <summary>
     /// 算法目录：启动时扫描内置程序集与 <c>plugins\</c> 目录，收集所有带 <see cref="AlgoAttribute"/> 的策略类。
@@ -20,7 +21,10 @@ namespace DotNet.HalconCore
     public sealed class AlgoCatalog
     {
         /// <summary> 插件不得自带副本的程序集：它们必须与宿主共用同一份 </summary>
-        internal static readonly string[] SharedAssemblies = { "halcondotnet", "DotNet.HalconCore", "DotNet.Drawing" };
+        internal static readonly string[] SharedAssemblies = { "halcondotnet", "DotNet.HalconCore", "DotNet.Drawing", "DotNet.VisionRuntime" };
+
+        /// <summary> 契约程序集（DotNet.HalconCore），插件编译时引用的就是它 </summary>
+        private static readonly AssemblyName Contract = typeof(IParaStrategy).Assembly.GetName();
 
         private readonly List<AlgoInfo> _algorithms;
         private readonly Dictionary<string, AlgoInfo> _byKey;
@@ -34,8 +38,8 @@ namespace DotNet.HalconCore
         /// <summary> 全部算法，按 <see cref="AlgoInfo.Order"/>、显示名排序 </summary>
         public IReadOnlyList<AlgoInfo> Algorithms => _algorithms;
 
-        /// <summary> 契约（本程序集）的主版本号；插件引用的主版本必须与之相同 </summary>
-        public static int ContractMajorVersion => typeof(AlgoCatalog).Assembly.GetName().Version.Major;
+        /// <summary> 契约（DotNet.HalconCore，不是本程序集）的主版本号；插件引用的主版本必须与之相同 </summary>
+        public static int ContractMajorVersion => Contract.Version.Major;
 
         /// <summary>
         /// 扫描内置程序集与插件目录。
@@ -58,7 +62,7 @@ namespace DotNet.HalconCore
                     var attribute = AlgoAttribute.Of(type);
                     if (attribute == null) continue;
                     if (Validate(type, attribute, problems))
-                        found.Add(new AlgoInfo(attribute, type));
+                        found.Add(AlgoInfo.From(attribute, type));
                 }
             }
 
@@ -170,7 +174,7 @@ namespace DotNet.HalconCore
                 }
 
                 var core = assembly.GetReferencedAssemblies()
-                    .FirstOrDefault(r => string.Equals(r.Name, typeof(AlgoCatalog).Assembly.GetName().Name, StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(r => string.Equals(r.Name, Contract.Name, StringComparison.OrdinalIgnoreCase));
                 if (core != null && core.Version.Major != contract)
                 {
                     problems.Add($"{name.Name}: 基于契约 {core.Version.Major}.x 编译, 宿主契约为 {contract}.x, 拒绝加载");

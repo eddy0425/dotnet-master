@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 using Sunny.UI;
 
 namespace DotNet.VisionMaster

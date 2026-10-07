@@ -101,7 +101,6 @@
     </Compile>
     <Compile Include="HWindows\HMouse\Handlers\NoneMouse.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="TreeNode\TreeVisualizer.cs" />
     <Compile Include="HWindows\HFont\HWindowFonts.cs" />
     <Compile Include="Param\ParamPanel.cs">
       <SubType>UserControl</SubType>

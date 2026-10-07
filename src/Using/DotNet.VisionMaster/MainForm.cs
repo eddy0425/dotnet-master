@@ -5,6 +5,7 @@ using System.Drawing;
 using DotNet.Drawing;
 using DotNet.HalconUI;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 using DotNet.HalconAlgo;
 using System.Windows.Forms;
 using System.Collections.Generic;

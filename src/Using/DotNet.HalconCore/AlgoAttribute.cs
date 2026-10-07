@@ -5,7 +5,7 @@ using DotNet.Drawing;
 namespace DotNet.HalconCore
 {
     /// <summary>
-    /// 把一个策略类登记为算法：宿主启动时由 <see cref="AlgoCatalog"/> 扫描带本特性的类型，自动生成工具箱。
+    /// 把一个策略类登记为算法：宿主启动时由算法目录（<c>DotNet.VisionRuntime.AlgoCatalog</c>）扫描带本特性的类型，自动生成工具箱。
     /// </summary>
     /// <remarks>
     /// 取代原来的 <c>AlgoEnum</c> 与宿主里手写的 <c>new</c>。新增一个算法只需要写一个类并打上本特性，
@@ -54,7 +54,7 @@ namespace DotNet.HalconCore
     /// </summary>
     public sealed class AlgoInfo
     {
-        internal AlgoInfo(AlgoAttribute attribute, Type type)
+        private AlgoInfo(AlgoAttribute attribute, Type type)
         {
             Key = attribute.Key;
             DisplayName = attribute.DisplayName;
@@ -70,6 +70,14 @@ namespace DotNet.HalconCore
         public int Order { get; }
         public RectEnum DefaultRoi { get; }
         public Type Type { get; }
+
+        /// <summary> 由特性与实现类型生成元数据；宿主扫描算法目录时用 </summary>
+        public static AlgoInfo From(AlgoAttribute attribute, Type type)
+        {
+            if (attribute == null) throw new ArgumentNullException(nameof(attribute));
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            return new AlgoInfo(attribute, type);
+        }
 
         /// <summary> 按策略实例取元数据；类型上没有 <see cref="AlgoAttribute"/> 时返回 null </summary>
         public static AlgoInfo Of(object strategy)

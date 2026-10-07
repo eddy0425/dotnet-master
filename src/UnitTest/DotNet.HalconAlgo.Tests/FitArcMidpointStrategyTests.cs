@@ -360,8 +360,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Outputs_TreeAndResolution()
         {
-            var tree = new FakeTree();
-            _strategy.GenTreeNode(tree);
+            var tree = FakeTree.Of(_strategy);
             Assert.IsTrue(_strategy.On(_display).IsOk);
 
             CollectionAssert.IsSubsetOf(new[] { "圆弧中点/中点", "圆弧中点/中点/行", "圆弧中点/中点/列" }, tree.Paths);

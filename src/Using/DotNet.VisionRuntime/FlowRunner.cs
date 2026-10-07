@@ -4,9 +4,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using DotNet.Drawing;
+using DotNet.HalconCore;
 using HalconDotNet;
 
-namespace DotNet.HalconCore
+namespace DotNet.VisionRuntime
 {
     /// <summary> 流程里某个工具失败之后怎么办 </summary>
     public enum FlowFailurePolicy
