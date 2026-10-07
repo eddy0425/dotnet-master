@@ -211,6 +211,67 @@ namespace DotNet.HalconUI.Tests
         }
 
         [TestMethod]
+        public void Folder_Open_ExistingDirectory_CallsOpener()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                var folder = Item(items, "目录");
+                string opened = null;
+                panel.FolderOpener = path => opened = path;
+                panel.EditorOf(folder).Text = System.IO.Path.GetTempPath();
+                panel.OpenButtonOf(folder).PerformClick();
+
+                Assert.AreEqual(System.IO.Path.GetTempPath(), opened);
+                Assert.IsNull(panel.ErrorOf(folder));
+                Assert.IsNull(panel.OpenButtonOf(Item(items, "来源")), "只有文件夹项有打开按钮");
+            });
+        }
+
+        [TestMethod]
+        public void Folder_Open_MissingDirectory_ShowsError()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                var folder = Item(items, "目录");
+                bool opened = false;
+                panel.FolderOpener = path => opened = true;
+                panel.EditorOf(folder).Text = @"Z:\不存在的目录\" + Guid.NewGuid();
+                panel.OpenButtonOf(folder).PerformClick();
+
+                Assert.IsFalse(opened);
+                Assert.IsNotNull(panel.ErrorOf(folder));
+            });
+        }
+
+        [TestMethod]
+        public void Folder_Open_OpenerThrows_ShowsError()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                var folder = Item(items, "目录");
+                panel.FolderOpener = path => throw new System.ComponentModel.Win32Exception(5);
+                panel.EditorOf(folder).Text = System.IO.Path.GetTempPath();
+                panel.OpenButtonOf(folder).PerformClick();
+
+                Assert.IsNotNull(panel.ErrorOf(folder), "打开失败显示在控件旁, 不抛出");
+            });
+        }
+
+        [TestMethod]
+        public void Folder_Ungrouped_IsWideRowOnTop()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                var folder = panel.EditorOf(Item(items, "目录"));
+                var count = panel.EditorOf(Item(items, "数量"));
+
+                Assert.IsTrue(folder.Bottom <= count.Top, "不分组的文件夹排在槽位上面");
+                Assert.IsTrue(folder.Width > count.Width, "整行编辑框比槽位宽");
+                Assert.IsTrue(panel.OpenButtonOf(Item(items, "目录")).Left > panel.ButtonOf(Item(items, "目录")).Right);
+            });
+        }
+
+        [TestMethod]
         public void Bind_Again_ReplacesRows()
         {
             Run((panel, para, items, committed) =>

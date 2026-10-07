@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using DotNet.HalconCore;
@@ -23,6 +25,7 @@ namespace DotNet.HalconUI
     /// 外观沿用旧版 ParaForm：深绿底、定宽槽位（标签 + 130 宽编辑框 + 图标按钮），
     /// 每列排满 <see cref="RowsPerColumn"/> 行后换到下一列；隐藏的项不占位置。
     /// 声明了 <see cref="ParamItem.Group"/> 的项画进同名分组框，分组框依次排在槽位列的右边。
+    /// 不分组的文件夹参数路径长，各占一整行排在最上面，槽位列和分组框排在它们下面。
     /// <see cref="Control.Dock"/> 为 <see cref="DockStyle.Top"/> 时，面板高度自动跟随内容。
     /// </para>
     /// </remarks>
@@ -34,6 +37,7 @@ namespace DotNet.HalconUI
             public Label Label;
             public Control Editor;
             public Button Button;
+            public Button OpenButton;   // 文件夹行的"打开路径"
         }
 
         private sealed class Group
@@ -53,12 +57,15 @@ namespace DotNet.HalconUI
         private const int ButtonWidth = 30;
         private const int ButtonHeight = 20;
         private const int ColumnWidth = 283;   // 按钮后留出 ErrorProvider 图标的位置
+        private const int WideEditorWidth = 320;   // 文件夹路径的整行编辑框
+        private const int OpenButtonGap = 11;      // "设置路径"与"打开路径"两个按钮之间
 
         // 分组框尺寸，取自旧版"显示输出"页的 grb_Display / grb_Font
         private const int GroupLeft = 20;
         private const int GroupGap = 30;
         private const int GroupPadLeft = 16;
         private const int GroupPadTop = 24;
+        private const int GroupPadBottom = 8;       // 末行行距之外再留的底边距
         private const int GroupRowPitch = 32;
         private const int GroupLabelWidth = 60;
         private const int GroupEditorWidth = 90;
@@ -75,6 +82,7 @@ namespace DotNet.HalconUI
         private readonly List<Group> _groups = new List<Group>();
         private readonly Dictionary<ParamItem, string> _errorText = new Dictionary<ParamItem, string>();
         private Bitmap _sourceIcon;
+        private Bitmap _folderIcon;
         private int _rowsPerColumn = 6;
         private float _scale = 1f;
         private bool _updating;
@@ -119,6 +127,10 @@ namespace DotNet.HalconUI
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Func<string, string> FolderPicker { get; set; } = PickFolder;
 
+        /// <summary> 打开文件夹（参数是已存在的目录）。默认用资源管理器打开 </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Action<string> FolderOpener { get; set; } = OpenFolder;
+
         /// <summary> 有参数真正被写回之后触发；参数里是变了的项 </summary>
         public event EventHandler<ParamsCommittedEventArgs> Committed;
 
@@ -152,6 +164,9 @@ namespace DotNet.HalconUI
         /// <summary> 某项的附加按钮（来源选择 / 文件夹选择）；没有时为 null </summary>
         public Button ButtonOf(ParamItem item) => RowOf(item)?.Button;
 
+        /// <summary> 文件夹项的"打开路径"按钮；其他项为 null </summary>
+        public Button OpenButtonOf(ParamItem item) => RowOf(item)?.OpenButton;
+
         /// <summary> 某项当前的校验错误；没有错误时为 null </summary>
         public string ErrorOf(ParamItem item) => item != null && _errorText.TryGetValue(item, out var text) ? text : null;
 
@@ -183,6 +198,7 @@ namespace DotNet.HalconUI
                     ShowValue(row);   // 规整显示格式（例如 "05" → "5"）
                     return true;
                 case FolderParam _:
+                    SetError(row, null);
                     Commit(row, row.Editor.Text?.Trim() ?? string.Empty);
                     return true;
                 default:
@@ -200,6 +216,7 @@ namespace DotNet.HalconUI
                 row.Label?.Dispose();
                 row.Editor.Dispose();
                 row.Button?.Dispose();
+                row.OpenButton?.Dispose();
             }
             foreach (var group in _groups) group.Box.Dispose();
             _groups.Clear();
@@ -251,7 +268,11 @@ namespace DotNet.HalconUI
                     path.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { CommitText(folder); e.SuppressKeyPress = true; } };
                     path.TextChanged += (s, e) => _toolTip.SetToolTip(path, path.Text);   // 槽位窄, 完整路径看提示
                     row.Editor = path;
-                    row.Button = NewButton("…", null, (s, e) => PickFolder(row));
+                    // 与旧版一致："|←" 设置路径，文件夹图标打开路径
+                    row.Button = NewButton(null, SourceIcon, (s, e) => PickFolder(row));
+                    row.OpenButton = NewButton(null, FolderIcon, (s, e) => OpenFolder(row));
+                    _toolTip.SetToolTip(row.Button, "设置路径");
+                    _toolTip.SetToolTip(row.OpenButton, "打开路径");
                     break;
 
                 default:
@@ -272,6 +293,7 @@ namespace DotNet.HalconUI
             }
             host.Controls.Add(row.Editor);
             if (row.Button != null) host.Controls.Add(row.Button);
+            if (row.OpenButton != null) host.Controls.Add(row.OpenButton);
 
             _rows.Add(row);
             ShowValue(row);
@@ -332,10 +354,32 @@ namespace DotNet.HalconUI
             }
         }
 
+        /// <summary> "打开路径"按钮的图标：打开的文件夹，对应旧版 btn_openPath 的背景图 </summary>
+        private Bitmap FolderIcon
+        {
+            get
+            {
+                if (_folderIcon != null) return _folderIcon;
+                var bitmap = new Bitmap(18, 14);
+                using (var g = Graphics.FromImage(bitmap))
+                using (var pen = new Pen(ButtonIconColor, 1.5f))
+                using (var brush = new SolidBrush(ButtonIconColor))
+                {
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.DrawLines(pen, new[] { new PointF(1, 12), new PointF(1, 2), new PointF(6, 2), new PointF(8, 4), new PointF(15, 4), new PointF(15, 6) });
+                    g.FillPolygon(brush, new[] { new PointF(1, 13), new PointF(4, 7), new PointF(17, 7), new PointF(14, 13) });   // 前片
+                }
+                return _folderIcon = bitmap;
+            }
+        }
+
+        private static bool IsWide(Row row) => row.Item is FolderParam && row.Item.Group == null;
+
         private int Px(int pixels) => (int)Math.Round(pixels * _scale);
 
         /// <summary>
-        /// 不分组的可见行按"先列后行"排进定宽槽位，分组框依次排在右边；隐藏的行不占位置。
+        /// 宽行（不分组的文件夹）各占一整行排在最上面；其余不分组的可见行在它们下面按"先列后行"排进定宽槽位，
+        /// 分组框依次排在槽位右边；隐藏的行不占位置。
         /// </summary>
         private void LayoutRows()
         {
@@ -343,12 +387,31 @@ namespace DotNet.HalconUI
             try
             {
                 var origin = AutoScrollPosition;   // 滚动后子控件的坐标是相对可视区域的
-                int slot = 0, right = 0, bottom = 0;
+                int slot = 0, right = 0, bottom = 0, top = Px(SlotTop);
                 foreach (var row in _rows)
                 {
-                    if (!row.Item.IsVisible || row.Item.Group != null) continue;
+                    if (!row.Item.IsVisible || !IsWide(row)) continue;
+                    int x = origin.X + Px(SlotLeft), y = origin.Y + top;
+                    int editorX = x + Px(LabelWidth);
+                    row.Label.Bounds = new Rectangle(x, y, Px(LabelWidth - 2), Px(EditorHeight));
+                    row.Editor.SetBounds(editorX, y, Px(WideEditorWidth), Px(EditorHeight));
+                    row.Button.Bounds = new Rectangle(
+                        editorX + Px(WideEditorWidth + ButtonGap), y + Px((EditorHeight - ButtonHeight) / 2),
+                        Px(ButtonWidth), Px(ButtonHeight));
+                    row.OpenButton.Bounds = new Rectangle(row.Button.Right + Px(OpenButtonGap), row.Button.Top, Px(ButtonWidth), Px(ButtonHeight));
+                    _errors.SetIconPadding(row.Editor, Px(ButtonGap + ButtonWidth + OpenButtonGap + ButtonWidth + 2));
+
+                    right = Math.Max(right, Px(SlotLeft + LabelWidth + WideEditorWidth + ButtonGap + ButtonWidth + OpenButtonGap + ButtonWidth + ErrorIconWidth));
+                    bottom = Math.Max(bottom, top + Px(EditorHeight + SlotTop));
+                    top += Px(RowPitch);
+                }
+                int wideRight = right;   // 宽行下面的槽位和分组框从左边重新排
+                right = 0;
+                foreach (var row in _rows)
+                {
+                    if (!row.Item.IsVisible || row.Item.Group != null || IsWide(row)) continue;
                     int x = origin.X + Px(SlotLeft + slot / _rowsPerColumn * ColumnWidth);
-                    int y = origin.Y + Px(SlotTop + slot % _rowsPerColumn * RowPitch);
+                    int y = origin.Y + top + Px(slot % _rowsPerColumn * RowPitch);
                     int editorX = x + Px(LabelWidth);
 
                     if (row.Label != null)
@@ -373,7 +436,8 @@ namespace DotNet.HalconUI
                     bottom = Math.Max(bottom, y - origin.Y + Px(EditorHeight + SlotTop));   // 末行下面只留边距, 不按行距算
                     slot++;
                 }
-                LayoutGroups(origin, ref right, ref bottom);
+                LayoutGroups(origin, top, ref right, ref bottom);
+                right = Math.Max(right, wideRight);
                 AutoScrollMinSize = new Size(right, bottom);
                 // 停靠在顶部时高度跟随内容，免得宿主写死的高度装不下新增的行
                 if (Dock == DockStyle.Top) Height = bottom + (Height - ClientSize.Height);
@@ -386,25 +450,26 @@ namespace DotNet.HalconUI
         }
 
         /// <summary>
-        /// 分组框：组内一行一项，框高取所有分组里最高的那个、且不低于面板可视高度，排起来是一排等高的框。
-        /// 滚动区域只按内容高度算：拉伸出来的部分不该在出现横向滚动条时再引出一条竖向滚动条。
+        /// 分组框：组内一行一项，框高按内容算、取所有分组里最高的那个，排起来是一排等高的框；
+        /// 不再拉伸到面板底部，免得只有两三行的分组下面空出一大块。
         /// </summary>
-        private void LayoutGroups(Point origin, ref int right, ref int bottom)
+        private void LayoutGroups(Point origin, int top, ref int right, ref int bottom)
         {
             var visible = _groups.Where(g => g.Rows.Any(r => r.Item.IsVisible)).ToList();
             foreach (var group in _groups) group.Box.Visible = visible.Contains(group);
             if (visible.Count == 0) return;
 
-            int contentHeight = visible.Max(g => GroupPadTop + g.Rows.Count(r => r.Item.IsVisible) * GroupRowPitch);
-            int height = Math.Max(Px(contentHeight), ClientSize.Height - Px(SlotTop) * 2);
+            int height = Px(visible.Max(g => GroupPadTop + g.Rows.Count(r => r.Item.IsVisible) * GroupRowPitch) + GroupPadBottom);
             int x = right > 0 ? right : Px(GroupLeft);   // 槽位列的列宽里已经留了间距
             foreach (var group in visible)
             {
                 bool valued = group.Rows.Any(r => !(r.Item is FlagParam));
                 bool buttons = group.Rows.Any(r => r.Button != null);
+                bool openButtons = group.Rows.Any(r => r.OpenButton != null);
                 int width = valued ? GroupPadLeft * 2 + GroupLabelWidth + GroupEditorWidth + ErrorIconWidth : GroupFlagWidth;
                 if (buttons) width += GroupButtonGap + ButtonWidth;
-                group.Box.Bounds = new Rectangle(origin.X + x, origin.Y + Px(SlotTop), Px(width), height);
+                if (openButtons) width += GroupButtonGap + ButtonWidth;
+                group.Box.Bounds = new Rectangle(origin.X + x, origin.Y + top, Px(width), height);
 
                 int index = 0;
                 foreach (var row in group.Rows)
@@ -417,7 +482,8 @@ namespace DotNet.HalconUI
                         row.Label.Bounds = new Rectangle(Px(GroupPadLeft), y, Px(GroupLabelWidth - 4), Px(EditorHeight));
                         row.Editor.SetBounds(editorX, y, Px(GroupEditorWidth), Px(EditorHeight));
                         // ErrorProvider 的图标画在分组框里，放到按钮右边、框宽里预留的位置
-                        _errors.SetIconPadding(row.Editor, row.Button != null ? Px(GroupButtonGap + ButtonWidth + 2) : Px(2));
+                        int buttonCount = (row.Button != null ? 1 : 0) + (row.OpenButton != null ? 1 : 0);
+                        _errors.SetIconPadding(row.Editor, Px(buttonCount * (GroupButtonGap + ButtonWidth) + 2));
                     }
                     else
                     {
@@ -428,19 +494,21 @@ namespace DotNet.HalconUI
                         row.Button.Bounds = new Rectangle(editorX + Px(GroupEditorWidth + GroupButtonGap), y + Px((EditorHeight - ButtonHeight) / 2),
                             Px(ButtonWidth), Px(ButtonHeight));
                     }
+                    if (row.OpenButton != null)
+                        row.OpenButton.Bounds = new Rectangle(row.Button.Right + Px(GroupButtonGap), row.Button.Top, Px(ButtonWidth), Px(ButtonHeight));
                 }
 
                 x += Px(width + GroupGap);
             }
             right = x;
-            bottom = Math.Max(bottom, Px(SlotTop) * 2 + Px(contentHeight));
+            bottom = Math.Max(bottom, top + height + Px(SlotTop));
         }
 
-        // 跟 ClientSize 而不是 Size：滚动条出现 / 消失只改可视区域，分组框的高度也要跟上
+        // 停靠在顶部时出现 / 消失横向滚动条会改变可视高度，要重算一次面板高度
         protected override void OnClientSizeChanged(EventArgs e)
         {
             base.OnClientSizeChanged(e);
-            if (_groups.Count > 0) LayoutRows();
+            if (Dock == DockStyle.Top && _rows.Count > 0) LayoutRows();
         }
 
         /// <summary>
@@ -528,6 +596,7 @@ namespace DotNet.HalconUI
                 if (row.Label != null) row.Label.Visible = visible;
                 row.Editor.Visible = visible;
                 if (row.Button != null) row.Button.Visible = visible;
+                if (row.OpenButton != null) row.OpenButton.Visible = visible;
             }
             LayoutRows();
         }
@@ -548,6 +617,31 @@ namespace DotNet.HalconUI
             CommitText(row.Item);
         }
 
+        private void OpenFolder(Row row)
+        {
+            string path = row.Editor.Text?.Trim();
+            if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+            {
+                SetError(row, "目录不存在");
+                return;
+            }
+            try
+            {
+                FolderOpener?.Invoke(path);
+                SetError(row, null);
+            }
+            catch (Exception ex) when (ex is Win32Exception || ex is InvalidOperationException)
+            {
+                SetError(row, "无法打开目录: " + ex.Message);   // 在点击回调里, 不能让异常冒出去
+            }
+        }
+
+        // ShellExecute 直接打开目录，不用自己拼引号（路径以 \ 结尾时 "C:\a\" 会被当成转义）
+        private static void OpenFolder(string path)
+        {
+            using (Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })) { }
+        }
+
         private static string PickFolder(string current)
         {
             using (var dialog = new FolderBrowserDialog())
@@ -566,6 +660,7 @@ namespace DotNet.HalconUI
                 _errors.Dispose();
                 _toolTip.Dispose();
                 _sourceIcon?.Dispose();
+                _folderIcon?.Dispose();
             }
             base.Dispose(disposing);
         }

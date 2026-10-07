@@ -34,6 +34,7 @@ namespace DotNet.HalconAlgo
         {
             p.Tab(TabPageEnum.FileImage)
              .Folder("图片路径", () => inPara.ImageFolder, v => inPara.ImageFolder = v)
+             .Group("图片处理")
              .Choice("旋转", () => inPara.Rotate, v => inPara.Rotate = v,
                      Option.Of(0, "0"), Option.Of(90, "90"), Option.Of(180, "180"), Option.Of(270, "270"))
              .Choice("镜像", () => inPara.Mirror, v => inPara.Mirror = v,
