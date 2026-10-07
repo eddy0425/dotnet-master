@@ -34,6 +34,9 @@ namespace DotNet.VisionMaster
             this.mnu_new = new System.Windows.Forms.ToolStripMenuItem();
             this.mnu_open = new System.Windows.Forms.ToolStripMenuItem();
             this.mnu_save = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnu_view = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnu_viewPara = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnu_viewInfo = new System.Windows.Forms.ToolStripMenuItem();
             this.mnu_toolbox = new System.Windows.Forms.ToolStripMenuItem();
             this.tableLayoutPanel1 = new System.Windows.Forms.TableLayoutPanel();
             this.panel1 = new System.Windows.Forms.Panel();
@@ -54,6 +57,7 @@ namespace DotNet.VisionMaster
             this.menuStrip1.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.mnu_scheme,
+            this.mnu_view,
             this.mnu_toolbox});
             this.menuStrip1.Location = new System.Drawing.Point(0, 0);
             this.menuStrip1.Name = "menuStrip1";
@@ -94,6 +98,29 @@ namespace DotNet.VisionMaster
             this.mnu_save.Size = new System.Drawing.Size(171, 22);
             this.mnu_save.Text = "保存方案";
             this.mnu_save.Click += new System.EventHandler(this.btn_save_Click);
+            // 
+            // mnu_view
+            // 
+            this.mnu_view.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.mnu_viewPara,
+            this.mnu_viewInfo});
+            this.mnu_view.Name = "mnu_view";
+            this.mnu_view.Size = new System.Drawing.Size(44, 21);
+            this.mnu_view.Text = "视图";
+            // 
+            // mnu_viewPara
+            // 
+            this.mnu_viewPara.Name = "mnu_viewPara";
+            this.mnu_viewPara.Size = new System.Drawing.Size(100, 22);
+            this.mnu_viewPara.Text = "参数";
+            this.mnu_viewPara.Click += new System.EventHandler(this.mnu_viewPara_Click);
+            // 
+            // mnu_viewInfo
+            // 
+            this.mnu_viewInfo.Name = "mnu_viewInfo";
+            this.mnu_viewInfo.Size = new System.Drawing.Size(100, 22);
+            this.mnu_viewInfo.Text = "信息";
+            this.mnu_viewInfo.Click += new System.EventHandler(this.mnu_viewInfo_Click);
             // 
             // mnu_toolbox
             // 
@@ -212,6 +239,9 @@ namespace DotNet.VisionMaster
         private System.Windows.Forms.ToolStripMenuItem mnu_new;
         private System.Windows.Forms.ToolStripMenuItem mnu_open;
         private System.Windows.Forms.ToolStripMenuItem mnu_save;
+        private System.Windows.Forms.ToolStripMenuItem mnu_view;
+        private System.Windows.Forms.ToolStripMenuItem mnu_viewPara;
+        private System.Windows.Forms.ToolStripMenuItem mnu_viewInfo;
         private System.Windows.Forms.ToolStripMenuItem mnu_toolbox;
         private System.Windows.Forms.TableLayoutPanel tableLayoutPanel1;
         private System.Windows.Forms.Panel panel1;

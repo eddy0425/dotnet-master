@@ -113,6 +113,7 @@ namespace DotNet.VisionMaster
             this.lst_tools.DragDrop += new System.Windows.Forms.DragEventHandler(this.lst_tools_DragDrop);
             this.lst_tools.DragEnter += new System.Windows.Forms.DragEventHandler(this.lst_tools_DragEnter);
             this.lst_tools.MouseDown += new System.Windows.Forms.MouseEventHandler(this.lst_tools_MouseDown);
+            this.lst_tools.DoubleClick += new System.EventHandler(this.lst_tools_DoubleClick);
             // 
             // txt_name
             // 

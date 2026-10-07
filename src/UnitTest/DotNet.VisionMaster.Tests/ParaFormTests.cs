@@ -515,7 +515,7 @@ namespace DotNet.VisionMaster.Tests
             Run(ctx =>
             {
                 Assert.IsFalse(ctx.Para.IsDirty);
-                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
+                Assert.IsTrue(Btn(ctx, "btn_cancelEdit").Enabled, "取消编辑兼做离开参数页，没有修改也可以点");
                 Assert.IsFalse(Btn(ctx, "btn_saveEdit").Enabled);
                 Assert.IsFalse(Btn(ctx, "btn_runTest").Enabled, "宿主没注入运行入口");
             });
@@ -538,7 +538,6 @@ namespace DotNet.VisionMaster.Tests
                 Assert.AreNotSame(before, ctx.Strategy.inPara);
                 Assert.IsFalse(FlagShown(ctx), "面板绑定到还原后的参数实例");
                 Assert.IsFalse(ctx.Para.IsDirty);
-                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
                 CollectionAssert.AreEqual(new[] { "开关" }, ctx.Strategy.ChangedLabels);
                 Assert.AreSame(ctx.Strategy, ctx.Para.Tool);
             });
@@ -617,7 +616,6 @@ namespace DotNet.VisionMaster.Tests
                 Finish(ctx);
 
                 Assert.IsFalse(ctx.Para.IsDirty);
-                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
 
                 SetFlag(ctx, false);
                 Priv.Click(ctx.Para, "btn_cancelEdit_Click");
@@ -647,6 +645,49 @@ namespace DotNet.VisionMaster.Tests
                 ctx.Para.TestRunner = () => throw new InvalidOperationException("运行出错");
                 Priv.Click(ctx.Para, "btn_runTest_Click");
                 CollectionAssert.AreEqual(new[] { "运行出错" }, ctx.Prompts.Messages);
+            });
+        }
+
+        /// <summary> 取消编辑：撤销后通知宿主离开参数页（没有修改也通知）；宿主运行期间不通知 </summary>
+        [TestMethod]
+        public void CancelEdit_RaisesEditCancelled_UnlessHostBusy()
+        {
+            Run(ctx =>
+            {
+                int raised = 0;
+                ctx.Para.EditCancelled += (s, e) => raised++;
+
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Assert.AreEqual(1, raised, "没有修改也离开");
+
+                SetFlag(ctx, true);
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Assert.AreEqual(2, raised);
+                Assert.IsFalse(ctx.Strategy.inPara.Flag, "先撤销再离开");
+
+                ctx.Para.HostBusy = true;
+                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Assert.AreEqual(2, raised);
+            });
+        }
+
+        /// <summary> 快照失败时有修改：提示无法撤销并留在参数页，不能装作已撤销 </summary>
+        [TestMethod]
+        public void CancelEdit_SnapshotUnavailable_PromptsAndStays()
+        {
+            Run(ctx =>
+            {
+                int raised = 0;
+                ctx.Para.EditCancelled += (s, e) => raised++;
+                Priv.Set(ctx.Para, "_snapshot", null);
+
+                SetFlag(ctx, true);
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Assert.AreEqual(0, raised);
+                Assert.IsTrue(ctx.Strategy.inPara.Flag);
+                Assert.IsTrue(ctx.Para.IsDirty);
+                Assert.AreEqual(1, ctx.Prompts.Messages.Count);
             });
         }
 

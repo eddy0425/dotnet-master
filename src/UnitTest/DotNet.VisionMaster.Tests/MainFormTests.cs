@@ -34,6 +34,8 @@ namespace DotNet.VisionMaster.Tests
 
         private static string Status(MainForm form) => Priv.Get<Label>(form, "lbl_status").Text;
 
+        private static InfoForm Info(MainForm form) => Priv.Get<InfoForm>(form, "_formInfo");
+
         /// <summary> 主窗右侧嵌入的流程窗口 </summary>
         private static JobForm Jobs(MainForm form) => Priv.Get<JobForm>(form, "_formJob");
 
@@ -189,6 +191,35 @@ namespace DotNet.VisionMaster.Tests
             });
         }
 
+        /// <summary> 下方区域同一时间只显示一页：启动时是信息窗口，选中工具切到参数页，视图菜单可来回切换 </summary>
+        [TestMethod]
+        public void BottomPages_SwitchBetweenParametersAndInfo()
+        {
+            Run(form =>
+            {
+                Assert.IsTrue(Info(form).Visible);
+                Assert.IsFalse(Para(form).Visible);
+
+                form.SelectTool(0);
+                Assert.IsTrue(Para(form).Visible);
+                Assert.IsFalse(Info(form).Visible);
+
+                Priv.Click(form, "mnu_viewInfo_Click");
+                Assert.IsTrue(Info(form).Visible);
+                Assert.IsFalse(Para(form).Visible);
+
+                Priv.Click(Jobs(form), "mnu_editPara_Click");
+                Assert.IsTrue(Para(form).Visible, "右键编辑参数切回参数页");
+
+                Priv.Click(Para(form), "btn_cancelEdit_Click");
+                Assert.IsTrue(Info(form).Visible, "取消编辑切回信息窗口");
+                Assert.IsFalse(Para(form).Visible);
+
+                Priv.Click(Jobs(form), "lst_tools_DoubleClick");
+                Assert.IsTrue(Para(form).Visible, "双击已选中的工具切回参数页");
+            });
+        }
+
         /// <summary> 绘制进行中切换工具：提示用户，宿主与参数页都停在原工具上 </summary>
         [TestMethod]
         public void SelectTool_WhileDrawing_PromptsAndStays()
@@ -307,6 +338,7 @@ namespace DotNet.VisionMaster.Tests
                 Assert.AreEqual(1, a.Runs);
                 Assert.AreEqual(0, c.Runs);
                 StringAssert.Contains(Status(form), "失败: B: 坏了");
+                Assert.AreEqual("错误(1)", Priv.Get<ToolStripButton>(Info(form), "tsb_error").Text, "失败记入信息窗口");
             }, defaultFlow: false);
         }
 
@@ -337,9 +369,11 @@ namespace DotNet.VisionMaster.Tests
                 Assert.IsTrue(form.IsLoopRunning);
                 Priv.Click(Jobs(form), "btn_runOnce_Click");
                 Assert.AreEqual(0, tool.Runs, "连续运行期间单次运行不生效");
+                form.ShowParameters();
                 Priv.Click(form, "LoopTimer_Tick");
                 Assert.IsFalse(form.IsLoopRunning, "失败后自动停下");
                 Assert.AreEqual(1, tool.Runs);
+                Assert.IsTrue(Info(form).Visible, "因失败停下时切到信息窗口");
 
                 tool.RunError = null;
                 Priv.Click(Jobs(form), "btn_runLoop_Click");

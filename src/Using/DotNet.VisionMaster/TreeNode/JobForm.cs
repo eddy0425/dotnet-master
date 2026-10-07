@@ -121,6 +121,12 @@ namespace DotNet.VisionMaster
             if (!_syncingList && Bound) _host.SelectTool(lst_tools.SelectedIndex);
         }
 
+        /// <summary> 双击工具回到参数页：单击已选中的工具不会触发切换，下方停在信息窗口时用它切回 </summary>
+        private void lst_tools_DoubleClick(object sender, EventArgs e)
+        {
+            if (Bound && _host.SelectedIndex >= 0) _host.FocusParameters();
+        }
+
         private static readonly Color RowBack = Color.FromArgb(32, 33, 42);
         private static readonly Color RowSelected = Color.FromArgb(0, 102, 180);
         private static readonly Color RowLine = Color.FromArgb(90, 92, 105);

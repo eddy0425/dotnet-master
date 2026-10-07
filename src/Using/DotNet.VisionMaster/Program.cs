@@ -7,6 +7,9 @@ namespace DotNet.VisionMaster
 {
     internal static class Program
     {
+        /// <summary> 日志文件目录：程序目录下的 <c>Logs\</c> </summary>
+        internal static string LogDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+
         /// <summary>
         /// 应用程序的主入口点。
         /// </summary>
@@ -14,7 +17,7 @@ namespace DotNet.VisionMaster
         static void Main()
         {
             // 初始化应用日志，并在退出时排空待写入的日志。
-            Log.Initialize(b => b.WriteToFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs"), "VisionMaster"));
+            Log.Initialize(b => b.WriteToFile(LogDir, "VisionMaster"));
             // 库层 (HalconCore / HalconAlgo / HalconUI / 插件) 走 DotNet.Drawing.Log, 默认只写 Trace; 接到应用日志上才会落盘
             DotNet.Drawing.Log.Current = new DrawingLogBridge();
             try

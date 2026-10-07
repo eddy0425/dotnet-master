@@ -165,6 +165,9 @@ namespace DotNet.VisionMaster
         /// <summary> 自进入本工具或上次保存参数以来，参数 / ROI 是否可能被改过 </summary>
         public bool IsDirty => _dirty;
 
+        /// <summary> 点了"取消编辑"并已撤销修改（没有修改时直接触发）：宿主据此离开参数页 </summary>
+        public event EventHandler EditCancelled;
+
         /// <summary>
         /// 显示一个工具：按它声明的参数生成各页面板，并把它的 ROI 交给显示窗口。
         /// </summary>
@@ -259,14 +262,14 @@ namespace DotNet.VisionMaster
         }
 
         private bool IsIdle => _tool != null && !_drawBusy && !_hostBusy;
-        private bool CanCancel => IsIdle && _dirty && _snapshot != null;
         private bool CanSave => IsIdle && _dirty;
         private bool CanRunTest => IsIdle && _testRunner != null;
 
         private void UpdateActions()
         {
             if (IsDisposed) return;
-            btn_cancelEdit.Enabled = CanCancel;
+            // 取消编辑兼做"离开参数页": 没有修改也可以点
+            btn_cancelEdit.Enabled = IsIdle;
             btn_saveEdit.Enabled = CanSave;
             btn_runTest.Enabled = CanRunTest;
         }
@@ -276,17 +279,29 @@ namespace DotNet.VisionMaster
         /// 那会让策略把刚还原的示教态又清掉。
         /// 模板绘制会写盘、替换模型句柄，无法撤销；它结束时已把编辑起点挪到当前（见 <see cref="RunDraw"/>）。
         /// </summary>
-        internal void CancelEdit()
+        /// <returns> 还原失败或快照不可用时为 false；没有修改视为成功 </returns>
+        internal bool CancelEdit()
         {
-            if (!CanCancel) return;
+            if (!IsIdle || !_dirty) return true;
+            if (_snapshot == null)
+            {
+                // 快照失败（见 BeginEdit）时修改无法撤销, 不能装作已撤销
+                Prompt.Show("参数快照不可用，无法撤销本次修改。");
+                return false;
+            }
             try
             {
                 FlowScheme.RestorePara(_tool, _snapshot);
                 ShowTool(_tool, _flow);
                 _dirty = false;
                 UpdateActions();
+                return true;
             }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
+            catch (Exception ex)
+            {
+                Prompt.Show(ex.Message);
+                return false;
+            }
         }
 
         /// <summary> 确认当前修改：之后取消编辑回到这里。写盘仍由宿主的方案保存负责 </summary>
@@ -303,7 +318,12 @@ namespace DotNet.VisionMaster
             catch (Exception ex) { Prompt.Show(ex.Message); }
         }
 
-        private void btn_cancelEdit_Click(object sender, EventArgs e) => CancelEdit();
+        /// <summary> 撤销修改后通知宿主离开参数页；还原失败则留在参数页 </summary>
+        private void btn_cancelEdit_Click(object sender, EventArgs e)
+        {
+            if (!IsIdle || !CancelEdit()) return;
+            EditCancelled?.Invoke(this, EventArgs.Empty);
+        }
 
         private void btn_saveEdit_Click(object sender, EventArgs e) => SaveEdit();
 

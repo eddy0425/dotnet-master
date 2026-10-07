@@ -74,6 +74,7 @@
     <Compile Include="ValueFormTests.cs" />
     <Compile Include="ParaFormTests.cs" />
     <Compile Include="MainFormTests.cs" />
+    <Compile Include="InfoFormTests.cs" />
     <Compile Include="DrawingLogBridgeTests.cs" />
   </ItemGroup>
   <ItemGroup>

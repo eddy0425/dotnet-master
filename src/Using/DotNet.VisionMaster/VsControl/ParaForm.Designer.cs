@@ -643,7 +643,7 @@ namespace DotNet.VisionMaster
             this.btn_cancelEdit.TabIndex = 0;
             this.btn_cancelEdit.Text = "取消编辑";
             this.btn_cancelEdit.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageBeforeText;
-            this.toolTip1.SetToolTip(this.btn_cancelEdit, "撤销进入本工具或上次保存参数之后的参数与 ROI 修改。\r\n模板文件新建 / 修改后立即生效，不在撤销范围内。");
+            this.toolTip1.SetToolTip(this.btn_cancelEdit, "撤销进入本工具或上次保存参数之后的参数与 ROI 修改，并切回信息窗口。\r\n模板文件新建 / 修改后立即生效，不在撤销范围内。");
             this.btn_cancelEdit.UseVisualStyleBackColor = false;
             this.btn_cancelEdit.Click += new System.EventHandler(this.btn_cancelEdit_Click);
             // 

@@ -18,12 +18,13 @@ namespace DotNet.VisionMaster
     /// <remarks>
     /// 只认识 <see cref="AlgoCatalog"/>、<see cref="IParaStrategy"/> 与能力接口，不认识任何具体算法：
     /// 可添加的工具来自目录扫描（内置 HalconAlgo + <c>plugins\</c>），新增算法不需要改这里。
-    /// 界面只是三块容器，内容在运行时嵌入：显示窗口、参数页、流程窗口（<see cref="JobForm"/>）。
+    /// 界面只是三块容器，内容在运行时嵌入：显示窗口、下方页面（参数页 / 信息窗口，同一时间只显示一页）、流程窗口（<see cref="JobForm"/>）。
     /// </remarks>
     public partial class MainForm : Form
     {
         private readonly HDisplayUI _display;
         private readonly ParaForm _formPara;
+        private readonly InfoForm _formInfo;
         private readonly ToolForm _formTool;
         private readonly JobForm _formJob;
         private readonly Timer _loopTimer = new Timer { Interval = 100 };
@@ -44,7 +45,12 @@ namespace DotNet.VisionMaster
             panel1.Controls.Add(_display);
 
             _formPara = new ParaForm(_display) { TestRunner = RunTest };
+            _formPara.EditCancelled += (s, e) => ShowInfo();
             panel2.Controls.Add(_formPara);
+
+            _formInfo = new InfoForm();
+            panel2.Controls.Add(_formInfo);
+            ShowInfo();
 
             _formTool = new ToolForm(Catalog);
             _formTool.ToolSelected += AddToolFromToolbox;
@@ -179,6 +185,7 @@ namespace DotNet.VisionMaster
             OnFlowChanged();
             // 没有选中时也要刷新: 否则删掉最后一个工具、打开空方案后, 参数页仍持有已释放的工具
             _formPara.ShowTool(CurrentTool, _tools);
+            if (CurrentTool != null) ShowParameters();
         }
 
         internal bool CanRunFlow() => EnsureNotDrawing();
@@ -241,7 +248,25 @@ namespace DotNet.VisionMaster
             _formTool.Activate();
         }
 
-        internal void FocusParameters() => _formPara.Focus();
+        internal void FocusParameters()
+        {
+            ShowParameters();
+            _formPara.Focus();
+        }
+
+        /// <summary> 下方区域同一时间只显示一页（同旧项目 HideAll + Show） </summary>
+        private void ShowPage(Control page)
+        {
+            foreach (Control control in panel2.Controls) control.Visible = control == page;
+        }
+
+        internal void ShowParameters() => ShowPage(_formPara);
+
+        internal void ShowInfo() => ShowPage(_formInfo);
+
+        private void mnu_viewPara_Click(object sender, EventArgs e) => ShowParameters();
+
+        private void mnu_viewInfo_Click(object sender, EventArgs e) => ShowInfo();
 
         internal void AddToolFromToolbox(string key)
         {
@@ -266,7 +291,7 @@ namespace DotNet.VisionMaster
             _display.ReDispImage();
             var step = new FlowRunner(_tools).RunStep(_index, _display.Display.HoImage, _display.Display);
             ShowCycleTime(step.Result.Elapsed);
-            ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}");
+            ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}", LevelOf(step.Result.Status));
             OnFlowChanged();
             return step.Result;
         }
@@ -281,7 +306,7 @@ namespace DotNet.VisionMaster
             if (error != null) summary += Environment.NewLine + $"失败: {error.Tool.Name}: {error.Result.Message}";
             if (issues.Count > 0) summary += Environment.NewLine + $"引用问题 {issues.Count} 处: {issues[0]}";
             ShowCycleTime(result.Elapsed);
-            ShowStatus(summary);
+            ShowStatus(summary, error != null ? InfoLevel.Error : issues.Count > 0 ? InfoLevel.Warn : InfoLevel.Info);
             OnFlowChanged();
             return result;
         }
@@ -292,7 +317,7 @@ namespace DotNet.VisionMaster
             var issues = new FlowRunner(_tools).Validate();
             _invalid.Clear();
             foreach (var issue in issues) _invalid.Add(issue.Tool.Id);
-            if (showStatus && issues.Count > 0) ShowStatus($"引用问题 {issues.Count} 处: {issues[0]}");
+            if (showStatus && issues.Count > 0) ShowStatus($"引用问题 {issues.Count} 处: {issues[0]}", InfoLevel.Warn);
             OnFlowChanged();
             return issues;
         }
@@ -326,7 +351,10 @@ namespace DotNet.VisionMaster
             RunCurrent();
         }
 
-        /// <summary> 每轮先停表、跑完再续上：提示框是模态的, 不能让下一轮在提示期间重入 </summary>
+        /// <summary>
+        /// 每轮先停表、跑完再续上：提示框是模态的, 不能让下一轮在提示期间重入。
+        /// 因失败停下时切到信息窗口（同旧项目 ShowErro）。
+        /// </summary>
         private void LoopTimer_Tick(object sender, EventArgs e)
         {
             _loopTimer.Stop();
@@ -338,10 +366,13 @@ namespace DotNet.VisionMaster
             try
             {
                 if (RunFlow().FirstError == null) _loopTimer.Start();
+                else ShowInfo();
             }
             catch (Exception ex)
             {
                 Log.Error(nameof(MainForm), "连续运行失败.", ex);
+                _formInfo.Error($"连续运行失败: {ex.Message}");
+                ShowInfo();
                 Prompt.Show(ex.Message);
             }
             OnLoopStateChanged();
@@ -353,12 +384,23 @@ namespace DotNet.VisionMaster
             return $"{text} {result.Message} ({result.Elapsed.TotalMilliseconds:F0} ms)";
         }
 
-        /// <summary> 状态栏只有一行：多行内容压成一行显示，完整内容放在悬停提示里 </summary>
-        private void ShowStatus(string text)
+        private static InfoLevel LevelOf(RunStatus status) =>
+            status == RunStatus.Ok ? InfoLevel.Info : status == RunStatus.Warning ? InfoLevel.Warn : InfoLevel.Error;
+
+        /// <summary>
+        /// 状态栏只有一行：多行内容压成一行显示，完整内容放在悬停提示里。同时记入信息窗口与日志文件
+        /// </summary>
+        private void ShowStatus(string text, InfoLevel level = InfoLevel.Info)
         {
             lbl_status.Text = text.Replace(Environment.NewLine, "    ");
             toolTip1.SetToolTip(lbl_status, text);
-            Log.Info(nameof(MainForm), text);
+            _formInfo.Write(level, text);
+            switch (level)
+            {
+                case InfoLevel.Warn: Log.Warn(nameof(MainForm), text); break;
+                case InfoLevel.Error: Log.Error(nameof(MainForm), text); break;
+                default: Log.Info(nameof(MainForm), text); break;
+            }
         }
 
         private void ShowCycleTime(TimeSpan elapsed) => lbl_CT.Text = $"CT: {elapsed.TotalMilliseconds:F0} ms";
@@ -386,7 +428,8 @@ namespace DotNet.VisionMaster
             ValidateFlow(showStatus: false);
             SelectTool(_tools.Count > 0 ? 0 : -1);
             int missing = _tools.Count(t => t is MissingTool);
-            ShowStatus($"方案已打开: {dir}" + (missing > 0 ? $" (缺失 {missing} 个工具, 配置已保留)" : string.Empty));
+            ShowStatus($"方案已打开: {dir}" + (missing > 0 ? $" (缺失 {missing} 个工具, 配置已保留)" : string.Empty),
+                missing > 0 ? InfoLevel.Warn : InfoLevel.Info);
         }
 
         /// <summary> 新建方案即清空当前流程；连续运行中不允许 </summary>
