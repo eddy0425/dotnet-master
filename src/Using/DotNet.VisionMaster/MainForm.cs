@@ -43,7 +43,7 @@ namespace DotNet.VisionMaster
             _display = new HDisplayUI();
             panel1.Controls.Add(_display);
 
-            _formPara = new ParaForm(_display);
+            _formPara = new ParaForm(_display) { TestRunner = RunTest };
             panel2.Controls.Add(_formPara);
 
             _formTool = new ToolForm(Catalog);
@@ -313,7 +313,18 @@ namespace DotNet.VisionMaster
             OnLoopStateChanged();
         }
 
-        private void OnLoopStateChanged() => LoopStateChanged?.Invoke(this, EventArgs.Empty);
+        private void OnLoopStateChanged()
+        {
+            _formPara.HostBusy = IsLoopRunning;
+            LoopStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary> 参数页的"运行测试"：与流程窗口的"运行当前"同一套检查 </summary>
+        private void RunTest()
+        {
+            if (!EnsureLoopStopped() || !CanRunFlow()) return;
+            RunCurrent();
+        }
 
         /// <summary> 每轮先停表、跑完再续上：提示框是模态的, 不能让下一轮在提示期间重入 </summary>
         private void LoopTimer_Tick(object sender, EventArgs e)

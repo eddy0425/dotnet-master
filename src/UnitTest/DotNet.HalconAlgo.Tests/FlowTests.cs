@@ -396,6 +396,51 @@ namespace DotNet.HalconAlgo.Tests
             }
         }
 
+        /// <summary> 取消编辑用的快照：与方案同一套序列化，ROI 一并还原，换上的是新的参数实例 </summary>
+        [TestMethod]
+        public void CaptureRestorePara_RestoresParamsAndRoi()
+        {
+            var roi = (CreateROIStrategy)_catalog.Create("region.create-roi");
+            try
+            {
+                roi.inPara.HoRect.Dispose();
+                roi.inPara.HoRect = NewRegion(RectEnum.Rectangle, 10, 20, 30, 40);
+                roi.inPara.DispRegion = true;
+                var snapshot = FlowScheme.CapturePara(roi);
+
+                var edited = roi.inPara;
+                edited.DispRegion = false;
+                edited.HoRect.Dispose();
+                edited.HoRect = NewRegion(RectEnum.Rectangle, 0, 0, 5, 5);
+
+                FlowScheme.RestorePara(roi, snapshot);
+
+                Assert.AreNotSame(edited, roi.inPara);
+                Assert.IsFalse(edited.HoRect.HoRegion.IsUsableRegion(), "被换下的参数实例里的 ROI 句柄已释放");
+                Assert.IsTrue(roi.inPara.DispRegion);
+                Assert.AreEqual(new Rect2d(10.0, 20.0, 30.0, 40.0), roi.inPara.HoRect.Bounds);
+                Assert.IsTrue(roi.inPara.HoRect.HoRegion.IsUsableRegion(), "ROI 句柄按快照重建");
+            }
+            finally { roi.Dispose(); }
+        }
+
+        [TestMethod]
+        public void CapturePara_MissingTool_ReturnsNull()
+        {
+            string dir = Path.Combine(_root, "方案E");
+            Directory.CreateDirectory(dir);
+            var root = new JObject
+            {
+                ["Version"] = 1,
+                ["Tools"] = new JArray { new JObject { ["AlgoKey"] = "plugin.gone", ["Id"] = Guid.NewGuid(), ["Para"] = new JObject() } },
+            };
+            File.WriteAllText(Path.Combine(dir, FlowScheme.FileName), root.ToString());
+
+            var loaded = FlowScheme.Load(dir, _catalog);
+            try { Assert.IsNull(FlowScheme.CapturePara(loaded.Single())); }
+            finally { DisposeAll(loaded); }
+        }
+
         [TestMethod]
         public void Load_NewerFormat_Rejected()
         {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using DotNet.Drawing;
 using Newtonsoft.Json;
@@ -96,6 +97,38 @@ namespace DotNet.HalconCore
         }
 
         public static string ToolDir(string schemeDir, Guid id) => Path.Combine(schemeDir, id.ToString("N"));
+
+        /// <summary>
+        /// 给工具的参数拍快照：与方案文件同一套序列化，凡是能存进方案的（含 ROI）都能用 <see cref="RestorePara"/> 还原。
+        /// 数据目录里的文件（模板图、模型文件）不在快照里。占位工具的参数只读，返回 null。
+        /// </summary>
+        public static JToken CapturePara(IParaStrategy tool)
+        {
+            if (tool == null || tool is MissingTool || tool.Para == null) return null;
+            return JToken.FromObject(tool.Para, Serializer());
+        }
+
+        /// <summary> 用 <see cref="CapturePara"/> 的快照换掉工具当前的参数实例 </summary>
+        public static void RestorePara(IParaStrategy tool, JToken snapshot)
+        {
+            if (tool == null) throw new ArgumentNullException(nameof(tool));
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            object old = tool.Para;
+            tool.Para = snapshot.ToObject(old.GetType(), Serializer());
+            DisposeMembers(old);
+        }
+
+        /// <summary> 参数类本身通常不实现 IDisposable，但 ROI 等属性持有 HALCON 句柄；从快照重建的新实例不与它们共享 </summary>
+        private static void DisposeMembers(object para)
+        {
+            if (para is IDisposable self) { self.Dispose(); return; }
+            foreach (var p in para.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!p.CanRead || p.GetIndexParameters().Length > 0 || !typeof(IDisposable).IsAssignableFrom(p.PropertyType)) continue;
+                try { (p.GetValue(para) as IDisposable)?.Dispose(); }
+                catch (Exception ex) { Log.Warn(nameof(FlowScheme), $"释放旧参数 {p.Name} 失败.", ex); }
+            }
+        }
 
         private static IParaStrategy TryCreate(JObject record, AlgoCatalog catalog, JsonSerializer serializer, out string problem)
         {

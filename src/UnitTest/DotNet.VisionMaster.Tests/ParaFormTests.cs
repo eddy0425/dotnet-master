@@ -492,6 +492,178 @@ namespace DotNet.VisionMaster.Tests
 
         #endregion
 
+        #region 编辑会话
+
+        private static Button Btn(Ctx ctx, string name) => Priv.Get<Button>(ctx.Para, name);
+
+        /// <summary> 通过显示页的复选框改"开关"，走真实的写回路径 </summary>
+        private static void SetFlag(Ctx ctx, bool value)
+        {
+            var panel = ctx.Para.PanelOf(TabPageEnum.Display);
+            ((CheckBox)panel.EditorOf(panel.Items.Single(i => i.Label == "开关"))).Checked = value;
+        }
+
+        private static bool FlagShown(Ctx ctx)
+        {
+            var panel = ctx.Para.PanelOf(TabPageEnum.Display);
+            return ((CheckBox)panel.EditorOf(panel.Items.Single(i => i.Label == "开关"))).Checked;
+        }
+
+        [TestMethod]
+        public void EditSession_Initially_CleanAndActionsDisabled()
+        {
+            Run(ctx =>
+            {
+                Assert.IsFalse(ctx.Para.IsDirty);
+                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
+                Assert.IsFalse(Btn(ctx, "btn_saveEdit").Enabled);
+                Assert.IsFalse(Btn(ctx, "btn_runTest").Enabled, "宿主没注入运行入口");
+            });
+        }
+
+        /// <summary> 取消编辑：参数回到进入工具时，面板跟着刷新；不再通知策略（否则会清掉还原出来的示教态） </summary>
+        [TestMethod]
+        public void CancelEdit_RestoresParams_AndRebindsPanel()
+        {
+            Run(ctx =>
+            {
+                var before = ctx.Strategy.inPara;
+                SetFlag(ctx, true);
+                Assert.IsTrue(ctx.Para.IsDirty);
+                Assert.IsTrue(Btn(ctx, "btn_cancelEdit").Enabled);
+
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+
+                Assert.IsFalse(ctx.Strategy.inPara.Flag);
+                Assert.AreNotSame(before, ctx.Strategy.inPara);
+                Assert.IsFalse(FlagShown(ctx), "面板绑定到还原后的参数实例");
+                Assert.IsFalse(ctx.Para.IsDirty);
+                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
+                CollectionAssert.AreEqual(new[] { "开关" }, ctx.Strategy.ChangedLabels);
+                Assert.AreSame(ctx.Strategy, ctx.Para.Tool);
+            });
+        }
+
+        [TestMethod]
+        public void SaveEdit_MovesCancelPoint()
+        {
+            Run(ctx =>
+            {
+                SetFlag(ctx, true);
+                Priv.Click(ctx.Para, "btn_saveEdit_Click");
+                Assert.IsFalse(ctx.Para.IsDirty);
+
+                SetFlag(ctx, false);
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+
+                Assert.IsTrue(ctx.Strategy.inPara.Flag, "回到保存时的值, 而不是进入工具时的值");
+            });
+        }
+
+        /// <summary> 同一工具重新显示（改名）保留编辑起点；换了工具才开始新一轮 </summary>
+        [TestMethod]
+        public void ShowTool_OnlySwitchingToolStartsNewSession()
+        {
+            var main = new FakeStrategy();
+            var other = new FakeStrategy("other");
+            Run(main, ctx =>
+            {
+                SetFlag(ctx, true);
+                ctx.Para.ShowTool(ctx.Strategy, new IParaStrategy[] { ctx.Strategy, other });
+                Assert.IsTrue(ctx.Para.IsDirty);
+
+                ctx.Para.ShowTool(other, new IParaStrategy[] { ctx.Strategy, other });
+                ctx.Para.ShowTool(ctx.Strategy, new IParaStrategy[] { ctx.Strategy, other });
+
+                Assert.IsFalse(ctx.Para.IsDirty);
+                Assert.IsTrue(ctx.Strategy.inPara.Flag, "切走即保留修改");
+            }, new IParaStrategy[] { main, other });
+        }
+
+        /// <summary> 绘制期间三个按钮都不可用；绘制结束（不论确认还是取消）都算改过 </summary>
+        [TestMethod]
+        public void Draw_BlocksActions_ThenMarksDirty()
+        {
+            Run(ctx =>
+            {
+                int runs = 0;
+                ctx.Para.TestRunner = () => runs++;
+                Assert.IsTrue(Btn(ctx, "btn_runTest").Enabled);
+
+                Priv.Click(ctx.Para, "btn_drawRegion_Click");
+                Assert.IsFalse(Btn(ctx, "btn_runTest").Enabled);
+                ctx.Para.RunTest();
+                Assert.AreEqual(0, runs);
+
+                Finish(ctx);
+                Assert.IsTrue(ctx.Para.IsDirty);
+                Assert.IsTrue(Btn(ctx, "btn_cancelEdit").Enabled);
+                Assert.IsTrue(Btn(ctx, "btn_runTest").Enabled);
+            });
+        }
+
+        /// <summary> 模板绘制写盘、换模型句柄，撤销不了：结束后以当前状态为新的编辑起点，而不是标记为改过 </summary>
+        [DataTestMethod]
+        [DataRow("btn_newModel_Click")]
+        [DataRow("but_modifyModel_Click")]
+        public void TemplateDraw_MovesCancelPoint(string entry)
+        {
+            Run(ctx =>
+            {
+                SetFlag(ctx, true);
+                Assert.IsTrue(ctx.Para.IsDirty);
+
+                Priv.Click(ctx.Para, entry);
+                Finish(ctx);
+
+                Assert.IsFalse(ctx.Para.IsDirty);
+                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
+
+                SetFlag(ctx, false);
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Assert.IsTrue(ctx.Strategy.inPara.Flag, "回到模板绘制结束时的值");
+            });
+        }
+
+        [TestMethod]
+        public void RunTest_CallsHostRunner_UnlessHostBusy()
+        {
+            Run(ctx =>
+            {
+                int runs = 0;
+                ctx.Para.TestRunner = () => runs++;
+
+                Priv.Click(ctx.Para, "btn_runTest_Click");
+                Assert.AreEqual(1, runs);
+
+                ctx.Para.HostBusy = true;
+                SetFlag(ctx, true);
+                Priv.Click(ctx.Para, "btn_runTest_Click");
+                Priv.Click(ctx.Para, "btn_cancelEdit_Click");
+                Assert.AreEqual(1, runs);
+                Assert.IsTrue(ctx.Strategy.inPara.Flag, "宿主运行期间不允许取消编辑");
+
+                ctx.Para.HostBusy = false;
+                ctx.Para.TestRunner = () => throw new InvalidOperationException("运行出错");
+                Priv.Click(ctx.Para, "btn_runTest_Click");
+                CollectionAssert.AreEqual(new[] { "运行出错" }, ctx.Prompts.Messages);
+            });
+        }
+
+        /// <summary> 还没选过工具：注入了运行入口也不可用 </summary>
+        [TestMethod]
+        public void EditSession_NoTool_ActionsDisabled()
+        {
+            Run(null, ctx =>
+            {
+                ctx.Para.TestRunner = () => { };
+                Assert.IsFalse(Btn(ctx, "btn_runTest").Enabled);
+                Assert.IsFalse(Btn(ctx, "btn_cancelEdit").Enabled);
+            });
+        }
+
+        #endregion
+
         #region 释放
 
         private static IEnumerable<Delegate> Subscribers(HDisplayUI display, string eventName)

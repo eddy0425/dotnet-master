@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -107,12 +108,15 @@ namespace DotNet.HalconUI
         /// <summary>
         /// 选择来源：宿主弹出变量树并按 <see cref="SourceParam.SourceType"/> 过滤。返回 null 表示取消。
         /// </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Func<SourceParam, SourceRef?> SourcePicker { get; set; }
 
         /// <summary> 来源的显示文字（"默认" / "工具名/输出"），由宿主按工具列表拼出 </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Func<SourceRef, string> SourceFormatter { get; set; } = s => s.IsLocal ? "默认" : s.ToString();
 
         /// <summary> 选择文件夹；参数是当前路径，返回 null 表示取消。默认弹 <see cref="FolderBrowserDialog"/> </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Func<string, string> FolderPicker { get; set; } = PickFolder;
 
         /// <summary> 有参数真正被写回之后触发；参数里是变了的项 </summary>

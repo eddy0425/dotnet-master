@@ -7,12 +7,13 @@ using System.Linq;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 
 
 namespace DotNet.VisionMaster
 {
     /// <summary>
-    /// 工具参数页：按策略声明的参数生成面板，并承载 ROI / 模板这两类固定交互。
+    /// 工具参数页：按策略声明的参数生成面板，承载 ROI / 模板这两类固定交互，以及取消编辑 / 运行测试 / 保存参数的编辑会话。
     /// </summary>
     /// <remarks>
     /// 本类只认识 <see cref="IParaStrategy"/> 与能力接口（<see cref="IParaBinding"/>、<see cref="IRoiEditable"/>、
@@ -47,6 +48,11 @@ namespace DotNet.VisionMaster
         /// </remarks>
         private bool _drawBusy;
         private int _drawEpoch;
+
+        /// <summary> 编辑会话的起点：进入工具或保存参数时拍下；取消编辑回到这里。null 表示不支持撤销 </summary>
+        private JToken _snapshot;
+        private bool _dirty;
+        private bool _hostBusy;
 
         public ParaForm(HDisplayUI displayUI)
         {
@@ -141,12 +147,32 @@ namespace DotNet.VisionMaster
         /// </summary>
         public bool IsDrawBusy => _drawBusy;
 
+        /// <summary> 运行当前工具；由宿主注入，未注入时"运行测试"不可用 </summary>
+        public Action TestRunner
+        {
+            get => _testRunner;
+            set { _testRunner = value; UpdateActions(); }
+        }
+        private Action _testRunner;
+
+        /// <summary> 宿主正在运行（例如连续运行）：期间不允许运行测试、取消或保存参数 </summary>
+        public bool HostBusy
+        {
+            get => _hostBusy;
+            set { _hostBusy = value; UpdateActions(); }
+        }
+
+        /// <summary> 自进入本工具或上次保存参数以来，参数 / ROI 是否可能被改过 </summary>
+        public bool IsDirty => _dirty;
+
         /// <summary>
         /// 显示一个工具：按它声明的参数生成各页面板，并把它的 ROI 交给显示窗口。
         /// </summary>
         /// <param name="flow">整个流程；来源选择只列出本工具之前的工具，来源的显示名也按它拼出。</param>
+        /// <remarks> 换了工具才开始新一轮编辑；同一工具重新显示（改名、取消编辑）保留编辑起点 </remarks>
         public void ShowTool(IParaStrategy tool, IReadOnlyList<IParaStrategy> flow)
         {
+            bool switched = !ReferenceEquals(tool, _tool);
             _tool = tool;
             _flow = flow ?? new IParaStrategy[0];
 
@@ -167,6 +193,8 @@ namespace DotNet.VisionMaster
             ShowRoiInfo(null);
             if (tool is IRoiEditable roi) roi.DispROI(_display);
             else _display.SetNonePara();
+
+            if (switched) BeginEdit();
         }
 
         /// <summary> 当前显示的参数项（各页合并），测试与宿主定位用 </summary>
@@ -205,7 +233,83 @@ namespace DotNet.VisionMaster
                 (_tool as IParaBinding)?.ParamsChanged(e.Changed);
             }
             catch (Exception ex) { Prompt.Show(ex.Message); }
+            MarkDirty();
         }
+
+        #region 编辑会话
+
+        /// <summary> 以工具当前的参数为起点开始一轮编辑 </summary>
+        private void BeginEdit()
+        {
+            try { _snapshot = FlowScheme.CapturePara(_tool); }
+            catch (Exception ex)
+            {
+                // 拍不了快照只是不能撤销, 不影响编辑本身
+                _snapshot = null;
+                Log.Warn(nameof(ParaForm), $"工具 '{_tool?.Name}' 的参数快照失败, 取消编辑不可用.", ex);
+            }
+            _dirty = false;
+            UpdateActions();
+        }
+
+        private void MarkDirty()
+        {
+            _dirty = true;
+            UpdateActions();
+        }
+
+        private bool IsIdle => _tool != null && !_drawBusy && !_hostBusy;
+        private bool CanCancel => IsIdle && _dirty && _snapshot != null;
+        private bool CanSave => IsIdle && _dirty;
+        private bool CanRunTest => IsIdle && _testRunner != null;
+
+        private void UpdateActions()
+        {
+            if (IsDisposed) return;
+            btn_cancelEdit.Enabled = CanCancel;
+            btn_saveEdit.Enabled = CanSave;
+            btn_runTest.Enabled = CanRunTest;
+        }
+
+        /// <summary>
+        /// 回到编辑起点。快照里已经是完整的配置（含示教态），所以<b>不</b>调用 <see cref="IParaBinding.ParamsChanged"/>：
+        /// 那会让策略把刚还原的示教态又清掉。
+        /// 模板绘制会写盘、替换模型句柄，无法撤销；它结束时已把编辑起点挪到当前（见 <see cref="RunDraw"/>）。
+        /// </summary>
+        internal void CancelEdit()
+        {
+            if (!CanCancel) return;
+            try
+            {
+                FlowScheme.RestorePara(_tool, _snapshot);
+                ShowTool(_tool, _flow);
+                _dirty = false;
+                UpdateActions();
+            }
+            catch (Exception ex) { Prompt.Show(ex.Message); }
+        }
+
+        /// <summary> 确认当前修改：之后取消编辑回到这里。写盘仍由宿主的方案保存负责 </summary>
+        internal void SaveEdit()
+        {
+            if (!CanSave) return;
+            BeginEdit();
+        }
+
+        internal void RunTest()
+        {
+            if (!CanRunTest) return;
+            try { _testRunner(); }
+            catch (Exception ex) { Prompt.Show(ex.Message); }
+        }
+
+        private void btn_cancelEdit_Click(object sender, EventArgs e) => CancelEdit();
+
+        private void btn_saveEdit_Click(object sender, EventArgs e) => SaveEdit();
+
+        private void btn_runTest_Click(object sender, EventArgs e) => RunTest();
+
+        #endregion
 
         #region ROI 读数
 
@@ -238,10 +342,10 @@ namespace DotNet.VisionMaster
             => RunDraw(tool => (tool as IRoiEditable)?.DrawROIAsync(_display, Checked(_rectDrawMap), false));
 
         private void btn_newModel_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(_display, Checked(_modelDrawMap), true));
+            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(_display, Checked(_modelDrawMap), true), commitsData: true);
 
         private void but_modifyModel_Click(object sender, EventArgs e)
-            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(_display, Checked(_modelDrawMap), false));
+            => RunDraw(tool => (tool as ITemplateEditable)?.SetTemplateAsync(_display, Checked(_modelDrawMap), false), commitsData: true);
 
         private static RectEnum Checked(Dictionary<RadioButton, RectEnum> map)
             => map.FirstOrDefault(kv => kv.Key.Checked).Value;
@@ -249,11 +353,16 @@ namespace DotNet.VisionMaster
         /// <summary>
         /// 4 个绘制入口共用：闸门 → 清屏 → 交给策略 → 异常提示 → 只清自己那一轮的闸门。
         /// </summary>
-        private async void RunDraw(Func<IParaStrategy, Task> draw)
+        /// <param name="commitsData">
+        /// 绘制会改写数据目录里的文件（模板）：文件与模型句柄不在快照里、撤销不了，
+        /// 还原参数只会得到"新模型 + 旧示教点"，所以结束后直接以当前状态为新的编辑起点。
+        /// </param>
+        private async void RunDraw(Func<IParaStrategy, Task> draw, bool commitsData = false)
         {
             if (_drawBusy || _tool == null) return;
             _drawBusy = true;
             int epoch = ++_drawEpoch;
+            UpdateActions();
             try
             {
                 _display.ReDispImage();
@@ -268,7 +377,16 @@ namespace DotNet.VisionMaster
                 if (!_display.IsReleasing && !IsDisposed && !Disposing) Prompt.Show(ex.Message);
                 else Log.Warn(nameof(ParaForm), "绘制异常(显示控件正在释放, 不弹框).", ex);
             }
-            finally { if (_drawEpoch == epoch) _drawBusy = false; }
+            finally
+            {
+                if (_drawEpoch == epoch)
+                {
+                    _drawBusy = false;
+                    if (commitsData) BeginEdit();
+                    // 右键取消、绘制失败也可能已经改过 ROI (策略自己负责回滚, 但宿主分不清), 一律当作改过
+                    else MarkDirty();
+                }
+            }
         }
 
         #endregion

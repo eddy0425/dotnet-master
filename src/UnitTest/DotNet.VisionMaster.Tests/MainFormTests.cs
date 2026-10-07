@@ -350,6 +350,32 @@ namespace DotNet.VisionMaster.Tests
             }, defaultFlow: false);
         }
 
+        /// <summary> 参数页的"运行测试"只跑当前工具；连续运行期间不可用 </summary>
+        [TestMethod]
+        public void ParaRunTest_RunsCurrentTool_DisabledWhileLooping()
+        {
+            Run(form =>
+            {
+                var a = new FakeStrategy("A");
+                var b = new FakeStrategy("B");
+                Tools(form).AddRange(new IParaStrategy[] { a, b });
+                form.SelectTool(1);
+
+                Priv.Click(Para(form), "btn_runTest_Click");
+                Assert.AreEqual(0, a.Runs);
+                Assert.AreEqual(1, b.Runs);
+                StringAssert.Contains(Status(form), "B: OK");
+
+                form.StartLoop();
+                Assert.IsTrue(Para(form).HostBusy);
+                Priv.Click(Para(form), "btn_runTest_Click");
+                Assert.AreEqual(1, b.Runs);
+
+                form.StopLoop();
+                Assert.IsFalse(Para(form).HostBusy);
+            }, defaultFlow: false);
+        }
+
         #region 流程窗口
 
         /// <summary> 流程窗口在运行时嵌进主窗右侧，主窗 Designer 里不放列表和按钮 </summary>
