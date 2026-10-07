@@ -5,7 +5,9 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using DotNet.Drawing;
 using DotNet.HalconCore;
 
 namespace DotNet.HalconUI
@@ -20,6 +22,8 @@ namespace DotNet.HalconUI
     /// <para>
     /// 写回时机：控件值通过校验、且与 getter 的结果不同时才调用 setter，随后触发一次 <see cref="Committed"/>；
     /// "点运行"不再隐含回存。校验失败的值不写回，错误显示在控件旁。
+    /// 写回本身可以交给宿主（<see cref="ValueWriter"/>，例如投递到执行会话、在两帧之间执行），
+    /// 执行完之前输入框显示为待生效。
     /// </para>
     /// <para>
     /// 外观沿用旧版 ParaForm：深绿底、定宽槽位（标签 + 130 宽编辑框 + 图标按钮），
@@ -38,6 +42,8 @@ namespace DotNet.HalconUI
             public Control Editor;
             public Button Button;
             public Button OpenButton;   // 文件夹行的"打开路径"
+            public int Pending;         // 还没执行完的写回 (宿主排队执行时)
+            public Color SavedBackColor;
         }
 
         private sealed class Group
@@ -131,6 +137,16 @@ namespace DotNet.HalconUI
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Action<string> FolderOpener { get; set; } = OpenFolder;
 
+        /// <summary>
+        /// 写回一项：参数是项与新值，返回的任务给出"值是否真的变了"（即 <see cref="ParamItem.TrySetValue"/> 的结果）。
+        /// 宿主用它把写回排到执行会话里、在两帧之间执行；为 null 时就地写回。任务没完成之前，该项的输入框显示为待生效。
+        /// </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Func<ParamItem, object, Task<bool>> ValueWriter { get; set; }
+
+        /// <summary> 待生效的背景色：写回已提交、宿主还没执行完 </summary>
+        public static readonly Color PendingBackColor = Color.Khaki;
+
         /// <summary> 有参数真正被写回之后触发；参数里是变了的项 </summary>
         public event EventHandler<ParamsCommittedEventArgs> Committed;
 
@@ -167,6 +183,9 @@ namespace DotNet.HalconUI
         /// <summary> 文件夹项的"打开路径"按钮；其他项为 null </summary>
         public Button OpenButtonOf(ParamItem item) => RowOf(item)?.OpenButton;
 
+        /// <summary> 某项是否有已提交、还没执行完的写回 </summary>
+        public bool IsPending(ParamItem item) => RowOf(item)?.Pending > 0;
+
         /// <summary> 某项当前的校验错误；没有错误时为 null </summary>
         public string ErrorOf(ParamItem item) => item != null && _errorText.TryGetValue(item, out var text) ? text : null;
 
@@ -194,8 +213,7 @@ namespace DotNet.HalconUI
                         return false;
                     }
                     SetError(row, null);
-                    Commit(row, value);
-                    ShowValue(row);   // 规整显示格式（例如 "05" → "5"）
+                    Commit(row, value, showAfter: true);   // 写回后规整显示格式（例如 "05" → "5"）
                     return true;
                 case FolderParam _:
                     SetError(row, null);
@@ -574,11 +592,74 @@ namespace DotNet.HalconUI
             }
         }
 
-        private void Commit(Row row, object value)
+        /// <summary>
+        /// 写回一项。交给 <see cref="ValueWriter"/> 时可能要等宿主执行（连续运行中排在两帧之间），
+        /// 等待期间输入框显示为待生效；就地写回或任务已完成时同步走完，时序与直接写回相同。
+        /// </summary>
+        private async void Commit(Row row, object value, bool showAfter = false)
         {
-            if (!row.Item.TrySetValue(value)) return;
-            Committed?.Invoke(this, new ParamsCommittedEventArgs(new[] { row.Item }));
-            RefreshVisibility();
+            bool changed;
+            var writer = ValueWriter;
+            if (writer == null)
+            {
+                changed = row.Item.TrySetValue(value);
+            }
+            else
+            {
+                Task<bool> task;
+                try { task = writer(row.Item, value) ?? Task.FromResult(false); }
+                catch (Exception ex)
+                {
+                    WriteFailed(row, ex);
+                    return;
+                }
+                bool pending = !task.IsCompleted;
+                if (pending) SetPending(row, true);
+                try
+                {
+                    changed = await task;
+                }
+                catch (Exception ex)
+                {
+                    WriteFailed(row, ex);
+                    return;
+                }
+                finally
+                {
+                    if (pending) SetPending(row, false);
+                }
+                // 等待期间面板可能已经换绑到别的工具: 这一行已不在面板上, 不再刷新它
+                if (IsDisposed || !_rows.Contains(row)) return;
+            }
+
+            if (changed)
+            {
+                Committed?.Invoke(this, new ParamsCommittedEventArgs(new[] { row.Item }));
+                RefreshVisibility();
+            }
+            if (showAfter) ShowValue(row);
+        }
+
+        private void WriteFailed(Row row, Exception ex)
+        {
+            Log.Warn(nameof(ParamPanel), $"参数 '{row.Item.Label}' 写回失败.", ex);
+            if (!IsDisposed && _rows.Contains(row)) SetError(row, ex.Message);
+        }
+
+        private void SetPending(Row row, bool pending)
+        {
+            if (pending)
+            {
+                if (row.Pending++ == 0)
+                {
+                    row.SavedBackColor = row.Editor.BackColor;
+                    row.Editor.BackColor = PendingBackColor;
+                }
+            }
+            else if (row.Pending > 0 && --row.Pending == 0 && !row.Editor.IsDisposed)
+            {
+                row.Editor.BackColor = row.SavedBackColor;
+            }
         }
 
         private void SetError(Row row, string error)

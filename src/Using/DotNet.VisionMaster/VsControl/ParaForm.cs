@@ -81,6 +81,7 @@ namespace DotNet.VisionMaster
             {
                 panel.SourcePicker = PickSource;
                 panel.SourceFormatter = source => _flow.Describe(source);
+                panel.ValueWriter = WriteValue;
                 panel.Committed += Panel_Committed;
             }
 
@@ -156,7 +157,13 @@ namespace DotNet.VisionMaster
         }
         private Action _testRunner;
 
-        /// <summary> 宿主正在运行（例如连续运行）：期间不允许运行测试、取消或保存参数 </summary>
+        /// <summary>
+        /// 把对工具的一次改动交给宿主执行，返回改动的结果（"值是否真的变了"）。宿主用它把参数写回排进执行会话，
+        /// 在两帧之间、在执行线程上执行 —— 连续运行时改参数不用停机，也不会和执行交错。为 null 时就地执行。
+        /// </summary>
+        public Func<Func<bool>, Task<bool>> HostWriter { get; set; }
+
+        /// <summary> 宿主正在运行（例如连续运行）：期间不允许运行测试、取消或保存参数、绘制 ROI / 模板 </summary>
         public bool HostBusy
         {
             get => _hostBusy;
@@ -230,15 +237,28 @@ namespace DotNet.VisionMaster
             }
         }
 
-        private void Panel_Committed(object sender, ParamsCommittedEventArgs e)
+        /// <summary>
+        /// 面板的写回：<see cref="ParamItem.TrySetValue"/> 与策略的 <see cref="IParaBinding.ParamsChanged"/> 是同一个请求，
+        /// 一起交给 <see cref="HostWriter"/> —— 策略据此清示教态时不会和执行交错。
+        /// </summary>
+        private async Task<bool> WriteValue(ParamItem item, object value)
         {
-            try
+            var binding = _tool as IParaBinding;
+            Exception error = null;
+            Func<bool> write = () =>
             {
-                (_tool as IParaBinding)?.ParamsChanged(e.Changed);
-            }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
-            MarkDirty();
+                if (!item.TrySetValue(value)) return false;
+                try { binding?.ParamsChanged(new[] { item }); }
+                catch (Exception ex) { error = ex; }
+                return true;
+            };
+            var writer = HostWriter;
+            bool changed = writer == null ? write() : await writer(write);
+            if (error != null) Prompt.Show(error.Message);
+            return changed;
         }
+
+        private void Panel_Committed(object sender, ParamsCommittedEventArgs e) => MarkDirty();
 
         #region 编辑会话
 
@@ -273,6 +293,9 @@ namespace DotNet.VisionMaster
             btn_cancelEdit.Enabled = IsIdle;
             btn_saveEdit.Enabled = CanSave;
             btn_runTest.Enabled = CanRunTest;
+            // 绘制会改动工具持有的 HObject (ROI / 模板 / 模型), 执行会话忙时不能做
+            foreach (var button in new Control[] { btn_drawRegion, but_editRegion, btn_newModel, but_modifyModel, but_editModel })
+                button.Enabled = !_hostBusy;
         }
 
         /// <summary>
@@ -381,6 +404,11 @@ namespace DotNet.VisionMaster
         private async void RunDraw(Func<IParaStrategy, Task> draw, bool commitsData = false)
         {
             if (_drawBusy || _tool == null) return;
+            if (_hostBusy)
+            {
+                Prompt.Show("流程正在运行，请先停止连续运行再绘制 ROI / 模板。");
+                return;
+            }
             _drawBusy = true;
             int epoch = ++_drawEpoch;
             UpdateActions();
@@ -417,6 +445,11 @@ namespace DotNet.VisionMaster
 
         private void but_editModel_Click(object sender, EventArgs e)
         {
+            if (_hostBusy)
+            {
+                Prompt.Show("流程正在运行，请先停止连续运行再编辑模板。");
+                return;
+            }
             // 绘制期间不能打开编辑窗：它会把模板区域的句柄交给 _editModel，而待完成的绘制稍后会释放这个旧句柄
             if (_drawBusy)
             {

@@ -58,6 +58,12 @@ namespace DotNet.VisionMaster.Tests
 
         public int Runs;
         public int DispRoiCount;
+
+        /// <summary> 执行时先睡这么久（模拟耗时的 HALCON 算子） </summary>
+        public int RunDelayMs;
+
+        /// <summary> 最近一次执行所在的线程 </summary>
+        public int ExecuteThreadId;
         public bool Disposed => IsDisposed;
 
         protected override void DeclareParams(ParamBuilder p)
@@ -78,7 +84,9 @@ namespace DotNet.VisionMaster.Tests
 
         protected override RunResult Execute(RunContext context)
         {
-            Runs++;
+            ExecuteThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+            if (RunDelayMs > 0) System.Threading.Thread.Sleep(RunDelayMs);
+            System.Threading.Interlocked.Increment(ref Runs);
             if (RunError != null) throw RunError;
             return RunResult.Ok("完成");
         }

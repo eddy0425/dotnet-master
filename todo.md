@@ -336,11 +336,11 @@ public class RegionAreaStrategy : ParaStrategyBase<RegionAreaPara>
 
 ### 阶段 9：执行会话与工作线程（1 周）
 
-- [ ] Runtime 增加 `FlowSession`（专用线程 + 请求队列 + 取消）。
+- [x] Runtime 增加 `FlowSession`（专用线程 + 请求队列 + 取消）。
 - [x] `IParaStrategy.Run` 的第二个参数从 `IHDisplay` 换成 `IOverlay`（为 null 时只计算不绘制），签名变为 `Run(RunContext, IOverlay)`；`FlowRunner` 不再接收 `IHDisplay`。（提前到阶段 8 完成：两个重载并存会让 `Run(ctx, null)` 产生二义性）
-- [ ] `MainForm` 去掉 `_loopTimer`，连续运行 / 单步 / 测试运行都走 `FlowSession`；输入图像先复制再交给会话；结果通过 `BeginInvoke` 回到 UI 线程渲染与写信息窗口。删除 `UiThreadDisplay`。
-- [ ] 会话忙时：禁用 ROI / 模板绘制、流程增删排序（复用 `HostBusy`）；参数写回改为投递到会话队列，在两帧之间执行。
-- [ ] 测试：运行期间 UI 线程可响应（用假算法 `Thread.Sleep` 验证）；取消能在两个工具之间生效；同一会话的请求严格串行；连续运行中改参数，下一帧生效且不会和执行交错。
+- [x] `MainForm` 去掉 `_loopTimer`，连续运行 / 单步 / 测试运行都走 `FlowSession`；输入图像先复制再交给会话；结果通过 `BeginInvoke` 回到 UI 线程渲染与写信息窗口。删除 `UiThreadDisplay`。
+- [x] 会话忙时：禁用 ROI / 模板绘制、流程增删排序（复用 `HostBusy`）；参数写回改为投递到会话队列，在两帧之间执行。
+- [x] 测试：运行期间 UI 线程可响应（用假算法 `Thread.Sleep` 验证）；取消能在两个工具之间生效；同一会话的请求严格串行；连续运行中改参数，下一帧生效且不会和执行交错。
 
 ### 阶段 10：开放扩展点（1.5～2 周）
 

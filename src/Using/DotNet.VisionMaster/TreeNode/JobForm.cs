@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Drawing;
 using System.Windows.Forms;
 using DotNet.Drawing;
@@ -12,12 +13,11 @@ namespace DotNet.VisionMaster
     /// </summary>
     /// <remarks>
     /// 只是视图：工具、算法资源和连续运行都由主窗持有，这里的操作都转给主窗，
-    /// 主窗通过 <see cref="MainForm.FlowChanged"/> / <see cref="MainForm.LoopStateChanged"/> 回调刷新。
+    /// 主窗通过 <see cref="MainForm.FlowChanged"/> / <see cref="MainForm.RunStateChanged"/> 回调刷新。
     /// </remarks>
     public partial class JobForm : Form
     {
         private readonly MainForm _host;
-        private bool _running;      // 运行是同步的, 这里只防运行中弹出模态提示时再次点击运行按钮重入
         private bool _syncingList;
 
         // 供 WinForms Designer 使用；未绑定宿主时禁用运行和编辑。
@@ -33,11 +33,11 @@ namespace DotNet.VisionMaster
             {
                 // 主窗改动流程、开停连续运行时跟着刷新；本窗口先释放时退订，免得主窗回调到已释放的控件
                 _host.FlowChanged += Host_FlowChanged;
-                _host.LoopStateChanged += Host_LoopStateChanged;
+                _host.RunStateChanged += Host_RunStateChanged;
                 Disposed += (s, e) =>
                 {
                     _host.FlowChanged -= Host_FlowChanged;
-                    _host.LoopStateChanged -= Host_LoopStateChanged;
+                    _host.RunStateChanged -= Host_RunStateChanged;
                 };
             }
             RefreshFlow();
@@ -46,6 +46,9 @@ namespace DotNet.VisionMaster
         private bool Bound => _host != null && !_host.IsDisposed;
 
         internal bool IsLoopRunning => Bound && _host.IsLoopRunning;
+
+        /// <summary> 主窗正在运行（连续运行，或单次运行还没显示完） </summary>
+        private bool HostBusy => Bound && _host.IsBusy;
 
         /// <summary> 按主窗的流程重建列表；只有选中项变了时不重建，免得点选时列表跳回顶部 </summary>
         internal void RefreshFlow()
@@ -78,17 +81,16 @@ namespace DotNet.VisionMaster
         private void UpdateButtons()
         {
             bool bound = Bound;
-            bool idle = !_running && !IsLoopRunning;
             bool hasTools = bound && _host.Tools.Count > 0;
-            btn_runOnce.Enabled = idle && hasTools;
-            // 循环中始终能点停止；工具被清空后循环会在下一轮自动停下
-            btn_runLoop.Enabled = bound && !_running && (IsLoopRunning || hasTools);
+            btn_runOnce.Enabled = !HostBusy && hasTools;
+            // 循环中始终能点停止
+            btn_runLoop.Enabled = bound && (IsLoopRunning || (!HostBusy && hasTools));
             btn_runLoop.Text = IsLoopRunning ? "停止运行" : "连续运行";
         }
 
         private void Host_FlowChanged(object sender, EventArgs e) => RefreshFlow();
 
-        private void Host_LoopStateChanged(object sender, EventArgs e) => UpdateButtons();
+        private void Host_RunStateChanged(object sender, EventArgs e) => UpdateButtons();
 
         private void Form_Job_Load(object sender, EventArgs e) => RefreshFlow();
 
@@ -302,26 +304,34 @@ namespace DotNet.VisionMaster
         /// <summary> 只运行当前工具；它的上游输出沿用上一轮的结果 </summary>
         private void mnu_runCurrent_Click(object sender, EventArgs e)
         {
-            if (_running || !Bound || IsLoopRunning || !_host.CanRunFlow()) return;
-            try { _host.RunCurrent(); }
-            catch (Exception ex) { Prompt.Show(ex.Message); }
+            if (!Bound || HostBusy || !_host.CanRunFlow()) return;
+            _host.Fire(_host.RunCurrentAsync);
         }
 
-        internal void RunOnce()
+        /// <summary>
+        /// 运行一次整个流程。在主窗的执行会话里跑，UI 线程不等；运行中再点不会重入（按钮已禁用，入口也挡一次）。
+        /// </summary>
+        /// <returns> 本次运行；没有发起时为已完成的任务 </returns>
+        internal Task RunOnce()
         {
-            if (_running || !Bound || IsLoopRunning || _host.Tools.Count == 0 || !_host.CanRunFlow()) return;
-            _running = true;
-            UpdateButtons();
-            try { _host.RunFlow(); }
+            if (!Bound || HostBusy || _host.Tools.Count == 0 || !_host.CanRunFlow()) return Task.FromResult(0);
+            var run = _host.RunFlowAsync();
+            Observe(run);
+            return run;
+        }
+
+        /// <summary> 流程运行的意外异常记日志并提示，不冒到 WinForms 消息循环 </summary>
+        private async void Observe(Task run)
+        {
+            try { await run; }
             catch (Exception ex)
             {
                 Log.Error(nameof(JobForm), "流程运行失败.", ex);
-                Prompt.Show(ex.Message);
+                if (!IsDisposed) Prompt.Show(ex.Message);
             }
             finally
             {
-                _running = false;
-                RefreshFlow();
+                if (!IsDisposed) RefreshFlow();
             }
         }
 
@@ -331,7 +341,7 @@ namespace DotNet.VisionMaster
         {
             if (!Bound) return;
             if (_host.IsLoopRunning) _host.StopLoop();
-            else if (!_running) _host.StartLoop();
+            else _host.StartLoop();
         }
 
         #endregion

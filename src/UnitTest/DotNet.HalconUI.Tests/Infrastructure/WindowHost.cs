@@ -84,6 +84,20 @@ namespace DotNet.HalconUI.Tests
             Application.DoEvents();
         }
 
+        /// <summary> 泵消息直到条件成立 </summary>
+        public static void PumpUntil(Func<bool> done, int timeoutMs = 5000)
+        {
+            var watch = Stopwatch.StartNew();
+            while (!done())
+            {
+                if (watch.ElapsedMilliseconds > timeoutMs)
+                    throw new TimeoutException("等待条件成立超时.");
+                Application.DoEvents();
+                Thread.Sleep(1);
+            }
+            Application.DoEvents();
+        }
+
         /// <summary>泵一轮消息，让已 Post 的续体跑完。</summary>
         public static void Pump()
         {

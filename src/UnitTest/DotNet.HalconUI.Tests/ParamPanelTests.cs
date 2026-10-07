@@ -348,5 +348,79 @@ namespace DotNet.HalconUI.Tests
                 Assert.IsTrue(panel.EditorOf(twoRows[1]).Bottom <= panel.ClientSize.Height, "末行完整可见");
             });
         }
+
+        #region 宿主写回
+
+        /// <summary> 宿主排队执行写回（连续运行中排到两帧之间）：执行完之前显示为待生效，执行完才通知 </summary>
+        [TestMethod]
+        public void ValueWriter_Queued_ShowsPendingUntilDone()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                var item = Item(items, "数量");
+                var editor = panel.EditorOf(item);
+                var normal = editor.BackColor;
+                var queued = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                Func<bool> write = null;
+                panel.ValueWriter = (i, v) =>
+                {
+                    write = () => i.TrySetValue(v);
+                    return queued.Task;
+                };
+                editor.Text = "8";
+
+                Assert.IsTrue(panel.CommitText(item));
+
+                Assert.AreEqual(5, para.Count, "还没执行");
+                Assert.IsTrue(panel.IsPending(item));
+                Assert.AreEqual(ParamPanel.PendingBackColor, editor.BackColor, "待生效");
+                Assert.AreEqual(0, committed.Count);
+
+                queued.SetResult(write());
+                WindowHost.PumpUntil(() => !panel.IsPending(item));
+
+                Assert.AreEqual(8, para.Count);
+                Assert.AreEqual(normal, editor.BackColor);
+                Assert.AreEqual(1, committed.Count, "执行完、值真的变了才通知");
+                Assert.AreEqual("8", editor.Text);
+            });
+        }
+
+        [TestMethod]
+        public void ValueWriter_CompletedSynchronously_BehavesLikeDirectWrite()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                panel.ValueWriter = (i, v) => System.Threading.Tasks.Task.FromResult(i.TrySetValue(v));
+                var check = (CheckBox)panel.EditorOf(Item(items, "开关"));
+
+                check.Checked = false;
+
+                Assert.IsFalse(para.Flag);
+                Assert.IsFalse(panel.IsPending(Item(items, "开关")));
+                Assert.AreEqual(1, committed.Count, "同步完成时与就地写回时序相同");
+            });
+        }
+
+        [TestMethod]
+        public void ValueWriter_Fails_ShowsErrorWithoutNotifying()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                var item = Item(items, "数量");
+                var queued = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                panel.ValueWriter = (i, v) => queued.Task;
+                panel.EditorOf(item).Text = "8";
+                panel.CommitText(item);
+
+                queued.SetException(new InvalidOperationException("会话已关闭"));
+                WindowHost.PumpUntil(() => !panel.IsPending(item));
+
+                Assert.AreEqual("会话已关闭", panel.ErrorOf(item));
+                Assert.AreEqual(0, committed.Count);
+            });
+        }
+
+        #endregion
     }
 }

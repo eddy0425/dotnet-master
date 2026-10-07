@@ -69,6 +69,7 @@
     <Compile Include="FlowTests.cs" />
     <Compile Include="SoakTests.cs" />
     <Compile Include="OverlayTests.cs" />
+    <Compile Include="FlowSessionTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Using\DotNet.Drawing\DotNet.Drawing.csproj">

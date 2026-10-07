@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using DotNet.Drawing;
 using DotNet.HalconAlgo;
@@ -30,6 +32,22 @@ namespace DotNet.VisionMaster.Tests
             });
 
         private static List<IParaStrategy> Tools(MainForm form) => Priv.Get<List<IParaStrategy>>(form, "_tools");
+
+        /// <summary> 运行在执行会话里: 泵消息直到任务（含 UI 线程上的显示）完成 </summary>
+        private static T Wait<T>(Task<T> task)
+        {
+            WindowHost.PumpUntil(() => task.IsCompleted);
+            return task.GetAwaiter().GetResult();
+        }
+
+        private static void Wait(Task task)
+        {
+            WindowHost.PumpUntil(() => task.IsCompleted);
+            task.GetAwaiter().GetResult();
+        }
+
+        /// <summary> 等主窗彻底空闲：会话跑完、显示完、停止通知处理完 </summary>
+        private static void WaitIdle(MainForm form) => WindowHost.PumpUntil(() => !form.IsBusy && !Para(form).HostBusy);
 
         private static ParaForm Para(MainForm form) => Priv.Get<ParaForm>(form, "_formPara");
 
@@ -313,7 +331,7 @@ namespace DotNet.VisionMaster.Tests
                 Tools(form).AddRange(new IParaStrategy[] { a, b });
                 form.SelectTool(1);
 
-                var result = form.RunCurrent();
+                var result = Wait(form.RunCurrentAsync());
 
                 Assert.AreEqual(RunStatus.Error, result.Status);
                 Assert.AreEqual(0, a.Runs);
@@ -333,7 +351,7 @@ namespace DotNet.VisionMaster.Tests
                 var c = new FakeStrategy("C");
                 Tools(form).AddRange(new IParaStrategy[] { a, b, c });
 
-                var result = form.RunFlow();
+                var result = Wait(form.RunFlowAsync());
 
                 Assert.IsTrue(result.Stopped);
                 Assert.AreEqual(1, a.Runs);
@@ -364,24 +382,32 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(form =>
             {
-                var tool = new FakeStrategy("失败工具") { RunError = new InvalidOperationException("失败") };
+                // 执行要花点时间: 否则会话线程可能在下一行断言"正在运行"之前就已经因失败停下
+                var tool = new FakeStrategy("失败工具") { RunError = new InvalidOperationException("失败"), RunDelayMs = 300 };
                 Tools(form).Add(tool);
+                form.ShowParameters();
                 Priv.Click(Jobs(form), "btn_runLoop_Click");
                 Assert.IsTrue(form.IsLoopRunning);
                 Priv.Click(Jobs(form), "btn_runOnce_Click");
-                Assert.AreEqual(0, tool.Runs, "连续运行期间单次运行不生效");
-                form.ShowParameters();
-                Priv.Click(form, "LoopTimer_Tick");
-                Assert.IsFalse(form.IsLoopRunning, "失败后自动停下");
-                Assert.AreEqual(1, tool.Runs);
+
+                WindowHost.PumpUntil(() => !form.IsLoopRunning && Info(form).Visible);
+                WaitIdle(form);
+                Assert.AreEqual(1, tool.Runs, "失败后自动停下; 连续运行期间单次运行不生效");
                 Assert.IsTrue(Info(form).Visible, "因失败停下时切到信息窗口");
+                StringAssert.Contains(Status(form), "失败: 失败工具: 失败", "失败的那一帧也显示出来");
 
                 tool.RunError = null;
+                tool.RunDelayMs = 0;
                 Priv.Click(Jobs(form), "btn_runLoop_Click");
-                Priv.Click(form, "LoopTimer_Tick");
-                Assert.IsTrue(form.IsLoopRunning);
+                WindowHost.PumpUntil(() => tool.Runs >= 3);
+                Assert.IsTrue(form.IsLoopRunning, "成功时一直跑下去");
                 Priv.Click(Jobs(form), "btn_runLoop_Click");
                 Assert.IsFalse(form.IsLoopRunning, "再点一次停止");
+                WaitIdle(form);
+                int stoppedAt = tool.Runs;
+                WindowHost.PumpUntil(() => true, 300);
+                Thread.Sleep(300);
+                Assert.AreEqual(stoppedAt, tool.Runs, "停下之后不再执行");
             }, defaultFlow: false);
         }
 
@@ -397,17 +423,93 @@ namespace DotNet.VisionMaster.Tests
                 form.SelectTool(1);
 
                 Priv.Click(Para(form), "btn_runTest_Click");
+                WaitIdle(form);
                 Assert.AreEqual(0, a.Runs);
                 Assert.AreEqual(1, b.Runs);
                 StringAssert.Contains(Status(form), "B: OK");
 
                 form.StartLoop();
                 Assert.IsTrue(Para(form).HostBusy);
-                Priv.Click(Para(form), "btn_runTest_Click");
-                Assert.AreEqual(1, b.Runs);
+                Assert.IsFalse(Priv.Get<Button>(Para(form), "btn_runTest").Enabled);
+                Assert.IsFalse(Priv.Get<Button>(Para(form), "btn_drawRegion").Enabled, "会话忙时不能绘制 ROI");
 
                 form.StopLoop();
+                WaitIdle(form);
                 Assert.IsFalse(Para(form).HostBusy);
+                Assert.IsTrue(Priv.Get<Button>(Para(form), "btn_drawRegion").Enabled);
+            }, defaultFlow: false);
+        }
+
+        /// <summary> 流程在执行会话的工作线程上跑：算子耗时期间 UI 线程照常处理消息 </summary>
+        [TestMethod]
+        public void RunFlow_RunsOffUiThread_UiStaysResponsive()
+        {
+            Run(form =>
+            {
+                var slow = new FakeStrategy("慢") { RunDelayMs = 400 };
+                Tools(form).Add(slow);
+                int uiThread = Thread.CurrentThread.ManagedThreadId;
+                int ticks = 0;
+                using (var timer = new System.Windows.Forms.Timer { Interval = 20 })
+                {
+                    timer.Tick += (s, e) => ticks++;
+                    timer.Start();
+
+                    var run = form.RunFlowAsync();
+                    Assert.IsFalse(run.IsCompleted, "运行请求立即返回, 不在 UI 线程上执行");
+                    Assert.IsTrue(form.IsBusy);
+                    Wait(run);
+
+                    Assert.AreNotEqual(uiThread, slow.ExecuteThreadId, "工具在会话线程上执行");
+                    Assert.IsTrue(ticks >= 5, $"运行期间 UI 消息照常处理 (定时器只跳了 {ticks} 次)");
+                }
+                Assert.IsFalse(form.IsBusy);
+            }, defaultFlow: false);
+        }
+
+        /// <summary> 会话忙时不能改流程结构 </summary>
+        [TestMethod]
+        public void StructureChanges_WhileRunning_Prompt()
+        {
+            Run(form =>
+            {
+                var slow = new FakeStrategy("慢") { RunDelayMs = 300 };
+                Tools(form).Add(slow);
+                var run = form.RunFlowAsync();
+                using (var prompts = new PromptLog())
+                {
+                    form.RemoveTool(0);
+                    form.AddTool(BuiltIn.Algorithms[0].Key, select: false);
+                    Assert.AreEqual(2, prompts.Messages.Count);
+                    StringAssert.Contains(prompts.Messages[0], "正在运行");
+                }
+                Assert.AreEqual(1, Tools(form).Count, "流程不变");
+                Wait(run);
+            }, defaultFlow: false);
+        }
+
+        /// <summary> 连续运行中改参数：排进会话，下一帧生效，不用停机 </summary>
+        [TestMethod]
+        public void ParamWrite_WhileLooping_QueuedIntoSession()
+        {
+            Run(form =>
+            {
+                var tool = new FakeStrategy("A") { RunDelayMs = 30 };
+                Tools(form).Add(tool);
+                form.SelectTool(0);
+                var flag = Para(form).ParamItems.Single(i => i.Label == "开关");
+                var check = (CheckBox)Para(form).PanelOf(TabPageEnum.Display).EditorOf(flag);
+
+                form.StartLoop();
+                WindowHost.PumpUntil(() => tool.Runs >= 2);
+                check.Checked = !check.Checked;
+                WindowHost.PumpUntil(() => tool.ChangedLabels.Contains("开关"));
+
+                Assert.IsTrue(form.IsLoopRunning, "改参数不用停机");
+                Assert.IsTrue(tool.inPara.Flag == check.Checked, "写回已经生效");
+                Assert.IsTrue(Para(form).IsDirty);
+                form.StopLoop();
+                WaitIdle(form);
             }, defaultFlow: false);
         }
 
@@ -457,7 +559,8 @@ namespace DotNet.VisionMaster.Tests
                     Assert.AreEqual(2, list.Items.Count);
                     list.SelectedIndex = 1;
                     Assert.AreEqual(1, form.SelectedIndex);
-                    jobs.RunOnce();
+                    Wait(jobs.RunOnce());
+                    WindowHost.Pump();
                     Assert.AreEqual(1, a.Runs);
                     Assert.AreEqual(1, b.Runs);
                     StringAssert.EndsWith(list.Items[1].ToString(), "✔", "成功的工具也要标出来，行尾 ✔ 才会重画");
@@ -470,7 +573,8 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(form =>
             {
-                var tool = new FakeStrategy("失败工具") { RunError = new InvalidOperationException("失败") };
+                // 执行要花点时间: 否则会话线程可能在下一行断言"正在运行"之前就已经因失败停下
+                var tool = new FakeStrategy("失败工具") { RunError = new InvalidOperationException("失败"), RunDelayMs = 300 };
                 Tools(form).Add(tool);
                 using (var jobs = new JobForm(form))
                 {
@@ -479,18 +583,20 @@ namespace DotNet.VisionMaster.Tests
                     Assert.IsTrue(form.IsLoopRunning, "流程窗口开的是主窗那一套循环");
                     Assert.IsFalse(jobs.btn_runOnce.Enabled);
                     Assert.AreEqual("停止运行", jobs.btn_runLoop.Text);
-                    Priv.Click(form, "LoopTimer_Tick");
+                    WaitIdle(form);
                     Assert.IsFalse(jobs.IsLoopRunning, "失败后自动停下");
                     Assert.IsTrue(jobs.btn_runOnce.Enabled, "主窗停下后流程窗口的按钮跟着恢复");
                     Assert.AreEqual(1, tool.Runs);
 
                     tool.RunError = null;
+                    tool.RunDelayMs = 0;
                     form.StartLoop();
                     Assert.IsTrue(jobs.IsLoopRunning, "主窗开的循环流程窗口也能看到");
                     jobs.Hide();
                     Assert.IsTrue(form.IsLoopRunning, "关流程窗口不影响主窗的循环");
                     Priv.Click(jobs, "btn_runLoop_Click");
                     Assert.IsFalse(form.IsLoopRunning, "流程窗口也能停");
+                    WaitIdle(form);
                 }
             }, defaultFlow: false);
         }
@@ -643,6 +749,7 @@ namespace DotNet.VisionMaster.Tests
                 Assert.IsFalse(picked, "连续运行中不弹选择目录");
                 Assert.IsTrue(form.IsLoopRunning);
                 form.StopLoop();
+                WaitIdle(form);
             }, defaultFlow: false);
         }
 

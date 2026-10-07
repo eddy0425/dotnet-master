@@ -39,7 +39,7 @@ namespace DotNet.HalconUI.Tests
         private static Task<bool> StartDraw(HDisplayUI ui, out CvRegion region)
         {
             region = new CvRegion { Type = RectEnum.Rectangle };
-            return ((HDisplay)((UiThreadDisplay)ui.Display).Inner).DrawRegionAsync(region);
+            return ((HDisplay)ui.Display).DrawRegionAsync(region);
         }
 
         [TestMethod]

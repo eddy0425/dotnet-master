@@ -8,6 +8,8 @@ using DotNet.HalconCore;
 using DotNet.VisionRuntime;
 using DotNet.HalconAlgo;
 using System.Windows.Forms;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 
 
@@ -28,7 +30,13 @@ namespace DotNet.VisionMaster
         private readonly InfoForm _formInfo;
         private readonly ToolForm _formTool;
         private readonly JobForm _formJob;
-        private readonly Timer _loopTimer = new Timer { Interval = 100 };
+        private readonly FlowSession _session;
+        // 连续运行: 会话线程交出的最新一帧, 等 UI 线程取走显示; UI 跟不上时中间帧直接丢弃, 不排队
+        private FlowFrame _latestFrame;
+        private int _renderPosted;
+        // 已提交、还没在 UI 线程上显示完的单次运行
+        private int _runsInFlight;
+        private IReadOnlyList<FlowIssue> _loopIssues = new FlowIssue[0];
         private readonly List<IParaStrategy> _tools = new List<IParaStrategy>();
         private readonly HashSet<Guid> _invalid = new HashSet<Guid>();
         private int _index = -1;
@@ -45,7 +53,11 @@ namespace DotNet.VisionMaster
             _display = new HDisplayUI();
             panel1.Controls.Add(_display);
 
-            _formPara = new ParaForm(_display) { TestRunner = RunTest };
+            _session = new FlowSession(_tools);
+            _session.FrameCompleted += Session_FrameCompleted;
+            _session.LoopStopped += Session_LoopStopped;
+
+            _formPara = new ParaForm(_display) { TestRunner = RunTest, HostWriter = WriteToTools };
             _formPara.EditCancelled += (s, e) => ShowInfo();
             panel2.Controls.Add(_formPara);
 
@@ -69,7 +81,6 @@ namespace DotNet.VisionMaster
 
             // 挂 Disposed 而不是重写 Dispose(bool): 后者已在 Designer 里定义。
             // 此时子控件(含 _display)都已销毁, 不会再有绘制去碰策略持有的句柄。
-            _loopTimer.Tick += LoopTimer_Tick;
             Disposed += MainForm_Disposed;
         }
 
@@ -91,8 +102,8 @@ namespace DotNet.VisionMaster
         /// <summary> 流程内容或选中项变了（增删、排序、改名、运行状态、切换工具） </summary>
         internal event EventHandler FlowChanged;
 
-        /// <summary> 连续运行开始或停止 </summary>
-        internal event EventHandler LoopStateChanged;
+        /// <summary> 运行状态变了：连续运行开始 / 停止，单次运行开始 / 结束 </summary>
+        internal event EventHandler RunStateChanged;
 
         /// <summary> 选择方案目录；参数是建议目录，返回 null 表示取消。测试可替换 </summary>
         internal Func<string, string> SchemeDirPicker { get; set; } = PickFolder;
@@ -120,7 +131,7 @@ namespace DotNet.VisionMaster
         /// <summary> 在当前工具之后插入一个新工具（没有选中时追加到末尾） </summary>
         internal IParaStrategy AddTool(string key, bool select)
         {
-            if (!EnsureNotDrawing()) return null;
+            if (!EnsureNotDrawing() || !EnsureIdle()) return null;
             var tool = Catalog.Create(key);
             tool.Name = UniqueName(tool.Name);
             InitTool(tool);
@@ -136,7 +147,7 @@ namespace DotNet.VisionMaster
 
         internal void RemoveTool(int index)
         {
-            if (index < 0 || index >= _tools.Count || !EnsureNotDrawing()) return;
+            if (index < 0 || index >= _tools.Count || !EnsureNotDrawing() || !EnsureIdle()) return;
             var tool = _tools[index];
             _tools.RemoveAt(index);
             DisposeTool(tool);
@@ -149,7 +160,7 @@ namespace DotNet.VisionMaster
         internal void MoveTool(int index, int delta)
         {
             int target = index + delta;
-            if (index < 0 || index >= _tools.Count || target < 0 || target >= _tools.Count || !EnsureNotDrawing()) return;
+            if (index < 0 || index >= _tools.Count || target < 0 || target >= _tools.Count || !EnsureNotDrawing() || !EnsureIdle()) return;
             var tool = _tools[index];
             _tools.RemoveAt(index);
             _tools.Insert(target, tool);
@@ -194,7 +205,7 @@ namespace DotNet.VisionMaster
         /// <summary> 清空当前流程，同时解除参数页对已释放工具的引用。 </summary>
         internal void ClearFlow()
         {
-            if (!EnsureNotDrawing()) return;
+            if (!EnsureNotDrawing() || !EnsureIdle()) return;
             _formPara.ShowTool(null, new IParaStrategy[0]);
             foreach (var tool in _tools) DisposeTool(tool);
             _tools.Clear();
@@ -202,6 +213,16 @@ namespace DotNet.VisionMaster
             _index = -1;
             OnFlowChanged();
             ShowStatus("当前流程已清空");
+        }
+
+        /// <summary>
+        /// 流程结构（增删排序、清空、打开方案）只能在执行会话空闲时改：会话线程正在用这些工具。
+        /// </summary>
+        private bool EnsureIdle()
+        {
+            if (!IsBusy) return true;
+            Prompt.Show(IsLoopRunning ? "请先停止连续运行。" : "流程正在运行，请等本次运行结束。");
+            return false;
         }
 
         private bool EnsureNotDrawing()
@@ -285,25 +306,57 @@ namespace DotNet.VisionMaster
 
         #region 运行
 
-        /// <summary> 只运行当前工具；它的上游输出沿用上一轮的结果。显示的是本步的底图 + 本步的叠加层 </summary>
-        internal RunResult RunCurrent()
+        /// <summary> 正在连续运行，或有单次运行还没显示完：期间不能改流程结构、不能绘制 ROI / 模板 </summary>
+        internal bool IsBusy => _session.IsBusy || _runsInFlight > 0;
+
+        internal bool IsLoopRunning => _session.IsLooping;
+
+        /// <summary>
+        /// 只运行当前工具；它的上游输出沿用上一轮的结果。在执行会话里运行，UI 线程不等；显示的是本步的底图 + 本步的叠加层
+        /// </summary>
+        internal async Task<RunResult> RunCurrentAsync()
         {
             if (CurrentTool == null) return null;
-            var step = new FlowRunner(_tools).RunStep(_index, _display.Display.HoImage);
-            _display.ShowResult(step.Image, step.TakeOverlay());
-            ShowCycleTime(step.Result.Elapsed);
-            ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}", LevelOf(step.Result.Status));
-            OnFlowChanged();
-            return step.Result;
+            BeginRun();
+            try
+            {
+                using (var frame = await _session.RunStepAsync(_index, _display.Display.HoImage))
+                {
+                    var step = frame.Result.Steps.Single();
+                    if (IsDisposed) return step.Result;
+                    _display.ShowResult(frame.Image, frame.TakeOverlay());
+                    ShowCycleTime(step.Result.Elapsed);
+                    ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}", LevelOf(step.Result.Status));
+                    OnFlowChanged();
+                    return step.Result;
+                }
+            }
+            finally { EndRun(); }
         }
 
         /// <summary> 按顺序运行整个流程（遇到失败即停）；运行前先校验引用 </summary>
-        internal FlowRunResult RunFlow()
+        internal async Task<FlowRunResult> RunFlowAsync()
         {
             var issues = ValidateFlow(showStatus: false);
-            var result = new FlowRunner(_tools).Run(_display.Display.HoImage);
-            // 底图取流程结束时的当前图像, 叠加层按执行顺序合成一份交给显示控件 (之后缩放 / 平移都会重放)
-            _display.ShowResult(result.Image, result.TakeOverlay());
+            BeginRun();
+            try
+            {
+                using (var frame = await _session.RunAsync(_display.Display.HoImage))
+                {
+                    if (!IsDisposed) ShowFrame(frame, issues);
+                    return frame.Result;
+                }
+            }
+            finally { EndRun(); }
+        }
+
+        /// <summary>
+        /// 显示一帧：底图取流程结束时的当前图像，叠加层按执行顺序合成后交给显示控件（之后缩放 / 平移都会重放）。
+        /// </summary>
+        private void ShowFrame(FlowFrame frame, IReadOnlyList<FlowIssue> issues)
+        {
+            var result = frame.Result;
+            _display.ShowResult(frame.Image, frame.TakeOverlay());
             string summary = $"流程: {result.Steps.Count}/{_tools.Count} 步, 用时 {result.Elapsed.TotalMilliseconds:F0} ms";
             var error = result.FirstError;
             if (error != null) summary += Environment.NewLine + $"失败: {error.Tool.Name}: {error.Result.Message}";
@@ -311,7 +364,18 @@ namespace DotNet.VisionMaster
             ShowCycleTime(result.Elapsed);
             ShowStatus(summary, error != null ? InfoLevel.Error : issues.Count > 0 ? InfoLevel.Warn : InfoLevel.Info);
             OnFlowChanged();
-            return result;
+        }
+
+        private void BeginRun()
+        {
+            _runsInFlight++;
+            OnRunStateChanged();
+        }
+
+        private void EndRun()
+        {
+            _runsInFlight--;
+            if (!IsDisposed) OnRunStateChanged();
         }
 
         /// <summary> 校验各工具的来源引用；有问题的工具在列表里标红 </summary>
@@ -325,60 +389,102 @@ namespace DotNet.VisionMaster
             return issues;
         }
 
-        internal bool IsLoopRunning => _loopTimer.Enabled;
-
-        /// <summary> 连续运行：反复跑整个流程，遇到失败、异常或正在绘制时自动停下。只有主窗这一套定时器 </summary>
+        /// <summary>
+        /// 连续运行：在执行会话里反复跑整个流程，遇到失败或异常自动停下。每帧都以开始时窗口里的图为输入（复制一份）。
+        /// </summary>
         internal void StartLoop()
         {
-            if (IsLoopRunning || _tools.Count == 0 || !CanRunFlow()) return;
-            _loopTimer.Start();
-            OnLoopStateChanged();
+            if (IsLoopRunning || _tools.Count == 0 || !CanRunFlow() || IsBusy) return;
+            _loopIssues = ValidateFlow(showStatus: false);
+            _session.StartLoop(_display.Display.HoImage);
+            OnRunStateChanged();
         }
 
+        /// <summary> 停止连续运行：正在跑的那一帧在两个工具之间停下，不再显示 </summary>
         internal void StopLoop()
         {
-            _loopTimer.Stop();
-            OnLoopStateChanged();
+            _session.StopLoop();
+            OnRunStateChanged();
         }
 
-        private void OnLoopStateChanged()
+        private void OnRunStateChanged()
         {
-            _formPara.HostBusy = IsLoopRunning;
-            LoopStateChanged?.Invoke(this, EventArgs.Empty);
+            _formPara.HostBusy = IsBusy;
+            RunStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// 参数写回：会话忙时排进会话、在两帧之间执行（连续运行中改参数不用停机）；空闲时就地执行，会话线程这时不碰工具。
+        /// </summary>
+        private Task<bool> WriteToTools(Func<bool> write) =>
+            _session.IsBusy ? _session.InvokeAsync(write) : Task.FromResult(write());
+
+        /// <summary> 会话线程：只留最新一帧，没有待显示的请求时才 Post 一次，UI 线程跟不上就丢中间帧 </summary>
+        private void Session_FrameCompleted(object sender, FlowFrameEventArgs e)
+        {
+            Interlocked.Exchange(ref _latestFrame, e.TakeFrame())?.Dispose();
+            if (Interlocked.Exchange(ref _renderPosted, 1) == 0 && !PostToUi(ShowLatestFrame))
+                Interlocked.Exchange(ref _latestFrame, null)?.Dispose();
+        }
+
+        private void ShowLatestFrame()
+        {
+            // 先清标记再取帧: 取帧之后才到的一帧会再 Post 一次, 不会被漏掉
+            Volatile.Write(ref _renderPosted, 0);
+            using (var frame = Interlocked.Exchange(ref _latestFrame, null))
+            {
+                if (frame != null && !IsDisposed) ShowFrame(frame, _loopIssues);
+            }
+        }
+
+        /// <summary> 会话线程：连续运行停下了。因失败停下时切到信息窗口（同旧项目 ShowErro） </summary>
+        private void Session_LoopStopped(object sender, LoopStoppedEventArgs e)
+        {
+            PostToUi(() =>
+            {
+                if (IsDisposed) return;
+                if (e.Error != null)
+                {
+                    _formInfo.Error($"连续运行失败: {e.Error.Message}");
+                    ShowInfo();
+                    Prompt.Show(e.Error.Message);
+                }
+                else if (e.Failure != null)
+                {
+                    ShowInfo();
+                }
+                OnRunStateChanged();
+            });
+        }
+
+        /// <summary> 从会话线程转到 UI 线程；窗体已经没有句柄（正在关闭）时返回 false </summary>
+        private bool PostToUi(Action action)
+        {
+            try
+            {
+                if (IsDisposed || !IsHandleCreated) return false;
+                BeginInvoke(action);
+                return true;
+            }
+            catch (InvalidOperationException) { return false; }
         }
 
         /// <summary> 参数页的"运行测试"：与流程窗口的"运行当前"同一套检查 </summary>
         private void RunTest()
         {
-            if (!EnsureLoopStopped() || !CanRunFlow()) return;
-            RunCurrent();
+            if (!EnsureLoopStopped() || !CanRunFlow() || IsBusy) return;
+            Fire(RunCurrentAsync);
         }
 
-        /// <summary>
-        /// 每轮先停表、跑完再续上：提示框是模态的, 不能让下一轮在提示期间重入。
-        /// 因失败停下时切到信息窗口（同旧项目 ShowErro）。
-        /// </summary>
-        private void LoopTimer_Tick(object sender, EventArgs e)
+        /// <summary> 从事件处理器里发起一次运行：意外异常记日志并提示，不冒到 WinForms 消息循环 </summary>
+        internal async void Fire(Func<Task> run)
         {
-            _loopTimer.Stop();
-            if (_tools.Count == 0 || !CanRunFlow())
-            {
-                OnLoopStateChanged();
-                return;
-            }
-            try
-            {
-                if (RunFlow().FirstError == null) _loopTimer.Start();
-                else ShowInfo();
-            }
+            try { await run(); }
             catch (Exception ex)
             {
-                Log.Error(nameof(MainForm), "连续运行失败.", ex);
-                _formInfo.Error($"连续运行失败: {ex.Message}");
-                ShowInfo();
-                Prompt.Show(ex.Message);
+                Log.Error(nameof(MainForm), "运行失败.", ex);
+                if (!IsDisposed) Prompt.Show(ex.Message);
             }
-            OnLoopStateChanged();
         }
 
         private static string Describe(RunResult result)
@@ -412,15 +518,20 @@ namespace DotNet.VisionMaster
 
         #region 方案
 
-        internal void SaveScheme(string dir)
+        /// <summary>
+        /// 保存方案。会话忙（连续运行）时排进会话、在两帧之间保存：保存会读参数、迁数据目录，不能和执行交错。
+        /// </summary>
+        internal async Task SaveSchemeAsync(string dir)
         {
-            FlowScheme.Save(dir, _tools);
-            ShowStatus($"方案已保存: {dir}");
+            var tools = _tools.ToList();
+            if (_session.IsBusy) await _session.InvokeAsync(() => FlowScheme.Save(dir, tools));
+            else FlowScheme.Save(dir, tools);
+            if (!IsDisposed) ShowStatus($"方案已保存: {dir}");
         }
 
         internal void OpenScheme(string dir)
         {
-            if (!EnsureNotDrawing()) return;
+            if (!EnsureNotDrawing() || !EnsureIdle()) return;
             var loaded = FlowScheme.Load(dir, Catalog);
             foreach (var tool in _tools) DisposeTool(tool);
             _tools.Clear();
@@ -449,15 +560,15 @@ namespace DotNet.VisionMaster
             try
             {
                 string dir = SchemeDirPicker(SchemeRoot);
-                if (dir != null) SaveScheme(dir);
+                if (dir != null) Fire(() => SaveSchemeAsync(dir));
             }
             catch (Exception ex) { Prompt.Show(ex.Message); }
         }
 
-        /// <summary> 连续运行中不允许替换流程（新建、打开方案） </summary>
+        /// <summary> 运行中不允许替换流程（新建、打开方案） </summary>
         private bool EnsureLoopStopped()
         {
-            if (!IsLoopRunning) return true;
+            if (!IsLoopRunning) return EnsureIdle();
             Prompt.Show("请先停止连续运行。");
             return false;
         }
@@ -495,7 +606,9 @@ namespace DotNet.VisionMaster
         /// </summary>
         private void MainForm_Disposed(object sender, EventArgs e)
         {
-            _loopTimer.Dispose();
+            // 先停会话并等它跑完当前工具: 之后才能释放它正在用的工具
+            _session.Dispose();
+            Interlocked.Exchange(ref _latestFrame, null)?.Dispose();
             _formTool.Dispose();
             foreach (var tool in _tools) DisposeTool(tool);
         }
