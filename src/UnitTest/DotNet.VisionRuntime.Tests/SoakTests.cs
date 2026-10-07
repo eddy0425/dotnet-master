@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using DotNet.Drawing;
@@ -28,6 +28,7 @@ namespace DotNet.VisionRuntime.Tests
             using (var bar = Rectangle1(80, 100, 220, 200))
             using (var image = Paint(dark, bar, 255))
             {
+                OverlayList shown = null;
                 try
                 {
                     // 匹配: 模板框住亮块左上角; 创建ROI 跟随匹配坐标系; 拟合直线测亮块左边缘 (列 100)
@@ -54,15 +55,19 @@ namespace DotNet.VisionRuntime.Tests
 
                     var tools = new IParaStrategy[] { shape, roi, fit };
                     var runner = new FlowRunner(tools);
-                    var display = new FakeDisplay();
-
+                    // 与显示控件相同的用法: 每轮取走合成的叠加层换上去, 旧的随之释放
                     Func<int, long> runMany = n =>
                     {
                         for (int i = 0; i < n; i++)
                         {
-                            display.Clear();
-                            var result = runner.Run(image, display);
-                            Assert.IsTrue(result.AllOk, string.Join("; ", result.Steps));
+                            using (var result = runner.Run(image))
+                            {
+                                Assert.IsTrue(result.AllOk, string.Join("; ", result.Steps));
+                                var next = result.TakeOverlay();
+                                Assert.IsTrue(next.Count > 0, "前提：每轮都生成了叠加层");
+                                shown?.Dispose();
+                                shown = next;
+                            }
                         }
                         GC.Collect();
                         GC.WaitForPendingFinalizers();
@@ -81,6 +86,7 @@ namespace DotNet.VisionRuntime.Tests
                 }
                 finally
                 {
+                    shown?.Dispose();
                     shape.Dispose();
                     roi.Dispose();
                     fit.Dispose();

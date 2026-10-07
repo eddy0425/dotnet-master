@@ -50,6 +50,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="IHDisplay.cs" />
+    <Compile Include="IOverlay.cs" />
     <Compile Include="IParaStrategy.cs" />
     <Compile Include="IRoiHost.cs" />
     <Compile Include="ModelResult.cs" />

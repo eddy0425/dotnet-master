@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using DotNet.Drawing;
@@ -34,6 +34,7 @@ namespace DotNet.HalconAlgo.Tests
         public void TearDown()
         {
             _strategy.Dispose();
+            _display.Dispose();
             _image.Dispose();
         }
 
@@ -263,6 +264,7 @@ namespace DotNet.HalconAlgo.Tests
             {
                 var upstream = new StubStrategy("区域源").Region("区域", () => upstreamRegion);
                 _strategy.inPara.RegionIn = upstream.Ref("区域");
+                _display.CopyObjects = true;
 
                 Assert.IsTrue(_strategy.On(_display, upstream).IsOk);
                 Assert.AreEqual(99.5, _strategy.Line.Start.X, 0.5);

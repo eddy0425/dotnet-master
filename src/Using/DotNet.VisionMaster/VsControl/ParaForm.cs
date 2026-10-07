@@ -386,7 +386,8 @@ namespace DotNet.VisionMaster
             UpdateActions();
             try
             {
-                _display.ReDispImage();
+                // 运行结果是对旧 ROI / 模板算的, 编辑时不再叠在图上
+                _display.ClearOverlay();
                 var task = draw(_tool);
                 if (task != null) await task;
             }

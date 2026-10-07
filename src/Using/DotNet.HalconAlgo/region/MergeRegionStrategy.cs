@@ -130,9 +130,9 @@ namespace DotNet.HalconAlgo
             }
         }
 
-        protected override void Render(IHDisplay display, RunResult result)
+        protected override void Render(IOverlay overlay, RunResult result)
         {
-            if (inPara.DispRegion && Region.IsUsableRegion()) display.Disp(Region, DrawStyle.Of(HColor.Blue));
+            if (inPara.DispRegion && Region.IsUsableRegion()) overlay.Add(Region, DrawStyle.Of(HColor.Blue));
         }
 
         /// <summary>

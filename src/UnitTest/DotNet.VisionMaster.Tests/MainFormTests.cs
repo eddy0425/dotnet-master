@@ -705,7 +705,7 @@ namespace DotNet.VisionMaster.Tests
             public string DataDir { get; set; }
             public IReadOnlyList<OutputItem> Outputs => new OutputItem[0];
             public OutputItem FindOutput(string path) => null;
-            public RunResult Run(RunContext context, IHDisplay display) => RunResult.Ok();
+            public RunResult Run(RunContext context, IOverlay overlay) => RunResult.Ok();
             public void Init(IRoiHost host) { }
             public void Close(IRoiHost host) { }
         }

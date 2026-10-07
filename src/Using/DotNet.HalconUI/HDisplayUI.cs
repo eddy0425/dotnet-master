@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 using DotNet.HalconCore;
+using DotNet.VisionRuntime;
 
 
 namespace DotNet.HalconUI
@@ -310,6 +311,31 @@ namespace DotNet.HalconUI
             display?.DispImage(image, isSetPart);
             OnShow?.Invoke();
         }
+
+        #endregion
+
+        #region 叠加层
+
+        /// <summary> 当前保留的运行结果叠加层；没有时为 null。借用，不得释放 </summary>
+        public OverlayList Overlay => display?.Overlay;
+
+        /// <summary>
+        /// 显示一帧运行结果：底图 + 叠加层，接管叠加层的所有权。之后缩放、平移、窗口尺寸变化都会重放叠加层。
+        /// 必须在 UI 线程调用。
+        /// </summary>
+        public void ShowResult(HObject image, OverlayList overlay)
+        {
+            if (display == null)
+            {
+                overlay?.Dispose();
+                return;
+            }
+            display.ShowFrame(image, overlay);
+            OnShow?.Invoke();
+        }
+
+        /// <summary> 清掉运行结果叠加层，只留图像 </summary>
+        public void ClearOverlay() => display?.ClearOverlay();
 
         #endregion
 

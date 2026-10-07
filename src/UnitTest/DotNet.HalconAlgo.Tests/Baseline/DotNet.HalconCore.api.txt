@@ -46,7 +46,7 @@ sealed class DotNet.HalconCore.FlagParam : DotNet.HalconCore.ParamItem<System.Bo
 sealed class DotNet.HalconCore.FolderParam : DotNet.HalconCore.ParamItem<System.String>
 interface DotNet.HalconCore.IAlgoStrategy
     public DotNet.HalconCore.RunResult LastResult { get; }
-    public DotNet.HalconCore.RunResult Run(DotNet.HalconCore.RunContext context, DotNet.HalconCore.IHDisplay display)
+    public DotNet.HalconCore.RunResult Run(DotNet.HalconCore.RunContext context, DotNet.HalconCore.IOverlay overlay)
     public System.Guid Id { get; set; }
     public System.String Name { get; set; }
 interface DotNet.HalconCore.IHDisplay : System.IDisposable
@@ -87,6 +87,17 @@ interface DotNet.HalconCore.IImageProducer
 interface DotNet.HalconCore.IOutputProvider
     public DotNet.HalconCore.OutputItem FindOutput(System.String path)
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Outputs { get; }
+interface DotNet.HalconCore.IOverlay
+    public void Add(DotNet.Drawing.CvArrow arrow, DotNet.Drawing.DrawStyle style = null)
+    public void Add(DotNet.Drawing.CvCircle circle, DotNet.Drawing.DrawStyle style = null)
+    public void Add(DotNet.Drawing.CvCoord coord, DotNet.Drawing.DrawStyle style = null)
+    public void Add(DotNet.Drawing.CvLine line, DotNet.Drawing.DrawStyle style = null)
+    public void Add(DotNet.Drawing.CvRegion region, DotNet.Drawing.DrawStyle style = null)
+    public void Add(DotNet.Drawing.Point2d point, DotNet.Drawing.DrawStyle style = null)
+    public void Add(HalconDotNet.HObject obj, DotNet.Drawing.DrawStyle style = null)
+    public void Add(System.Collections.Generic.IReadOnlyList<DotNet.Drawing.Point2d> points, DotNet.Drawing.DrawStyle style = null)
+    public void AddRect2(DotNet.Drawing.Point2d center, System.Double phi, System.Double length1, System.Double length2, DotNet.Drawing.DrawStyle style = null)
+    public void Text(System.String message, DotNet.Drawing.Point2d position, DotNet.Drawing.DrawStyle style = null)
 interface DotNet.HalconCore.IParaBinding
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> DescribeParams()
     public void ParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
@@ -178,10 +189,10 @@ abstract class DotNet.HalconCore.ParaStrategyBase<TPara> : DotNet.HalconCore.IPa
     protected abstract void ResetOutputs()
     protected virtual void Dispose(System.Boolean disposing)
     protected virtual void OnParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
-    protected virtual void Render(DotNet.HalconCore.IHDisplay display, DotNet.HalconCore.RunResult result)
+    protected virtual void Render(DotNet.HalconCore.IOverlay overlay, DotNet.HalconCore.RunResult result)
     public DotNet.HalconCore.OutputItem FindOutput(System.String path)
     public DotNet.HalconCore.RunResult LastResult { get; }
-    public DotNet.HalconCore.RunResult Run(DotNet.HalconCore.RunContext context, DotNet.HalconCore.IHDisplay display)
+    public DotNet.HalconCore.RunResult Run(DotNet.HalconCore.RunContext context, DotNet.HalconCore.IOverlay overlay)
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.OutputItem> Outputs { get; }
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> DescribeParams()
     public System.Guid Id { get; set; }

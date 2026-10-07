@@ -13,7 +13,7 @@ namespace DotNet.HalconAlgo
 
     /// <summary>
     /// 旋转类图像工具的公共流程（原 RotateImage / LineRotImage 里逐字相同的 RunWithReset）：
-    /// 取图 → 子类算出变换 → 产出新图 → 显示。子类只决定"怎么转"。
+    /// 取图 → 子类算出变换 → 产出新图。子类只决定"怎么转"；新图作为底图显示由宿主按 <see cref="IImageProducer"/> 决定。
     /// </summary>
     public abstract class RotateStrategyBase<TPara> : ParaStrategyBase<TPara>, IImageProducer
         where TPara : RotatePara, new()
@@ -64,11 +64,6 @@ namespace DotNet.HalconAlgo
         /// 算出新图。<paramref name="transformed"/> 归基类所有；失败直接抛异常即可。
         /// </summary>
         protected abstract RunResult Transform(RunContext context, HObject image, out HObject transformed);
-
-        protected override void Render(IHDisplay display, RunResult result)
-        {
-            if (Image.NotNull() && Image.CountObj() > 0) display.DispImage(Image);
-        }
 
         /// <summary> 绕 (row, col) 旋转 <paramref name="radians"/>，画幅不变 </summary>
         protected static HObject RotateAbout(HObject image, double radians, double row, double col)

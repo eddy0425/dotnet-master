@@ -225,10 +225,10 @@ namespace DotNet.VisionRuntime
 
         public OutputItem FindOutput(string path) => null;
 
-        public RunResult Run(RunContext context, IHDisplay display)
+        public RunResult Run(RunContext context, IOverlay overlay)
         {
             LastResult = RunResult.Fail(Problem);
-            display?.DispText($"{Name} : {Problem}", new Point2d(50, 50), DrawStyle.Of(HColor.Red));
+            overlay?.Text($"{Name} : {Problem}", new Point2d(50, 50), DrawStyle.Of(HColor.Red));
             return LastResult;
         }
 

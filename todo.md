@@ -326,18 +326,18 @@ public class RegionAreaStrategy : ParaStrategyBase<RegionAreaPara>
 
 ### 阶段 8：保留模式叠加层（1～1.5 周）★
 
-- [ ] SDK 增加 `IOverlay`，Runtime 增加 `OverlayList`（拥有 HObject 副本，`IDisposable`）；`FlowStepResult` 持有本步的 `OverlayList`，`RunResult` 不变。
-- [ ] 基类新增 `Render(IOverlay, RunResult)`；旧 `Render(IHDisplay, RunResult)` 标 `[Obsolete]`，由录制适配器转到新管线（`DispImage` 忽略）。
-- [ ] 底图规则：宿主按 `IImageProducer` 决定底图，`FileImageStrategy`、`RotateStrategyBase` 的 `Render` 删掉 `DispImage`。
-- [ ] `HDisplay` 保存当前叠加层；`HWindowMouse` 的缩放 / 平移 / 双击复位和 `Fun_ReDisplay` 都改成画图后重放；新结果到来时替换并释放旧叠加层。
-- [ ] 逐个迁移内置算法（11 个）；删除 `FitArcMidpointRenderData` 的取走 / 发布机制；`FitLine`、`MatchStrategyBase` 的绘制字段改为 `Render` 之后立即释放。
-- [ ] `MissingTool.Run` 改为写入叠加层，不再直接调 `display.DispText`。
-- [ ] 测试：缩放 / 平移后叠加层仍在；同一份 `OverlayList` 释放后句柄计数归零；长跑内存验收沿用阶段 5 的方法。
+- [x] SDK 增加 `IOverlay`，Runtime 增加 `OverlayList`（拥有 HObject 副本，`IDisposable`）；`FlowStepResult` 持有本步的 `OverlayList`，`RunResult` 不变。
+- [x] 基类新增 `Render(IOverlay, RunResult)`；旧 `Render(IHDisplay, RunResult)` 标 `[Obsolete]`，由录制适配器转到新管线（`DispImage` 忽略）。（实施：11 个内置算法在本阶段一并迁完，旧签名已无调用方，按"迁完后删掉旧签名"直接删除，未保留过渡适配器）
+- [x] 底图规则：宿主按 `IImageProducer` 决定底图，`FileImageStrategy`、`RotateStrategyBase` 的 `Render` 删掉 `DispImage`。
+- [x] `HDisplay` 保存当前叠加层；`HWindowMouse` 的缩放 / 平移 / 双击复位和 `Fun_ReDisplay` 都改成画图后重放；新结果到来时替换并释放旧叠加层。
+- [x] 逐个迁移内置算法（11 个）；删除 `FitArcMidpointRenderData` 的取走 / 发布机制；`FitLine`、`MatchStrategyBase` 的绘制字段改为 `Render` 之后立即释放。
+- [x] `MissingTool.Run` 改为写入叠加层，不再直接调 `display.DispText`。
+- [x] 测试：缩放 / 平移后叠加层仍在；同一份 `OverlayList` 释放后句柄计数归零；长跑内存验收沿用阶段 5 的方法。
 
 ### 阶段 9：执行会话与工作线程（1 周）
 
 - [ ] Runtime 增加 `FlowSession`（专用线程 + 请求队列 + 取消）。
-- [ ] `IParaStrategy.Run` 的第二个参数从 `IHDisplay` 换成 `IOverlay`（为 null 时只计算不绘制），签名变为 `Run(RunContext, IOverlay)`；`FlowRunner` 不再接收 `IHDisplay`。
+- [x] `IParaStrategy.Run` 的第二个参数从 `IHDisplay` 换成 `IOverlay`（为 null 时只计算不绘制），签名变为 `Run(RunContext, IOverlay)`；`FlowRunner` 不再接收 `IHDisplay`。（提前到阶段 8 完成：两个重载并存会让 `Run(ctx, null)` 产生二义性）
 - [ ] `MainForm` 去掉 `_loopTimer`，连续运行 / 单步 / 测试运行都走 `FlowSession`；输入图像先复制再交给会话；结果通过 `BeginInvoke` 回到 UI 线程渲染与写信息窗口。删除 `UiThreadDisplay`。
 - [ ] 会话忙时：禁用 ROI / 模板绘制、流程增删排序（复用 `HostBusy`）；参数写回改为投递到会话队列，在两帧之间执行。
 - [ ] 测试：运行期间 UI 线程可响应（用假算法 `Thread.Sleep` 验证）；取消能在两个工具之间生效；同一会话的请求严格串行；连续运行中改参数，下一帧生效且不会和执行交错。

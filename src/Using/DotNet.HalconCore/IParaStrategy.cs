@@ -26,11 +26,12 @@ namespace DotNet.HalconCore
         RunResult LastResult { get; }
 
         /// <summary>
-        /// 执行一次。<paramref name="display"/> 为 null 时只计算不绘制（无界面运行）。
+        /// 执行一次，并把要显示的内容写进 <paramref name="overlay"/>；为 null 时只计算不绘制（无界面运行）。
+        /// 叠加层由调用方创建、拥有、释放。
         /// 失败不抛异常，而是返回 <see cref="RunStatus.Error"/>，此时所有输出均已复位；
         /// 只有取消（<see cref="OperationCanceledException"/>）会向外传播。
         /// </summary>
-        RunResult Run(RunContext context, IHDisplay display);
+        RunResult Run(RunContext context, IOverlay overlay);
     }
 
     /// <summary>
@@ -174,9 +175,9 @@ namespace DotNet.HalconCore
 
         /// <summary>
         /// 执行顺序固定：<see cref="ResetOutputs"/> → 计时 <see cref="Execute"/>（异常转成 Fail，失败再次复位）
-        /// → <see cref="Render"/> → 状态文本。
+        /// → <see cref="Render"/> → 状态文本。绘制与执行在同一个线程上，只写进叠加层，不碰窗口。
         /// </summary>
-        public RunResult Run(RunContext context, IHDisplay display)
+        public RunResult Run(RunContext context, IOverlay overlay)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
             if (_disposed) throw new ObjectDisposedException(GetType().Name);
@@ -206,11 +207,11 @@ namespace DotNet.HalconCore
             if (result.Status == RunStatus.Error) ResetOutputs();
             LastResult = result;
 
-            if (display != null)
+            if (overlay != null)
             {
-                try { Render(display, result); }
+                try { Render(overlay, result); }
                 catch (Exception ex) { Log.Warn(GetType().Name, $"{Name} 绘制失败.", ex); }
-                DrawStatus(display, result);
+                DrawStatus(overlay, result);
             }
             return result;
         }
@@ -224,20 +225,23 @@ namespace DotNet.HalconCore
         /// </summary>
         protected abstract RunResult Execute(RunContext context);
 
-        /// <summary> 只读运行结果去画；失败时也会调用，可以画出已有的部分数据便于排查 </summary>
-        protected virtual void Render(IHDisplay display, RunResult result) { }
+        /// <summary>
+        /// 只读运行结果，描述要画什么；失败时也会调用，可以画出已有的部分数据便于排查。
+        /// 叠加层会复制句柄，只供绘制的对象可以在这里写完后立即释放。
+        /// </summary>
+        protected virtual void Render(IOverlay overlay, RunResult result) { }
 
         /// <summary>
         /// 状态文本规则：失败 / 警告始终显示（红字）；成功只在 <see cref="DisplayOptions.DispText"/> 为 true 时显示（绿字）。
         /// </summary>
-        private void DrawStatus(IHDisplay display, RunResult result)
+        private void DrawStatus(IOverlay overlay, RunResult result)
         {
             if (string.IsNullOrEmpty(result.Message)) return;
             bool ok = result.Status == RunStatus.Ok;
             if (ok && !inPara.DispText) return;
             try
             {
-                display.DispText($"{Name} : {result.Message}", new Point2d(inPara.FontX, inPara.FontY),
+                overlay.Text($"{Name} : {result.Message}", new Point2d(inPara.FontX, inPara.FontY),
                     DrawStyle.Of(ok ? HColor.Green : HColor.Red, inPara.FontSize));
             }
             catch (Exception ex) { Log.Warn(GetType().Name, $"{Name} 状态文本绘制失败.", ex); }

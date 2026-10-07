@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using DotNet.HalconCore;
 using DotNet.HalconUI.Draw;
+using DotNet.VisionRuntime;
 
 namespace DotNet.HalconUI
 {
@@ -46,6 +47,7 @@ namespace DotNet.HalconUI
             _hWindow = hWindowControl.HalconWindow;
             _hWindowFont = font ?? HWindowFonts.Create(_hWindow);
             _hWindowImage = new HWindowImage(hWindowControl);
+            _hWindowImage.Redisplayed += (s, e) => ReplayOverlay();
             _roi = new RoiInteraction(_hWindow, IsWindowUsable);
 
             // 用占位灰图初始化窗口，避免首帧到来前窗口处于未设置 Part 的状态。
@@ -66,8 +68,76 @@ namespace DotNet.HalconUI
 
             try { _hWindowImage?.Dispose(); } catch { /* swallow: release-time best effort */ }
 
+            var overlay = _overlay;
+            _overlay = null;
+            try { overlay?.Dispose(); } catch { /* swallow: release-time best effort */ }
+
             GC.SuppressFinalize(this);
         }
+
+        #region 叠加层
+
+        // 运行结果的叠加层: 本类拥有。图像重画之后 (缩放 / 平移 / 双击复位 / 尺寸变化 / ReDispImage) 都重放它,
+        // 换新图 (DispImage) 时丢弃 —— 叠加层是对旧图算出来的。
+        OverlayList _overlay;
+
+        /// <summary> 当前保留的叠加层；没有时为 null。借用，不得释放 </summary>
+        public OverlayList Overlay => _overlay;
+
+        /// <summary>
+        /// 换上一份叠加层并接管它的所有权（旧的随之释放），然后重画图像与叠加层。传 null 等于 <see cref="ClearOverlay"/>。
+        /// </summary>
+        public void SetOverlay(OverlayList overlay)
+        {
+            if (_disposed)
+            {
+                overlay?.Dispose();
+                return;
+            }
+            ReplaceOverlay(overlay);
+            Redraw();
+        }
+
+        /// <summary> 清掉叠加层，只留图像 </summary>
+        public void ClearOverlay() => SetOverlay(null);
+
+        /// <summary>
+        /// 显示一帧运行结果：底图 + 叠加层（接管所有权）。底图就是当前图像时不重新复制。
+        /// </summary>
+        public void ShowFrame(HObject image, OverlayList overlay)
+        {
+            if (_disposed)
+            {
+                overlay?.Dispose();
+                return;
+            }
+            if (image.NotNull() && !ReferenceEquals(image, HoImage)) DispImage(image);
+            SetOverlay(overlay);
+        }
+
+        void ReplaceOverlay(OverlayList overlay)
+        {
+            var old = _overlay;
+            _overlay = overlay;
+            if (!ReferenceEquals(old, overlay)) old?.Dispose();
+        }
+
+        /// <summary> 清窗后重画图像；叠加层经 <see cref="HWindowImage.Redisplayed"/> 重放 </summary>
+        void Redraw()
+        {
+            if (!IsWindowUsable()) return;
+            try { _hWindow.ClearWindow(); }
+            catch (Exception ex) { Log.Warn(nameof(HDisplay), "清窗失败.", ex); }
+            _hWindowImage?.Fun_ReDisplay();
+        }
+
+        void ReplayOverlay()
+        {
+            if (_overlay == null || !IsWindowUsable()) return;
+            _overlay.DrawTo(this);
+        }
+
+        #endregion
 
         /// <summary>
         /// DispCvRegion 显示时叠加到 Row 上的像素偏移。
@@ -163,6 +233,7 @@ namespace DotNet.HalconUI
             try
             {
                 _hWindowImage.Fun_DispImage(image, isSetPart);
+                ReplaceOverlay(null);
 
                 if (IsCross && IsWindowUsable())
                 {

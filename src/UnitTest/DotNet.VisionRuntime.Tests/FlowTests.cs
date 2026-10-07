@@ -83,7 +83,7 @@ namespace DotNet.VisionRuntime.Tests
             var a = new Step("A");
             var b = new Step("B");
             var c = new Step("C");
-            var result = new FlowRunner(new IParaStrategy[] { a, b, c }).Run(_initial, null);
+            var result = new FlowRunner(new IParaStrategy[] { a, b, c }).Run(_initial);
 
             Assert.IsTrue(result.AllOk);
             Assert.AreEqual(3, result.Steps.Count);
@@ -99,7 +99,7 @@ namespace DotNet.VisionRuntime.Tests
             var producer = new Step("取像") { Produce = _produced };
             var c = new Step("C");
 
-            new FlowRunner(new IParaStrategy[] { a, producer, c }).Run(_initial, null);
+            new FlowRunner(new IParaStrategy[] { a, producer, c }).Run(_initial);
 
             Assert.AreSame(_initial, a.SeenImage);
             Assert.AreSame(_produced, c.SeenImage, "其后工具的本地图像取图像工具的输出");
@@ -111,7 +111,7 @@ namespace DotNet.VisionRuntime.Tests
             var producer = new Step("取像") { Produce = _produced, Outcome = RunStatus.Error };
             var c = new Step("C");
 
-            new FlowRunner(new IParaStrategy[] { producer, c }) { OnFailure = FlowFailurePolicy.Continue }.Run(_initial, null);
+            new FlowRunner(new IParaStrategy[] { producer, c }) { OnFailure = FlowFailurePolicy.Continue }.Run(_initial);
 
             Assert.AreSame(_initial, c.SeenImage);
         }
@@ -123,7 +123,7 @@ namespace DotNet.VisionRuntime.Tests
             var b = new Step("B") { Outcome = RunStatus.Error };
             var c = new Step("C");
 
-            var result = new FlowRunner(new IParaStrategy[] { a, b, c }).Run(_initial, null);
+            var result = new FlowRunner(new IParaStrategy[] { a, b, c }).Run(_initial);
 
             Assert.IsTrue(result.Stopped);
             Assert.AreEqual(2, result.Steps.Count);
@@ -139,7 +139,7 @@ namespace DotNet.VisionRuntime.Tests
             var b = new Step("B") { Outcome = RunStatus.Error };
             var c = new Step("C");
 
-            var result = new FlowRunner(new IParaStrategy[] { a, b, c }) { OnFailure = FlowFailurePolicy.Continue }.Run(_initial, null);
+            var result = new FlowRunner(new IParaStrategy[] { a, b, c }) { OnFailure = FlowFailurePolicy.Continue }.Run(_initial);
 
             Assert.IsFalse(result.Stopped);
             Assert.AreEqual(3, result.Steps.Count);
@@ -155,7 +155,7 @@ namespace DotNet.VisionRuntime.Tests
             var c = new Step("C");
             var runner = new FlowRunner(new IParaStrategy[] { producer, b, c });
 
-            var result = runner.Run(_initial, null, from: 1);
+            var result = runner.Run(_initial, from: 1);
 
             Assert.AreEqual(0, producer.Runs, "从中间开始时前面的工具不重新执行");
             Assert.AreEqual(2, result.Steps.Count);
@@ -167,7 +167,7 @@ namespace DotNet.VisionRuntime.Tests
         {
             var a = new Step("A");
             var b = new Step("B");
-            var step = new FlowRunner(new IParaStrategy[] { a, b }).RunStep(1, _initial, null);
+            var step = new FlowRunner(new IParaStrategy[] { a, b }).RunStep(1, _initial);
 
             Assert.AreSame(b, step.Tool);
             Assert.AreEqual(0, a.Runs);
@@ -219,14 +219,14 @@ namespace DotNet.VisionRuntime.Tests
                 roi.inPara.HoRect = NewRegion(RectEnum.Rectangle, 10, 10, 20, 20);
                 merge.inPara.RegionSources[0] = roi.Ref("区域");
 
-                var result = new FlowRunner(new IParaStrategy[] { roi, merge }).Run(_initial, null);
+                var result = new FlowRunner(new IParaStrategy[] { roi, merge }).Run(_initial);
 
                 Assert.IsTrue(result.AllOk, string.Join("; ", result.Steps.Select(s => s.ToString())));
                 Assert.AreEqual(20, merge.Coord.X, 0.6);
                 Assert.AreEqual(20, merge.Coord.Y, 0.6);
 
                 roi.Name = "改了名";
-                Assert.IsTrue(new FlowRunner(new IParaStrategy[] { roi, merge }).Run(_initial, null).AllOk, "改名不断开引用");
+                Assert.IsTrue(new FlowRunner(new IParaStrategy[] { roi, merge }).Run(_initial).AllOk, "改名不断开引用");
             }
         }
     }

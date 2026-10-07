@@ -79,25 +79,28 @@ namespace DotNet.HalconAlgo
                                 $"角度:{Line.AngleDegrees:F2}° 用点:{points.Count}");
         }
 
-        protected override void Render(IHDisplay display, RunResult result)
+        /// <summary> 写完叠加层（它复制句柄）立即释放只供绘制的数据，不留到下一轮 </summary>
+        protected override void Render(IOverlay overlay, RunResult result)
         {
             if (inPara.DispRegion && _searchRegion.IsUsableRegion())
-                display.Disp(_searchRegion, DrawStyle.Of(HColor.Blue));
+                overlay.Add(_searchRegion, DrawStyle.Of(HColor.Blue));
 
             if (inPara.DispFixRegion && _measured != null)
             {
                 foreach (Point2d center in _measured.RectCenters)
-                    display.DispRect2(center, _measured.Phi.Radians, _measured.HalfLength, _measured.HalfWidth, DrawStyle.Of(HColor.Blue));
+                    overlay.AddRect2(center, _measured.Phi.Radians, _measured.HalfLength, _measured.HalfWidth, DrawStyle.Of(HColor.Blue));
             }
 
             if (inPara.DispFixPoint)
             {
-                foreach (Point2d pt in _removed) display.Disp(pt, DrawStyle.Of(HColor.Red, inPara.PointSize));
-                foreach (Point2d pt in _used) display.Disp(pt, DrawStyle.Of(HColor.Green, inPara.PointSize));
+                foreach (Point2d pt in _removed) overlay.Add(pt, DrawStyle.Of(HColor.Red, inPara.PointSize));
+                foreach (Point2d pt in _used) overlay.Add(pt, DrawStyle.Of(HColor.Green, inPara.PointSize));
             }
 
             if (inPara.DispResult && !Line.IsDegenerate)
-                display.Disp(new CvArrow(Line, 2), DrawStyle.Of(HColor.Red));
+                overlay.Add(new CvArrow(Line, 2), DrawStyle.Of(HColor.Red));
+
+            ClearRenderData();
         }
 
         private void ClearRenderData()

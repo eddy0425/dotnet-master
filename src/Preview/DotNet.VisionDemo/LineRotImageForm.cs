@@ -88,8 +88,8 @@ namespace DotNet.VisionDemo
         {
             try
             {
-                _display.ReDispImage();
-                var step = new FlowRunner(_strategys).RunStep(_index, _display.Display.HoImage, _display.Display);
+                var step = new FlowRunner(_strategys).RunStep(_index, _display.Display.HoImage);
+                _display.ShowResult(step.Image, step.TakeOverlay());
                 if (step.Result.Status == RunStatus.Error) MessageBox.Show(step.Result.Message);
             }
             catch (Exception ex)
@@ -102,7 +102,9 @@ namespace DotNet.VisionDemo
         {
             try
             {
-                var error = new FlowRunner(_strategys).Run(_display.Display.HoImage, _display.Display).FirstError;
+                var result = new FlowRunner(_strategys).Run(_display.Display.HoImage);
+                _display.ShowResult(result.Image, result.TakeOverlay());
+                var error = result.FirstError;
                 if (error != null) MessageBox.Show($"{error.Tool.Name}: {error.Result.Message}");
             }
             catch (Exception ex)

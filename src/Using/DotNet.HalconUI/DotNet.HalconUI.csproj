@@ -149,6 +149,10 @@
       <Project>{7b2e4c10-9d6a-4f31-a5c8-3e0b1d742f96}</Project>
       <Name>DotNet.HalconCore</Name>
     </ProjectReference>
+    <ProjectReference Include="..\DotNet.VisionRuntime\DotNet.VisionRuntime.csproj">
+      <Project>{A3C51E72-6B0D-4F8E-9C24-71D5E0B3F481}</Project>
+      <Name>DotNet.VisionRuntime</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

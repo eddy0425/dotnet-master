@@ -130,6 +130,12 @@ namespace DotNet.HalconUI
             AdoptImage(_image);
         }
 
+        /// <summary>
+        /// 重画当前图像之后触发（尺寸变化、重新可见、<see cref="Fun_ReDisplay"/>）：
+        /// 叠在图像上的内容（运行结果叠加层）要在这里重放，否则一重画就丢了。
+        /// </summary>
+        public event EventHandler Redisplayed;
+
         /// <summary> 图像显示 </summary>
         public void Fun_ReDisplay()
         {
@@ -149,7 +155,11 @@ namespace DotNet.HalconUI
             catch (Exception ex)
             {
                 Log.Error(nameof(HWindowImage), "重绘图像失败.", ex);
+                return;
             }
+
+            try { Redisplayed?.Invoke(this, EventArgs.Empty); }
+            catch (Exception ex) { Log.Error(nameof(HWindowImage), "重绘后的订阅方处理失败.", ex); }
         }
 
         /// <summary> 图像显示 </summary>
@@ -268,6 +278,7 @@ namespace DotNet.HalconUI
                 _hWindowControl.Resize -= HWindowControl_Resize;
                 _hWindowControl.VisibleChanged -= HWindowControl_VisibleChanged;
             }
+            Redisplayed = null;
 
             // 先置空引用再释放：HoImage 对外暴露，置空后后续读取拿到的是 null，
             // 而不是一个已释放的句柄。

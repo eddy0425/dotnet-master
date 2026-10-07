@@ -3,7 +3,6 @@ using DotNet.HalconCore;
 using HalconDotNet;
 using System;
 using System.Collections.Generic;
-using System.Threading;
 
 
 namespace DotNet.HalconAlgo
@@ -12,8 +11,8 @@ namespace DotNet.HalconAlgo
     /// 圆弧中点：沿测量区域找边缘点，atukey 稳健圆拟合 + 径向残差粗滤 / 精滤，输出弧段中点。
     /// </summary>
     /// <remarks>
-    /// 显示数据单独做成 <see cref="FitArcMidpointRenderData"/>：编辑器里由 <see cref="Render"/> 同步取走绘制；
-    /// 无界面运行（display 为 null）时留在槽里，机台可在任意线程用 <see cref="TakeRenderData"/> 取走绘制。
+    /// 显示数据单独做成 <see cref="FitArcMidpointRenderData"/>：<see cref="Execute"/> 填充，
+    /// <see cref="Render"/> 写进叠加层后立即释放。无界面运行（不绘制）时留到下一轮 / 关闭页面时释放。
     /// </remarks>
     [Algo("fit.arc-midpoint", "圆弧中点", Group = "测量", Order = 320, DefaultRoi = RectEnum.AffRect)]
     public class FitArcMidpointStrategy : EdgeFitStrategyBase<FitArcMidpoint>
@@ -28,8 +27,8 @@ namespace DotNet.HalconAlgo
         /// </remarks>
         private const double CoarseGateErrScale = 3.0;
 
-        // 最近一次拟合的显示数据：仅保留一份，未被取走的旧数据在覆盖时释放
-        private FitArcMidpointRenderData _pendingRenderData;
+        // 本轮的显示数据, 只供 Render 使用
+        private FitArcMidpointRenderData _render;
 
         /// <summary> 弧段中点；失败时为默认值 </summary>
         public Point2d ArcMidpoint { get; private set; }
@@ -48,11 +47,12 @@ namespace DotNet.HalconAlgo
         protected override void ResetOutputs() => ArcMidpoint = default(Point2d);
 
         /// <summary>
-        /// 纯计算：不触碰任何显示对象。显示数据无论成败都会发布（失败时为部分数据）。
+        /// 纯计算：不触碰任何显示对象。显示数据无论成败都会留给 <see cref="Render"/>（失败时为部分数据）。
         /// </summary>
         protected override RunResult Execute(RunContext context)
         {
-            var render = new FitArcMidpointRenderData
+            ClearRenderData();
+            var render = _render = new FitArcMidpointRenderData
             {
                 PointSize = inPara.PointSize,
                 ShowRegion = inPara.DispRegion,
@@ -140,25 +140,21 @@ namespace DotNet.HalconAlgo
             finally
             {
                 contour?.Dispose();
-                PublishRenderData(render);
             }
         }
 
-        /// <summary> 编辑器同步路径：取走本轮显示数据，绘制后释放 </summary>
-        protected override void Render(IHDisplay display, RunResult result)
+        /// <summary> 写完叠加层（它复制句柄）立即释放本轮显示数据 </summary>
+        protected override void Render(IOverlay overlay, RunResult result)
         {
-            using (var data = TakeRenderData())
-            {
-                data?.DrawTo(display);
-            }
+            _render?.DrawTo(overlay);
+            ClearRenderData();
         }
 
-        /// <summary>
-        /// 取走最近一次拟合的显示数据，所有权随之转移（调用方负责 Dispose）；无数据返回 null。
-        /// </summary>
-        public FitArcMidpointRenderData TakeRenderData() => Interlocked.Exchange(ref _pendingRenderData, null);
-
-        private void PublishRenderData(FitArcMidpointRenderData data) => Interlocked.Exchange(ref _pendingRenderData, data)?.Dispose();
+        private void ClearRenderData()
+        {
+            _render?.Dispose();
+            _render = null;
+        }
 
         /// <summary>
         /// 根据拟合得到的起止角与点序，计算弧段中点所在角度（Halcon 图像坐标系）。
@@ -183,12 +179,12 @@ namespace DotNet.HalconAlgo
             }
         }
 
-        /// <summary> 工具页关闭：丢弃未取走的显示数据，配置 ROI 保留 </summary>
-        public override void Close(IRoiHost host) => TakeRenderData()?.Dispose();
+        /// <summary> 工具页关闭：丢弃未绘制的显示数据，配置 ROI 保留 </summary>
+        public override void Close(IRoiHost host) => ClearRenderData();
 
         protected override void Dispose(bool disposing)
         {
-            TakeRenderData()?.Dispose();
+            ClearRenderData();
             base.Dispose(disposing);
         }
     }

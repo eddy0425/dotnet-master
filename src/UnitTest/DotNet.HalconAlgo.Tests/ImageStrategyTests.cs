@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using DotNet.Drawing;
@@ -68,8 +68,7 @@ namespace DotNet.HalconAlgo.Tests
 
             CollectionAssert.AreEqual(new[] { 10, 20, 100, 10 }, grays, "按数字排序轮播，越界回到第一张");
             Assert.AreEqual("文件图像 : W:40 H:30 索引:0/3", _display.LastText);
-            Assert.AreEqual(4, _display.DispImageCount);
-            Assert.AreSame(_strategy.Image, _display.HoImage);
+            Assert.AreEqual(0, _display.DispImageCount, "底图由宿主按 IImageProducer 决定, 算法只产出图像、不换图");
         }
 
         [TestMethod]
@@ -331,7 +330,7 @@ namespace DotNet.HalconAlgo.Tests
 
             Assert.AreNotSame(_source, _strategy.Image);
             Assert.AreEqual(50, GrayAt(_strategy.Image, 10, 10));
-            Assert.AreSame(_strategy.Image, _display.HoImage);
+            Assert.AreEqual(0, _display.DispImageCount, "算法不换显示窗口里的图");
             Assert.AreEqual("旋转图像 : 方式:图像中心 角度:0.00°", _display.LastText);
         }
 
@@ -637,7 +636,7 @@ namespace DotNet.HalconAlgo.Tests
             Assert.IsTrue(_strategy.On(_display, fit).IsOk);
 
             Assert.AreEqual($"直线图像 : 对齐:{text} 旋转:{expectedDeg:F2}°", _display.LastText);
-            Assert.AreSame(_strategy.Image, _display.HoImage);
+            Assert.AreEqual(0, _display.DispImageCount, "算法不换显示窗口里的图");
             ImageSize(_strategy.Image, out int w, out int h);
             Assert.AreEqual(40, w);
             Assert.AreEqual(30, h);

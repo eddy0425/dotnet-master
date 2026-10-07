@@ -9,9 +9,13 @@ using HalconDotNet;
 namespace DotNet.HalconAlgo.Tests
 {
     /// <summary>
-    /// 记录绘制调用的 <see cref="IHDisplay"/>：不接真实窗口，只供断言策略「画了什么」。
+    /// 记录绘制调用的 <see cref="IHDisplay"/> / <see cref="IOverlay"/>：不接真实窗口，只供断言策略「画了什么」。
     /// </summary>
-    internal sealed class FakeDisplay : IHDisplay
+    /// <remarks>
+    /// 同时是叠加层：<c>Run(context, display)</c> 时策略写进来的图元与交互时直接画的图元记在同一组列表里。
+    /// 与真实叠加层不同，HALCON 对象只记引用、不复制 —— 便于断言"画的就是那个对象"。
+    /// </remarks>
+    internal sealed class FakeDisplay : IHDisplay, IOverlay
     {
         public readonly List<Drawn<string>> Texts = new List<Drawn<string>>();
         public readonly List<Drawn<Point2d>> Points = new List<Drawn<Point2d>>();
@@ -94,7 +98,43 @@ namespace DotNet.HalconAlgo.Tests
         public Task<bool> DrawRegionModAsync(CvRegion region) => Task.FromResult(false);
         public Task<HObject> DrawRegionAsync(RectEnum type) => Task.FromResult<HObject>(null);
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            foreach (var copy in _copies) copy.Dispose();
+            _copies.Clear();
+        }
+
+        #region IOverlay
+
+        private readonly List<HObject> _copies = new List<HObject>();
+
+        /// <summary>
+        /// 为 true 时 <see cref="IOverlay.Add(HObject, DrawStyle)"/> 像真实叠加层一样记副本（随 <see cref="Dispose"/> 释放）：
+        /// 策略写完叠加层就释放自己的对象，要在运行之后检查画出的几何时打开。
+        /// </summary>
+        public bool CopyObjects { get; set; }
+
+        public void Add(HObject obj, DrawStyle style = null)
+        {
+            if (CopyObjects && obj.NotNull())
+            {
+                obj = obj.CopyObj(1, -1);
+                _copies.Add(obj);
+            }
+            Disp(obj, style);
+        }
+        public void Add(Point2d point, DrawStyle style = null) => Disp(point, style);
+        public void Add(IReadOnlyList<Point2d> points, DrawStyle style = null) => Disp(points, style);
+        public void Add(CvLine line, DrawStyle style = null) => Disp(line, style);
+        public void Add(CvArrow arrow, DrawStyle style = null) => Disp(arrow, style);
+        public void Add(CvCircle circle, DrawStyle style = null) => Disp(circle, style);
+        public void Add(CvCoord coord, DrawStyle style = null) => Disp(coord, style);
+        public void Add(CvRegion region, DrawStyle style = null) => Disp(region, style);
+        public void AddRect2(Point2d center, double phi, double length1, double length2, DrawStyle style = null)
+            => DispRect2(center, phi, length1, length2, style);
+        public void Text(string message, Point2d position, DrawStyle style = null) => DispText(message, position, style);
+
+        #endregion
     }
 
     /// <summary>

@@ -285,12 +285,12 @@ namespace DotNet.VisionMaster
 
         #region 运行
 
-        /// <summary> 只运行当前工具；它的上游输出沿用上一轮的结果 </summary>
+        /// <summary> 只运行当前工具；它的上游输出沿用上一轮的结果。显示的是本步的底图 + 本步的叠加层 </summary>
         internal RunResult RunCurrent()
         {
             if (CurrentTool == null) return null;
-            _display.ReDispImage();
-            var step = new FlowRunner(_tools).RunStep(_index, _display.Display.HoImage, _display.Display);
+            var step = new FlowRunner(_tools).RunStep(_index, _display.Display.HoImage);
+            _display.ShowResult(step.Image, step.TakeOverlay());
             ShowCycleTime(step.Result.Elapsed);
             ShowStatus($"{step.Tool.Name}: {Describe(step.Result)}", LevelOf(step.Result.Status));
             OnFlowChanged();
@@ -301,7 +301,9 @@ namespace DotNet.VisionMaster
         internal FlowRunResult RunFlow()
         {
             var issues = ValidateFlow(showStatus: false);
-            var result = new FlowRunner(_tools).Run(_display.Display.HoImage, _display.Display);
+            var result = new FlowRunner(_tools).Run(_display.Display.HoImage);
+            // 底图取流程结束时的当前图像, 叠加层按执行顺序合成一份交给显示控件 (之后缩放 / 平移都会重放)
+            _display.ShowResult(result.Image, result.TakeOverlay());
             string summary = $"流程: {result.Steps.Count}/{_tools.Count} 步, 用时 {result.Elapsed.TotalMilliseconds:F0} ms";
             var error = result.FirstError;
             if (error != null) summary += Environment.NewLine + $"失败: {error.Tool.Name}: {error.Result.Message}";

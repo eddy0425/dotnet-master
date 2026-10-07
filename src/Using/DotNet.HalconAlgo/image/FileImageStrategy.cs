@@ -116,11 +116,6 @@ namespace DotNet.HalconAlgo
             return RunResult.Ok($"W:{width.I} H:{height.I} 索引:{_current}/{_paths.Length}");
         }
 
-        protected override void Render(IHDisplay display, RunResult result)
-        {
-            if (Image.NotNull() && Image.CountObj() > 0) display.DispImage(Image);
-        }
-
         private static HObject Mirror(HObject image, string mode)
         {
             HOperatorSet.MirrorImage(image, out HObject mirrored, mode);

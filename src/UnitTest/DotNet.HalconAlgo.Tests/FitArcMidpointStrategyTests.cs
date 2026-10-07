@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using DotNet.Drawing;
 using DotNet.HalconCore;
@@ -63,7 +63,8 @@ namespace DotNet.HalconAlgo.Tests
         {
             Assert.IsTrue(_strategy.On(_display).IsOk);
 
-            Assert.IsNull(_strategy.TakeRenderData(), "画完叠加层后应立即释放，不留待取数据");
+            Assert.AreEqual(2, _display.Objects.Count, "查找区域 + 圆弧轮廓");
+            Assert.IsTrue(_display.Objects.All(o => !o.Item.IsInitialized()),"写完叠加层（真实叠加层复制句柄）后立即释放，不留到下一轮");
             Assert.AreEqual(1, _display.Points.Count(p => p.ColorName == HColor.OrangeRed.Name), "中点");
             Assert.AreEqual(5, _display.Points.Count(p => p.ColorName == HColor.Green.Name), "7 点裁首尾后剩 5 点");
             Assert.AreEqual(2, _display.Points.Count(p => p.ColorName == HColor.Red.Name));
@@ -73,19 +74,15 @@ namespace DotNet.HalconAlgo.Tests
             Assert.IsTrue(_display.Texts.All(t => t.ColorName == HColor.Green.Name));
         }
 
-        /// <summary> 无界面运行：显示数据留在槽里，机台可在任意线程取走绘制 </summary>
+        /// <summary> 无界面运行：不绘制也照常计算；之后再带叠加层运行仍能画出完整结果 </summary>
         [TestMethod]
-        public void Headless_LeavesRenderDataForTaking()
+        public void Headless_ComputesWithoutOverlay()
         {
             Assert.IsTrue(_strategy.Run(RunContext.ForImage(_image), null).IsOk);
+            Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
 
-            using (var data = _strategy.TakeRenderData())
-            {
-                Assert.IsNotNull(data);
-                Assert.IsTrue(data.HasMidpoint);
-                Assert.AreEqual(_strategy.ArcMidpoint, data.Midpoint);
-            }
-            Assert.IsNull(_strategy.TakeRenderData(), "取走后槽为空");
+            Assert.IsTrue(_strategy.On(_display).IsOk);
+            Assert.AreEqual(1, _display.Points.Count(p => p.ColorName == HColor.OrangeRed.Name), "中点");
         }
 
         [TestMethod]
@@ -94,7 +91,6 @@ namespace DotNet.HalconAlgo.Tests
             var display = new FakeDisplay();
             Assert.IsTrue(_strategy.OnImage(_image, display).IsOk);
             Assert.AreEqual(150, _strategy.ArcMidpoint.X, 1.0);
-            Assert.IsNull(_strategy.TakeRenderData());
         }
 
         [TestMethod]
@@ -111,7 +107,6 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(7, _display.Rect2Centers.Count, "失败时仍显示测量矩形");
             Assert.AreEqual(1, _display.Texts.Count, "失败原因由基类统一画成红字");
             Assert.AreEqual(HColor.Red.Name, _display.Texts[0].ColorName);
-            Assert.IsNull(_strategy.TakeRenderData());
         }
 
         [TestMethod]
@@ -133,7 +128,6 @@ namespace DotNet.HalconAlgo.Tests
             Assert.AreEqual(2, green.Count);
             Assert.IsTrue(green.All(p => p.Item.Y > 115), "只有未涂黑的行 120 / 130 有点");
             Assert.AreEqual(0, _display.Points.Count(p => p.ColorName == HColor.OrangeRed.Name), "失败时没有中点");
-            Assert.IsNull(_strategy.TakeRenderData());
         }
 
         [DataTestMethod]

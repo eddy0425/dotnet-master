@@ -94,7 +94,7 @@ namespace DotNet.HalconUI
                 {
                     HOperatorSet.SetPart(_hWindow, 0, 0, _display.HoHeight - 1, _display.HoWidth - 1);
                     HOperatorSet.ClearWindow(_hWindow);
-                    HOperatorSet.DispObj(_display.HoImage, _hWindow);
+                    _display.ReDispImage();     // 经显示对象重画: 运行结果叠加层随图像一起重放
                 }
 
                 // 每次按下都重新判定：原先只在中键按下时置 true，中键若在控件外松开（收不到 Up），
@@ -123,7 +123,7 @@ namespace DotNet.HalconUI
                         HOperatorSet.GetPart(_hWindow, out HTuple row1, out HTuple col1, out HTuple row2, out HTuple col2);
                         HOperatorSet.SetPart(_hWindow, row1 - RowMove, col1 - ColMove, row2 - RowMove, col2 - ColMove);
                         HOperatorSet.ClearWindow(_hWindow);
-                        HOperatorSet.DispObj(_display.HoImage, _hWindow);
+                        _display.ReDispImage();     // 经显示对象重画: 运行结果叠加层随图像一起重放
                     }
                     // 没有图像时静默忽略——鼠标事件不应该弹模态框
                 }
@@ -185,7 +185,7 @@ namespace DotNet.HalconUI
 
                     HOperatorSet.SetPart(_hWindow, r1, c1, r2, c2);
                     HOperatorSet.ClearWindow(_hWindow);
-                    HOperatorSet.DispObj(_display.HoImage, _hWindow);
+                    _display.ReDispImage();     // 经显示对象重画: 运行结果叠加层随图像一起重放
                 }
             }
             catch (Exception ex) { Log.Error(nameof(HWindowMouse), "处理鼠标滚轮失败.", ex); }

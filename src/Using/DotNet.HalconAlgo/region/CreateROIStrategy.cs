@@ -66,9 +66,9 @@ namespace DotNet.HalconAlgo
             return RunResult.Ok($"中心:({Coord.X:F2},{Coord.Y:F2}) 宽:{roi.Width:F0} 高:{roi.Height:F0}");
         }
 
-        protected override void Render(IHDisplay display, RunResult result)
+        protected override void Render(IOverlay overlay, RunResult result)
         {
-            if (inPara.DispRegion && Region.IsUsableRegion()) display.Disp(Region, DrawStyle.Of(HColor.Blue));
+            if (inPara.DispRegion && Region.IsUsableRegion()) overlay.Add(Region, DrawStyle.Of(HColor.Blue));
         }
 
         public Task DrawROIAsync(IRoiHost host, RectEnum type, bool newROI) => RoiEditing.DrawAsync(host, inPara.HoRect, type, newROI);

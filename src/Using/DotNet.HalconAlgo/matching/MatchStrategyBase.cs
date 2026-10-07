@@ -218,15 +218,17 @@ namespace DotNet.HalconAlgo
             return RunResult.Ok($"数量:{ordered.Count} 最佳得分:{ordered[0].Result.Score:F3} {range}");
         }
 
-        protected override void Render(IHDisplay display, RunResult result)
+        /// <summary> 写完叠加层（它复制句柄）立即释放只供绘制的数据，不留到下一轮 </summary>
+        protected override void Render(IOverlay overlay, RunResult result)
         {
             if (inPara.DispRegion && _searchRegion.IsUsableRegion())
-                display.Disp(_searchRegion, DrawStyle.Of(HColor.Blue));
+                overlay.Add(_searchRegion, DrawStyle.Of(HColor.Blue));
             foreach (var hit in _hits)
             {
-                if (inPara.DispContour) display.Disp(hit.Contour, DrawStyle.Of(HColor.Green));
-                if (inPara.DispPoint) display.Disp(hit.Result.Coord, DrawStyle.Of(HColor.Red));
+                if (inPara.DispContour) overlay.Add(hit.Contour, DrawStyle.Of(HColor.Green));
+                if (inPara.DispPoint) overlay.Add(hit.Result.Coord, DrawStyle.Of(HColor.Red));
             }
+            ClearRenderData();
         }
 
         private void ReplaceContour(HObject contour)

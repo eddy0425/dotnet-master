@@ -53,6 +53,7 @@
     <Compile Include="AlgoCatalog.cs" />
     <Compile Include="FlowRunner.cs" />
     <Compile Include="FlowScheme.cs" />
+    <Compile Include="OverlayList.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DotNet.Drawing\DotNet.Drawing.csproj">
