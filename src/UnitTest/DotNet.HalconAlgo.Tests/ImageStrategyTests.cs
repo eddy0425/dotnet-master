@@ -280,7 +280,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Params_FileImagePage()
         {
-            CollectionAssert.AreEqual(new[] { "图片路径", "旋转", "镜像" }, _strategy.Labels(TabPageEnum.FileImage));
+            CollectionAssert.AreEqual(new[] { "图片路径", "旋转", "镜像" }, _strategy.Labels("文件图像"));
             Assert.IsTrue(_strategy.SetParam("旋转", 180));
             Assert.IsTrue(_strategy.SetParam("镜像", MirrorMode.Column));
             Assert.AreEqual(180, _strategy.inPara.Rotate);
@@ -712,7 +712,7 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Params_Declared()
         {
-            CollectionAssert.AreEqual(new[] { "图像来源", "直线来源", "对齐方式" }, _strategy.Labels(TabPageEnum.Parameter));
+            CollectionAssert.AreEqual(new[] { "图像来源", "直线来源", "对齐方式" }, _strategy.Labels(Pages.Parameter));
             Assert.AreEqual(OutEnum.Line, ((SourceParam)_strategy.Param("直线来源")).SourceType);
             Assert.IsTrue(_strategy.SetParam("对齐方式", AlignAxis.ParallelY));
             Assert.AreEqual(AlignAxis.ParallelY, _strategy.inPara.AlignAxis);

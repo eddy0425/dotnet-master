@@ -5,6 +5,7 @@ using DotNet.VisionRuntime;
 using System;
 using System.IO;
 using System.Linq;
+using System.Drawing;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -32,8 +33,12 @@ namespace DotNet.VisionMaster
 
         private Dictionary<RadioButton, RectEnum> _rectDrawMap;
         private Dictionary<RadioButton, RectEnum> _modelDrawMap;
-        private Dictionary<TabPageEnum, TabPage> _pages;
-        private Dictionary<TabPageEnum, ParamPanel> _panels;
+        // 页按名字建、按需建：插件声明了新页名就多一个页签，不改 Designer。
+        // ROI / 模板两页上还有固定的交互控件，暂时仍在 Designer 里，按名字登记进来
+        private readonly Dictionary<string, TabPage> _pages = new Dictionary<string, TabPage>(StringComparer.Ordinal);
+        private readonly Dictionary<string, ParamPanel> _panels = new Dictionary<string, ParamPanel>(StringComparer.Ordinal);
+
+        private static readonly Color PageBackColor = Color.FromArgb(30, 40, 30);
 
         /// <summary>
         /// 交互绘制是否正在进行中，用于挡住重入。
@@ -61,29 +66,8 @@ namespace DotNet.VisionMaster
             Dock = DockStyle.Fill;
             _display = displayUI;
 
-            _pages = new Dictionary<TabPageEnum, TabPage>
-            {
-                { TabPageEnum.FileImage, tabFile },
-                { TabPageEnum.Parameter, tabParam },
-                { TabPageEnum.Region, tabRegion },
-                { TabPageEnum.Matching, tabMatching },
-                { TabPageEnum.Display, tabDisplay },
-            };
-            _panels = new Dictionary<TabPageEnum, ParamPanel>
-            {
-                { TabPageEnum.FileImage, filePanel },
-                { TabPageEnum.Parameter, paramPanel },
-                { TabPageEnum.Region, regionPanel },
-                { TabPageEnum.Matching, matchingPanel },
-                { TabPageEnum.Display, displayPanel },
-            };
-            foreach (var panel in _panels.Values)
-            {
-                panel.SourcePicker = PickSource;
-                panel.SourceFormatter = source => _flow.Describe(source);
-                panel.ValueWriter = WriteValue;
-                panel.Committed += Panel_Committed;
-            }
+            Register(Pages.Region, tabRegion, regionPanel);
+            Register(Pages.Template, tabMatching, matchingPanel);
 
             _rectDrawMap = new Dictionary<RadioButton, RectEnum>
             {
@@ -138,6 +122,62 @@ namespace DotNet.VisionMaster
 
             try { _valueForm?.Dispose(); }
             catch (Exception ex) { Log.Warn(nameof(ParaForm), "释放来源选择窗失败.", ex); }
+
+            // 当前没显示的页不在控件树里, 不会随本控件释放
+            foreach (var page in _pages.Values.Where(p => p.Parent == null).ToList())
+            {
+                try { page.Dispose(); }
+                catch (Exception ex) { Log.Warn(nameof(ParaForm), $"释放参数页 '{page.Text}' 失败.", ex); }
+            }
+        }
+
+        /// <summary> 登记一页及其参数面板，接上来源选择与写回 </summary>
+        private void Register(string name, TabPage page, ParamPanel panel)
+        {
+            page.Text = name;
+            panel.SourcePicker = PickSource;
+            panel.SourceFormatter = source => _flow.Describe(source);
+            panel.ValueWriter = WriteValue;
+            panel.Committed += Panel_Committed;
+            _pages.Add(name, page);
+            _panels.Add(name, panel);
+        }
+
+        /// <summary> 取名为 <paramref name="name"/> 的页；没有就新建一页，只放一个参数面板（外观同 Designer 里的页） </summary>
+        private TabPage PageOf(string name)
+        {
+            if (_pages.TryGetValue(name, out var page)) return page;
+            page = new TabPage { BackColor = PageBackColor, Padding = new Padding(3) };
+            var panel = new ParamPanel
+            {
+                AutoScroll = true,
+                BackColor = PageBackColor,
+                Dock = DockStyle.Fill,
+                Font = new Font("Microsoft Sans Serif", 9F, FontStyle.Regular, GraphicsUnit.Point, 134),
+                ForeColor = Color.White,
+                RowsPerColumn = 6,
+            };
+            page.Controls.Add(panel);
+            Register(name, page, panel);
+            return page;
+        }
+
+        /// <summary>
+        /// 要显示的页：按参数第一次出现的顺序；实现了能力接口的工具即使没在那一页声明参数，也要有那一页放编辑器
+        /// （排在显示页之前）。
+        /// </summary>
+        private static List<string> PageNames(IParaStrategy tool, IReadOnlyList<ParamItem> items)
+        {
+            var names = items.Select(i => i.Page).Distinct(StringComparer.Ordinal).ToList();
+            Action<string> ensure = page =>
+            {
+                if (names.Contains(page)) return;
+                int display = names.IndexOf(Pages.Display);
+                names.Insert(display < 0 ? names.Count : display, page);
+            };
+            if (tool is IRoiEditable) ensure(Pages.Region);
+            if (tool is ITemplateEditable) ensure(Pages.Template);
+            return names;
         }
 
         /// <summary> 当前显示的工具；还没选过时为 null </summary>
@@ -188,17 +228,14 @@ namespace DotNet.VisionMaster
             _flow = flow ?? new IParaStrategy[0];
 
             var items = (tool as IParaBinding)?.DescribeParams() ?? new ParamItem[0];
+            var names = tool == null ? new List<string>() : PageNames(tool, items);
+            foreach (var name in names) PageOf(name);
+            // 不显示的页也重新绑定 (为空): 免得面板还拿着上一个工具的参数项
             foreach (var pair in _panels)
-                pair.Value.Bind(items.Where(i => i.Tab == pair.Key));
+                pair.Value.Bind(items.Where(i => i.Page == pair.Key));
 
             tabControl1.TabPages.Clear();
-            foreach (TabPageEnum tab in Enum.GetValues(typeof(TabPageEnum)))
-            {
-                bool show = items.Any(i => i.Tab == tab)
-                    || (tab == TabPageEnum.Region && tool is IRoiEditable)
-                    || (tab == TabPageEnum.Matching && tool is ITemplateEditable);
-                if (show) tabControl1.TabPages.Add(_pages[tab]);
-            }
+            foreach (var name in names) tabControl1.TabPages.Add(_pages[name]);
             if (tabControl1.TabPages.Count > 0) tabControl1.SelectedIndex = 0;
 
             ShowRoiInfo(null);
@@ -211,7 +248,11 @@ namespace DotNet.VisionMaster
         /// <summary> 当前显示的参数项（各页合并），测试与宿主定位用 </summary>
         internal IEnumerable<ParamItem> ParamItems => _panels.Values.SelectMany(p => p.Items);
 
-        internal ParamPanel PanelOf(TabPageEnum tab) => _panels[tab];
+        /// <summary> 某一页的参数面板；这一页还没建过时为 null </summary>
+        internal ParamPanel PanelOf(string page) => _panels.TryGetValue(page, out var panel) ? panel : null;
+
+        /// <summary> 当前显示的页签名（按顺序） </summary>
+        internal IReadOnlyList<string> PageTitles => tabControl1.TabPages.Cast<TabPage>().Select(p => p.Text).ToList();
 
         /// <summary> 本工具之前的工具 </summary>
         internal IReadOnlyList<IParaStrategy> Upstream()

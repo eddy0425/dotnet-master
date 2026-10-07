@@ -68,9 +68,9 @@ namespace DotNet.VisionMaster.Tests
 
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Parameter).Source("图像来源", () => inPara.Image, v => inPara.Image = v, OutEnum.Image);
-            p.Tab(TabPageEnum.Region).Source("跟随坐标", () => inPara.Coord, v => inPara.Coord = v, OutEnum.Coord);
-            p.Tab(TabPageEnum.Display).Flag("开关", () => inPara.Flag, v => inPara.Flag = v);
+            p.Page(Pages.Parameter).Source("图像来源", () => inPara.Image, v => inPara.Image = v, OutEnum.Image);
+            p.Page(Pages.Region).Source("跟随坐标", () => inPara.Coord, v => inPara.Coord = v, OutEnum.Coord);
+            p.Page(Pages.Display).Flag("开关", () => inPara.Flag, v => inPara.Flag = v);
         }
 
         protected override void OnParamsChanged(IReadOnlyList<ParamItem> changed)

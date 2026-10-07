@@ -273,7 +273,7 @@ namespace DotNet.HalconCore
         {
             var p = new ParamBuilder();
             DeclareParams(p);
-            p.Tab(TabPageEnum.Display)
+            p.Page(Pages.Display)
              .Group(DisplayGroup)
              .Flag("显示文本", () => inPara.DispText, v => inPara.DispText = v)
              .Group(FontGroup)

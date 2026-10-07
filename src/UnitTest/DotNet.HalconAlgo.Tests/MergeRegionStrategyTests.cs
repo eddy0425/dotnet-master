@@ -243,7 +243,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             CollectionAssert.AreEqual(
                 new[] { "跟随坐标", "输入区域0", "输入区域1", "输入区域2", "输入区域3", "输入区域4", "输入区域5" },
-                _strategy.Labels(TabPageEnum.Parameter));
+                _strategy.Labels(Pages.Parameter));
             Assert.AreEqual(OutEnum.Coord, ((SourceParam)_strategy.Param("跟随坐标")).SourceType);
             Assert.AreEqual(OutEnum.Region, ((SourceParam)_strategy.Param("输入区域5")).SourceType);
         }

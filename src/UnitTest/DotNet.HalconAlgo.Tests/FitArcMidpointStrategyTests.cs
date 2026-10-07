@@ -370,14 +370,14 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Params_Declared()
         {
-            var labels = _strategy.Labels(TabPageEnum.Parameter);
+            var labels = _strategy.Labels(Pages.Parameter);
             CollectionAssert.AreEqual(new[]
             {
                 "图像来源", "区域来源", "过渡方向", "选择", "滤波", "阈值", "步距", "步宽", "最大偏差", "裁剪首尾", "粗滤阈值",
             }, labels);
-            CollectionAssert.AreEqual(new[] { "跟随坐标" }, _strategy.Labels(TabPageEnum.Region));
+            CollectionAssert.AreEqual(new[] { "跟随坐标" }, _strategy.Labels(Pages.Region));
             CollectionAssert.IsSubsetOf(new[] { "查找区域", "拟合区域", "拟合点", "显示结果", "点大小", "显示文本" },
-                _strategy.Labels(TabPageEnum.Display));
+                _strategy.Labels(Pages.Display));
         }
 
         [TestMethod]

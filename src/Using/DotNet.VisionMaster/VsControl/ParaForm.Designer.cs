@@ -31,10 +31,6 @@ namespace DotNet.VisionMaster
             this.components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(ParaForm));
             this.tabControl1 = new System.Windows.Forms.TabControl();
-            this.tabFile = new System.Windows.Forms.TabPage();
-            this.filePanel = new DotNet.HalconUI.ParamPanel();
-            this.tabParam = new System.Windows.Forms.TabPage();
-            this.paramPanel = new DotNet.HalconUI.ParamPanel();
             this.tabRegion = new System.Windows.Forms.TabPage();
             this.pnl_roi = new System.Windows.Forms.Panel();
             this.grb_RectInfo = new System.Windows.Forms.GroupBox();
@@ -70,16 +66,12 @@ namespace DotNet.VisionMaster
             this.btn_modelCircle = new System.Windows.Forms.RadioButton();
             this.btn_modelEllipse = new System.Windows.Forms.RadioButton();
             this.btn_modelPolygon = new System.Windows.Forms.RadioButton();
-            this.tabDisplay = new System.Windows.Forms.TabPage();
-            this.displayPanel = new DotNet.HalconUI.ParamPanel();
             this.pnl_actions = new System.Windows.Forms.Panel();
             this.btn_saveEdit = new System.Windows.Forms.Button();
             this.btn_runTest = new System.Windows.Forms.Button();
             this.btn_cancelEdit = new System.Windows.Forms.Button();
             this.toolTip1 = new System.Windows.Forms.ToolTip(this.components);
             this.tabControl1.SuspendLayout();
-            this.tabFile.SuspendLayout();
-            this.tabParam.SuspendLayout();
             this.tabRegion.SuspendLayout();
             this.pnl_roi.SuspendLayout();
             this.grb_RectInfo.SuspendLayout();
@@ -87,17 +79,13 @@ namespace DotNet.VisionMaster
             this.tabMatching.SuspendLayout();
             this.pnl_model.SuspendLayout();
             this.grb_ModeRect.SuspendLayout();
-            this.tabDisplay.SuspendLayout();
             this.pnl_actions.SuspendLayout();
             this.SuspendLayout();
             // 
             // tabControl1
             // 
-            this.tabControl1.Controls.Add(this.tabFile);
-            this.tabControl1.Controls.Add(this.tabParam);
             this.tabControl1.Controls.Add(this.tabRegion);
             this.tabControl1.Controls.Add(this.tabMatching);
-            this.tabControl1.Controls.Add(this.tabDisplay);
             this.tabControl1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tabControl1.Font = new System.Drawing.Font("Microsoft Sans Serif", 10.8F);
             this.tabControl1.Location = new System.Drawing.Point(0, 0);
@@ -105,54 +93,6 @@ namespace DotNet.VisionMaster
             this.tabControl1.SelectedIndex = 0;
             this.tabControl1.Size = new System.Drawing.Size(560, 263);
             this.tabControl1.TabIndex = 0;
-            // 
-            // tabFile
-            // 
-            this.tabFile.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
-            this.tabFile.Controls.Add(this.filePanel);
-            this.tabFile.Location = new System.Drawing.Point(4, 26);
-            this.tabFile.Name = "tabFile";
-            this.tabFile.Padding = new System.Windows.Forms.Padding(3);
-            this.tabFile.Size = new System.Drawing.Size(552, 233);
-            this.tabFile.TabIndex = 0;
-            this.tabFile.Text = "文件图像";
-            // 
-            // filePanel
-            // 
-            this.filePanel.AutoScroll = true;
-            this.filePanel.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
-            this.filePanel.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.filePanel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.filePanel.ForeColor = System.Drawing.Color.White;
-            this.filePanel.Location = new System.Drawing.Point(3, 3);
-            this.filePanel.Name = "filePanel";
-            this.filePanel.RowsPerColumn = 6;
-            this.filePanel.Size = new System.Drawing.Size(546, 227);
-            this.filePanel.TabIndex = 0;
-            // 
-            // tabParam
-            // 
-            this.tabParam.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
-            this.tabParam.Controls.Add(this.paramPanel);
-            this.tabParam.Location = new System.Drawing.Point(4, 26);
-            this.tabParam.Name = "tabParam";
-            this.tabParam.Padding = new System.Windows.Forms.Padding(3);
-            this.tabParam.Size = new System.Drawing.Size(552, 230);
-            this.tabParam.TabIndex = 1;
-            this.tabParam.Text = "基本参数";
-            // 
-            // paramPanel
-            // 
-            this.paramPanel.AutoScroll = true;
-            this.paramPanel.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
-            this.paramPanel.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.paramPanel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.paramPanel.ForeColor = System.Drawing.Color.White;
-            this.paramPanel.Location = new System.Drawing.Point(3, 3);
-            this.paramPanel.Name = "paramPanel";
-            this.paramPanel.RowsPerColumn = 6;
-            this.paramPanel.Size = new System.Drawing.Size(546, 224);
-            this.paramPanel.TabIndex = 0;
             // 
             // tabRegion
             // 
@@ -542,30 +482,6 @@ namespace DotNet.VisionMaster
             this.btn_modelPolygon.TabIndex = 4;
             this.btn_modelPolygon.Text = "多边形";
             // 
-            // tabDisplay
-            // 
-            this.tabDisplay.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
-            this.tabDisplay.Controls.Add(this.displayPanel);
-            this.tabDisplay.Location = new System.Drawing.Point(4, 26);
-            this.tabDisplay.Name = "tabDisplay";
-            this.tabDisplay.Padding = new System.Windows.Forms.Padding(3);
-            this.tabDisplay.Size = new System.Drawing.Size(552, 230);
-            this.tabDisplay.TabIndex = 4;
-            this.tabDisplay.Text = "显示输出";
-            // 
-            // displayPanel
-            // 
-            this.displayPanel.AutoScroll = true;
-            this.displayPanel.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
-            this.displayPanel.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.displayPanel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.displayPanel.ForeColor = System.Drawing.Color.White;
-            this.displayPanel.Location = new System.Drawing.Point(3, 3);
-            this.displayPanel.Name = "displayPanel";
-            this.displayPanel.RowsPerColumn = 6;
-            this.displayPanel.Size = new System.Drawing.Size(546, 224);
-            this.displayPanel.TabIndex = 0;
-            // 
             // pnl_actions
             // 
             this.pnl_actions.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(40)))), ((int)(((byte)(30)))));
@@ -657,8 +573,6 @@ namespace DotNet.VisionMaster
             this.Size = new System.Drawing.Size(560, 290);
             this.Load += new System.EventHandler(this.ParaForm_Load);
             this.tabControl1.ResumeLayout(false);
-            this.tabFile.ResumeLayout(false);
-            this.tabParam.ResumeLayout(false);
             this.tabRegion.ResumeLayout(false);
             this.pnl_roi.ResumeLayout(false);
             this.grb_RectInfo.ResumeLayout(false);
@@ -669,7 +583,6 @@ namespace DotNet.VisionMaster
             this.pnl_model.ResumeLayout(false);
             this.grb_ModeRect.ResumeLayout(false);
             this.grb_ModeRect.PerformLayout();
-            this.tabDisplay.ResumeLayout(false);
             this.pnl_actions.ResumeLayout(false);
             this.ResumeLayout(false);
 
@@ -678,10 +591,6 @@ namespace DotNet.VisionMaster
         #endregion
 
         private System.Windows.Forms.TabControl tabControl1;
-        private System.Windows.Forms.TabPage tabFile;
-        private DotNet.HalconUI.ParamPanel filePanel;
-        private System.Windows.Forms.TabPage tabParam;
-        private DotNet.HalconUI.ParamPanel paramPanel;
         private System.Windows.Forms.TabPage tabRegion;
         private DotNet.HalconUI.ParamPanel regionPanel;
         private System.Windows.Forms.Panel pnl_roi;
@@ -717,8 +626,6 @@ namespace DotNet.VisionMaster
         private System.Windows.Forms.Button but_modifyModel;
         private System.Windows.Forms.Button but_editModel;
         private System.Windows.Forms.Panel panel1;
-        private System.Windows.Forms.TabPage tabDisplay;
-        private DotNet.HalconUI.ParamPanel displayPanel;
         private System.Windows.Forms.Panel pnl_actions;
         private System.Windows.Forms.Button btn_cancelEdit;
         private System.Windows.Forms.Button btn_saveEdit;

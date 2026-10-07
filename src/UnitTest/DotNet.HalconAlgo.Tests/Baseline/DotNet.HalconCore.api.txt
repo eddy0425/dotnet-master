@@ -180,6 +180,11 @@ sealed class DotNet.HalconCore.OutputItem
     public System.String Name { get; }
     public System.String Path { get; }
     public override System.String ToString()
+static class DotNet.HalconCore.Pages
+    public const System.String Display = "显示输出"
+    public const System.String Parameter = "基本参数"
+    public const System.String Region = "区域设置"
+    public const System.String Template = "模版设置"
 abstract class DotNet.HalconCore.ParaStrategyBase<TPara> : DotNet.HalconCore.IParaBinding, DotNet.HalconCore.IParaStrategy
     protected .ctor()
     protected System.Boolean IsDisposed { get; }
@@ -214,6 +219,7 @@ sealed class DotNet.HalconCore.ParamBuilder
     public DotNet.HalconCore.ParamBuilder Folder(System.String label, System.Func<System.String> get, System.Action<System.String> set)
     public DotNet.HalconCore.ParamBuilder Group(System.String title)
     public DotNet.HalconCore.ParamBuilder Int(System.String label, System.Func<System.Int32> get, System.Action<System.Int32> set, System.Int32[] presets = null, System.Nullable<System.Int32> min = null, System.Nullable<System.Int32> max = null)
+    public DotNet.HalconCore.ParamBuilder Page(System.String page)
     public DotNet.HalconCore.ParamBuilder Source(System.String label, System.Func<DotNet.HalconCore.SourceRef> get, System.Action<DotNet.HalconCore.SourceRef> set, DotNet.HalconCore.OutEnum type)
     public DotNet.HalconCore.ParamBuilder Tab(DotNet.HalconCore.TabPageEnum tab)
     public DotNet.HalconCore.ParamBuilder When(System.Func<System.Boolean> visible)
@@ -221,11 +227,11 @@ sealed class DotNet.HalconCore.ParamBuilder
 abstract class DotNet.HalconCore.ParamItem
     protected abstract void SetValue(System.Object value)
     public DotNet.HalconCore.ParamKind Kind { get; }
-    public DotNet.HalconCore.TabPageEnum Tab { get; }
     public System.Boolean IsVisible { get; }
     public System.Boolean TrySetValue(System.Object value)
     public System.String Group { get; }
     public System.String Label { get; }
+    public System.String Page { get; }
     public abstract System.Object GetValue()
     public override System.String ToString()
 abstract class DotNet.HalconCore.ParamItem<T> : DotNet.HalconCore.ParamItem
@@ -289,11 +295,9 @@ static class DotNet.HalconCore.StrategyExtensions
     public static DotNet.HalconCore.IParaStrategy FindTool(System.Collections.Generic.IEnumerable<DotNet.HalconCore.IParaStrategy> tools, System.Guid id)
     public static System.String Describe(System.Collections.Generic.IEnumerable<DotNet.HalconCore.IParaStrategy> tools, DotNet.HalconCore.SourceRef source)
 enum DotNet.HalconCore.TabPageEnum : System.Int32
-    Display = 4
-    FileImage = 0
-    Matching = 3
-    Parameter = 1
-    Region = 2
+    Display = 2
+    Parameter = 0
+    Region = 1
 sealed class DotNet.HalconCore.TemplateView
     public .ctor(System.String modelPath, HalconDotNet.HObject modelRegion, HalconDotNet.HObject contour, System.Nullable<DotNet.HalconCore.ModelResult> best)
     public HalconDotNet.HObject Contour { get; }

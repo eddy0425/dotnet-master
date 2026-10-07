@@ -15,7 +15,7 @@ namespace DotNet.SamplePlugin
 
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Parameter)
+            p.Page(Pages.Parameter)
              .Source("区域来源", () => inPara.RegionIn, v => inPara.RegionIn = v, OutEnum.Region)
              .Int("最小面积", () => inPara.MinArea, v => inPara.MinArea = v, presets: new[] { 0, 100 }, min: 0);
         }

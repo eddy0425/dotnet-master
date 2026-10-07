@@ -133,7 +133,7 @@ namespace DotNet.HalconAlgo
 
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Parameter)
+            p.Page(Pages.Parameter)
              .Source("图像来源", () => inPara.ImageIn, v => inPara.ImageIn = v, OutEnum.Image)
              .Source("区域来源", () => inPara.RegionIn, v => inPara.RegionIn = v, OutEnum.Region)
              .Double("起始角度", () => inPara.AngleStart, v => inPara.AngleStart = v, presets: new double[] { -90, -45 }, min: -360, max: 360)
@@ -143,14 +143,14 @@ namespace DotNet.HalconAlgo
                      Option.Of(1, "1"), Option.Of(2, "2"), Option.Of(3, "3"), Option.Of(0, "多个"))
              .Double("得分", () => inPara.MinScore, v => inPara.MinScore = v, presets: new[] { 0.5, 0.7 }, min: 0, max: 1)
              .Int("金字塔", () => inPara.NumLevels, v => inPara.NumLevels = v, presets: new[] { 0, 2 }, min: 0);
-            p.Tab(TabPageEnum.Region)
+            p.Page(Pages.Region)
              .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
-            p.Tab(TabPageEnum.Display)
+            p.Page(Pages.Display)
              .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v)
              .Flag("显示轮廓", () => inPara.DispContour, v => inPara.DispContour = v)
              .Flag("显示点", () => inPara.DispPoint, v => inPara.DispPoint = v);
-            p.Tab(TabPageEnum.Parameter);
+            p.Page(Pages.Parameter);
         }
 
         protected override void DeclareOutputs(OutputBuilder o)

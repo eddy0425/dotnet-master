@@ -200,9 +200,9 @@ namespace DotNet.HalconAlgo.Tests
         [TestMethod]
         public void Params_Declared()
         {
-            CollectionAssert.AreEqual(new[] { "跟随坐标" }, _strategy.Labels(TabPageEnum.Region));
-            CollectionAssert.AreEqual(new[] { "查找区域", "显示文本", "文本X", "文本Y", "字号" }, _strategy.Labels(TabPageEnum.Display));
-            Assert.AreEqual(0, _strategy.Labels(TabPageEnum.Parameter).Length);
+            CollectionAssert.AreEqual(new[] { "跟随坐标" }, _strategy.Labels(Pages.Region));
+            CollectionAssert.AreEqual(new[] { "查找区域", "显示文本", "文本X", "文本Y", "字号" }, _strategy.Labels(Pages.Display));
+            Assert.AreEqual(0, _strategy.Labels(Pages.Parameter).Length);
 
             var coord = (SourceParam)_strategy.Param("跟随坐标");
             Assert.AreEqual(OutEnum.Coord, coord.SourceType);

@@ -42,6 +42,26 @@ namespace DotNet.HalconAlgo.Tests
             CollectionAssert.IsSubsetOf(actual, allowed, "实际引用: " + string.Join(", ", actual));
         }
 
+        /// <summary>
+        /// 页名是字符串：拼错（多空格、大小写不同）会悄悄拆出一个新页签。内置算法里不允许出现"去掉空白、统一大小写后相同"的两个页名。
+        /// </summary>
+        [TestMethod]
+        public void BuiltIn_PageNames_HaveNoNearDuplicates()
+        {
+            var pages = new List<string>();
+            foreach (var type in BuiltIn.GetExportedTypes().Where(t => AlgoAttribute.Of(t) != null))
+            {
+                using (var tool = (IParaStrategy)Activator.CreateInstance(type))
+                    pages.AddRange(((IParaBinding)tool).DescribeParams().Select(i => i.Page));
+            }
+            var distinct = pages.Distinct().ToList();
+            var collisions = distinct.GroupBy(p => new string(p.Where(c => !char.IsWhiteSpace(c)).ToArray()).ToUpperInvariant())
+                .Where(g => g.Count() > 1).Select(g => string.Join(" / ", g)).ToList();
+
+            CollectionAssert.AreEqual(new string[0], collisions);
+            CollectionAssert.IsSubsetOf(new[] { Pages.Parameter, Pages.Region, Pages.Display }, distinct);
+        }
+
         /// <summary> 契约层与算法层没有可写的公开静态状态（原 AlgoPaths.ProjectDir / UIBlock） </summary>
         [TestMethod]
         public void CoreAndAlgo_HaveNoWritablePublicStatics()
@@ -72,8 +92,30 @@ namespace DotNet.HalconAlgo.Tests
         {
             var p = new ParamBuilder().Flag("x", () => true, v => { });
             Assert.ThrowsException<ArgumentException>(() => p.Flag("x", () => true, v => { }));
-            p.Tab(TabPageEnum.Display).Flag("x", () => true, v => { });   // 别的页可以同名
+            p.Page(Pages.Display).Flag("x", () => true, v => { });   // 别的页可以同名
         }
+
+        [TestMethod]
+        public void Page_DefaultIsParameter_Trimmed_BlankThrows()
+        {
+            Assert.AreEqual(Pages.Parameter, new ParamBuilder().Flag("a", () => true, v => { }).Items[0].Page, "默认页");
+
+            var p = new ParamBuilder().Page("  标定 ").Flag("a", () => true, v => { });
+            Assert.AreEqual("标定", p.Items[0].Page, "首尾空格去掉, 免得拆出一个新页签");
+            Assert.ThrowsException<ArgumentNullException>(() => p.Page(" "));
+        }
+
+#pragma warning disable 618 // 验证旧写法的映射
+        [TestMethod]
+        public void Tab_Obsolete_MapsToPageNames()
+        {
+            var p = new ParamBuilder()
+                .Tab(TabPageEnum.Parameter).Flag("a", () => true, v => { })
+                .Tab(TabPageEnum.Region).Flag("b", () => true, v => { })
+                .Tab(TabPageEnum.Display).Flag("c", () => true, v => { });
+            CollectionAssert.AreEqual(new[] { Pages.Parameter, Pages.Region, Pages.Display }, p.Items.Select(i => i.Page).ToArray());
+        }
+#pragma warning restore 618
 
         [TestMethod]
         public void When_WithoutPrecedingItem_Throws()
@@ -329,7 +371,7 @@ namespace DotNet.HalconAlgo.Tests
         public void DisplayParams_AppendedByBase()
         {
             CollectionAssert.AreEqual(new[] { "显示文本", "文本X", "文本Y", "字号" },
-                new Probe().DescribeParams().Where(i => i.Tab == TabPageEnum.Display).Select(i => i.Label).ToArray());
+                new Probe().DescribeParams().Where(i => i.Page == Pages.Display).Select(i => i.Label).ToArray());
         }
 
         [TestMethod]

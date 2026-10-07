@@ -75,7 +75,7 @@ namespace DotNet.HalconAlgo
         /// <summary> 子类在 <c>base.DeclareParams(p)</c> 之后追加自己的参数 </summary>
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Parameter)
+            p.Page(Pages.Parameter)
              .Source("图像来源", () => inPara.ImageIn, v => inPara.ImageIn = v, OutEnum.Image)
              .Source("区域来源", () => inPara.RegionIn, v => inPara.RegionIn = v, OutEnum.Region)
              .Choice("过渡方向", () => inPara.Transition, v => inPara.Transition = v,
@@ -89,9 +89,9 @@ namespace DotNet.HalconAlgo
              .Int("步宽", () => inPara.StepWidth, v => inPara.StepWidth = v, presets: new[] { 2, 5, 10 }, min: 1)
              .Int("最大偏差", () => inPara.MaxErr, v => inPara.MaxErr = v, presets: new[] { 1, 3, 5, 10 }, min: 0)
              .Choice("裁剪首尾", () => inPara.TrimEnds, v => inPara.TrimEnds = v, Option.Of(false, "否"), Option.Of(true, "是"));
-            p.Tab(TabPageEnum.Region)
+            p.Page(Pages.Region)
              .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
-            p.Tab(TabPageEnum.Display)
+            p.Page(Pages.Display)
              .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v)
              .Flag("拟合区域", () => inPara.DispFixRegion, v => inPara.DispFixRegion = v)
@@ -99,7 +99,7 @@ namespace DotNet.HalconAlgo
              .Flag("显示结果", () => inPara.DispResult, v => inPara.DispResult = v)
              .Group(FontGroup)
              .Int("点大小", () => inPara.PointSize, v => inPara.PointSize = v, presets: new[] { 5, 15, 30 }, min: 1);
-            p.Tab(TabPageEnum.Parameter);
+            p.Page(Pages.Parameter);
         }
 
         /// <summary>

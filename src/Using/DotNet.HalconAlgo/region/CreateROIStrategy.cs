@@ -26,9 +26,9 @@ namespace DotNet.HalconAlgo
 
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Region)
+            p.Page(Pages.Region)
              .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
-            p.Tab(TabPageEnum.Display)
+            p.Page(Pages.Display)
              .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v);
         }

@@ -89,15 +89,51 @@ namespace DotNet.VisionMaster.Tests
             Run((IParaStrategy)Activator.CreateInstance(type), ctx => CollectionAssert.AreEqual(expected.Split('|'), Tabs(ctx)));
         }
 
+        private sealed class CalibPara : DisplayOptions
+        {
+            public int Rows { get; set; } = 7;
+        }
+
+        /// <summary> 插件声明了自己的页：宿主多出一个页签，不改 Designer </summary>
+        private sealed class CalibStrategy : ParaStrategyBase<CalibPara>
+        {
+            protected override void DeclareParams(ParamBuilder p)
+                => p.Page("标定板").Int("行数", () => inPara.Rows, v => inPara.Rows = v);
+            protected override void DeclareOutputs(OutputBuilder o) { }
+            protected override void ResetOutputs() { }
+            protected override RunResult Execute(RunContext context) => RunResult.Ok();
+        }
+
+        [TestMethod]
+        public void ShowTool_PluginPage_CreatedOnDemand_AndReused()
+        {
+            var calib = new CalibStrategy();
+            var other = new FakeStrategy();
+            Run(calib, ctx =>
+            {
+                CollectionAssert.AreEqual(new[] { "标定板", Pages.Display }, Tabs(ctx));
+                var panel = ctx.Para.PanelOf("标定板");
+                CollectionAssert.AreEqual(new[] { "行数" }, panel.Items.Select(i => i.Label).ToArray());
+
+                ctx.Para.ShowTool(other, new IParaStrategy[] { calib, other });
+                CollectionAssert.DoesNotContain(Tabs(ctx), "标定板");
+                Assert.AreEqual(0, panel.Items.Count, "不显示的页也解除对上一个工具参数项的引用");
+
+                ctx.Para.ShowTool(calib, new IParaStrategy[] { calib, other });
+                Assert.AreSame(panel, ctx.Para.PanelOf("标定板"), "同名页复用, 不重复建");
+                Assert.AreEqual(1, Tabs(ctx).Count(t => t == "标定板"));
+            }, new IParaStrategy[] { calib, other });
+        }
+
         [TestMethod]
         public void ShowTool_EachPanelGetsItsTabsItems()
         {
             Run(ctx =>
             {
-                CollectionAssert.AreEqual(new[] { "图像来源" }, ctx.Para.PanelOf(TabPageEnum.Parameter).Items.Select(i => i.Label).ToArray());
-                CollectionAssert.AreEqual(new[] { "跟随坐标" }, ctx.Para.PanelOf(TabPageEnum.Region).Items.Select(i => i.Label).ToArray());
+                CollectionAssert.AreEqual(new[] { "图像来源" }, ctx.Para.PanelOf(Pages.Parameter).Items.Select(i => i.Label).ToArray());
+                CollectionAssert.AreEqual(new[] { "跟随坐标" }, ctx.Para.PanelOf(Pages.Region).Items.Select(i => i.Label).ToArray());
                 CollectionAssert.AreEqual(new[] { "开关", "显示文本", "文本X", "文本Y", "字号" },
-                    ctx.Para.PanelOf(TabPageEnum.Display).Items.Select(i => i.Label).ToArray());
+                    ctx.Para.PanelOf(Pages.Display).Items.Select(i => i.Label).ToArray());
             });
         }
 
@@ -113,7 +149,7 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                var panel = ctx.Para.PanelOf(TabPageEnum.Display);
+                var panel = ctx.Para.PanelOf(Pages.Display);
                 var flag = panel.Items.Single(i => i.Label == "开关");
 
                 ((CheckBox)panel.EditorOf(flag)).Checked = true;
@@ -150,7 +186,7 @@ namespace DotNet.VisionMaster.Tests
 
             Run(current, ctx =>
             {
-                var panel = ctx.Para.PanelOf(TabPageEnum.Parameter);
+                var panel = ctx.Para.PanelOf(Pages.Parameter);
                 var item = panel.Items.Single(i => i.Label == "图像来源");
                 var dialog = Priv.Get<ValueForm>(ctx.Para, "_valueForm");
                 string[] roots = null;
@@ -183,7 +219,7 @@ namespace DotNet.VisionMaster.Tests
         {
             Run(ctx =>
             {
-                var panel = ctx.Para.PanelOf(TabPageEnum.Parameter);
+                var panel = ctx.Para.PanelOf(Pages.Parameter);
                 var item = panel.Items.Single(i => i.Label == "图像来源");
                 var dialog = Priv.Get<ValueForm>(ctx.Para, "_valueForm");
 
@@ -499,13 +535,13 @@ namespace DotNet.VisionMaster.Tests
         /// <summary> 通过显示页的复选框改"开关"，走真实的写回路径 </summary>
         private static void SetFlag(Ctx ctx, bool value)
         {
-            var panel = ctx.Para.PanelOf(TabPageEnum.Display);
+            var panel = ctx.Para.PanelOf(Pages.Display);
             ((CheckBox)panel.EditorOf(panel.Items.Single(i => i.Label == "开关"))).Checked = value;
         }
 
         private static bool FlagShown(Ctx ctx)
         {
-            var panel = ctx.Para.PanelOf(TabPageEnum.Display);
+            var panel = ctx.Para.PanelOf(Pages.Display);
             return ((CheckBox)panel.EditorOf(panel.Items.Single(i => i.Label == "开关"))).Checked;
         }
 

@@ -182,7 +182,7 @@ namespace DotNet.VisionMaster.Tests
 
                     Assert.AreEqual("sample.region-area", AlgoInfo.Of(form.CurrentTool).Key);
                     CollectionAssert.AreEqual(new[] { "区域来源", "最小面积" },
-                        Para(form).PanelOf(TabPageEnum.Parameter).Items.Select(i => i.Label).ToArray());
+                        Para(form).PanelOf(Pages.Parameter).Items.Select(i => i.Label).ToArray());
                 }, catalog, defaultFlow: false);
             }
             finally
@@ -498,7 +498,7 @@ namespace DotNet.VisionMaster.Tests
                 Tools(form).Add(tool);
                 form.SelectTool(0);
                 var flag = Para(form).ParamItems.Single(i => i.Label == "开关");
-                var check = (CheckBox)Para(form).PanelOf(TabPageEnum.Display).EditorOf(flag);
+                var check = (CheckBox)Para(form).PanelOf(Pages.Display).EditorOf(flag);
 
                 form.StartLoop();
                 WindowHost.PumpUntil(() => tool.Runs >= 2);

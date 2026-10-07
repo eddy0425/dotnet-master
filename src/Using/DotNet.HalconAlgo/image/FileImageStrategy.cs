@@ -32,7 +32,7 @@ namespace DotNet.HalconAlgo
 
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.FileImage)
+            p.Page("文件图像")
              .Folder("图片路径", () => inPara.ImageFolder, v => inPara.ImageFolder = v)
              .Group("图片处理")
              .Choice("旋转", () => inPara.Rotate, v => inPara.Rotate = v,

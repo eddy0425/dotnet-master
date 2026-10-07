@@ -35,15 +35,16 @@ namespace DotNet.HalconCore
     /// </remarks>
     public abstract class ParamItem
     {
-        internal ParamItem(TabPageEnum tab, string label, ParamKind kind)
+        internal ParamItem(string page, string label, ParamKind kind)
         {
             if (string.IsNullOrWhiteSpace(label)) throw new ArgumentNullException(nameof(label));
-            Tab = tab;
+            Page = page;
             Label = label;
             Kind = kind;
         }
 
-        public TabPageEnum Tab { get; }
+        /// <summary> 所在页（宿主按声明顺序生成页签）；内置页名见 <see cref="Pages"/> </summary>
+        public string Page { get; }
         public string Label { get; }
         public ParamKind Kind { get; }
 
@@ -70,7 +71,7 @@ namespace DotNet.HalconCore
 
         protected abstract void SetValue(object value);
 
-        public override string ToString() => $"[{Tab}] {Label} ({Kind})";
+        public override string ToString() => $"[{Page}] {Label} ({Kind})";
     }
 
     /// <summary> 强类型参数项的公共实现 </summary>
@@ -79,8 +80,8 @@ namespace DotNet.HalconCore
         private readonly Func<T> _get;
         private readonly Action<T> _set;
 
-        internal ParamItem(TabPageEnum tab, string label, ParamKind kind, Func<T> get, Action<T> set)
-            : base(tab, label, kind)
+        internal ParamItem(string page, string label, ParamKind kind, Func<T> get, Action<T> set)
+            : base(page, label, kind)
         {
             _get = get ?? throw new ArgumentNullException(nameof(get));
             _set = set ?? throw new ArgumentNullException(nameof(set));
@@ -96,8 +97,8 @@ namespace DotNet.HalconCore
     /// <summary> 上游输出引用；<see cref="SourceType"/> 决定可选哪种输出 </summary>
     public sealed class SourceParam : ParamItem<SourceRef>
     {
-        internal SourceParam(TabPageEnum tab, string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum sourceType)
-            : base(tab, label, ParamKind.Source, get, set)
+        internal SourceParam(string page, string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum sourceType)
+            : base(page, label, ParamKind.Source, get, set)
         {
             SourceType = sourceType;
         }
@@ -147,8 +148,8 @@ namespace DotNet.HalconCore
         private readonly Func<object> _get;
         private readonly Action<object> _set;
 
-        internal ChoiceParam(TabPageEnum tab, string label, Func<object> get, Action<object> set, IReadOnlyList<ParamOption> options)
-            : base(tab, label, ParamKind.Choice)
+        internal ChoiceParam(string page, string label, Func<object> get, Action<object> set, IReadOnlyList<ParamOption> options)
+            : base(page, label, ParamKind.Choice)
         {
             _get = get;
             _set = set;
@@ -182,9 +183,9 @@ namespace DotNet.HalconCore
         private readonly Func<object> _get;
         private readonly Action<object> _set;
 
-        internal NumberParam(TabPageEnum tab, string label, ParamKind kind, Func<object> get, Action<object> set,
+        internal NumberParam(string page, string label, ParamKind kind, Func<object> get, Action<object> set,
             IReadOnlyList<string> presets, double? min, double? max)
-            : base(tab, label, kind)
+            : base(page, label, kind)
         {
             _get = get;
             _set = set;
@@ -262,14 +263,14 @@ namespace DotNet.HalconCore
 
     public sealed class FlagParam : ParamItem<bool>
     {
-        internal FlagParam(TabPageEnum tab, string label, Func<bool> get, Action<bool> set)
-            : base(tab, label, ParamKind.Flag, get, set) { }
+        internal FlagParam(string page, string label, Func<bool> get, Action<bool> set)
+            : base(page, label, ParamKind.Flag, get, set) { }
     }
 
     public sealed class FolderParam : ParamItem<string>
     {
-        internal FolderParam(TabPageEnum tab, string label, Func<string> get, Action<string> set)
-            : base(tab, label, ParamKind.Folder, get, set) { }
+        internal FolderParam(string page, string label, Func<string> get, Action<string> set)
+            : base(page, label, ParamKind.Folder, get, set) { }
     }
 
     /// <summary>
@@ -277,7 +278,7 @@ namespace DotNet.HalconCore
     /// </summary>
     /// <remarks>
     /// <code>
-    /// p.Tab(TabPageEnum.Parameter)
+    /// p.Page(Pages.Parameter)
     ///  .Source("图像来源", () => inPara.ImageIn, v => inPara.ImageIn = v, OutEnum.Image)
     ///  .Choice("过渡方向", () => inPara.Transition, v => inPara.Transition = v,
     ///          Option.Of(Transition.Positive, "由黑到白"), Option.Of(Transition.Negative, "由白到黑"))
@@ -288,17 +289,33 @@ namespace DotNet.HalconCore
     public sealed class ParamBuilder
     {
         private readonly List<ParamItem> _items = new List<ParamItem>();
-        private TabPageEnum _tab = TabPageEnum.Parameter;
+        private string _page = Pages.Parameter;
         private string _group;
 
         public IReadOnlyList<ParamItem> Items => _items;
 
-        /// <summary> 之后声明的项放到哪一页；默认 <see cref="TabPageEnum.Parameter"/>。换页同时结束分组 </summary>
-        public ParamBuilder Tab(TabPageEnum tab)
+        /// <summary>
+        /// 之后声明的项放到哪一页；默认 <see cref="Pages.Parameter"/>。换页同时结束分组。
+        /// 宿主按页第一次出现的顺序生成页签，插件可以声明自己的页；内置页一律用 <see cref="Pages"/> 常量。
+        /// </summary>
+        public ParamBuilder Page(string page)
         {
-            _tab = tab;
+            if (string.IsNullOrWhiteSpace(page)) throw new ArgumentNullException(nameof(page));
+            _page = page.Trim();
             _group = null;
             return this;
+        }
+
+        /// <summary> 旧写法：映射到 <see cref="Pages"/> 里同名的页 </summary>
+        [Obsolete("页签改为字符串: 用 Page(Pages.Parameter) 等")]
+        public ParamBuilder Tab(TabPageEnum tab)
+        {
+            switch (tab)
+            {
+                case TabPageEnum.Region: return Page(Pages.Region);
+                case TabPageEnum.Display: return Page(Pages.Display);
+                default: return Page(Pages.Parameter);
+            }
         }
 
         /// <summary>
@@ -312,7 +329,7 @@ namespace DotNet.HalconCore
         }
 
         public ParamBuilder Source(string label, Func<SourceRef> get, Action<SourceRef> set, OutEnum type)
-            => Add(new SourceParam(_tab, label, get, set, type));
+            => Add(new SourceParam(_page, label, get, set, type));
 
         public ParamBuilder Choice<T>(string label, Func<T> get, Action<T> set, params Option<T>[] options)
         {
@@ -320,14 +337,14 @@ namespace DotNet.HalconCore
             if (set == null) throw new ArgumentNullException(nameof(set));
             if (options == null || options.Length == 0) throw new ArgumentException($"{label}: 至少要有一个选项", nameof(options));
             var list = options.Select(o => new ParamOption(o.Value, o.Text)).ToList();
-            return Add(new ChoiceParam(_tab, label, () => get(), v => set((T)v), list));
+            return Add(new ChoiceParam(_page, label, () => get(), v => set((T)v), list));
         }
 
         public ParamBuilder Int(string label, Func<int> get, Action<int> set, int[] presets = null, int? min = null, int? max = null)
         {
             if (get == null) throw new ArgumentNullException(nameof(get));
             if (set == null) throw new ArgumentNullException(nameof(set));
-            return Add(new NumberParam(_tab, label, ParamKind.Int, () => get(), v => set((int)v),
+            return Add(new NumberParam(_page, label, ParamKind.Int, () => get(), v => set((int)v),
                 presets?.Select(p => NumberParam.Format(p)).ToList(), min, max));
         }
 
@@ -335,15 +352,15 @@ namespace DotNet.HalconCore
         {
             if (get == null) throw new ArgumentNullException(nameof(get));
             if (set == null) throw new ArgumentNullException(nameof(set));
-            return Add(new NumberParam(_tab, label, ParamKind.Double, () => get(), v => set((double)v),
+            return Add(new NumberParam(_page, label, ParamKind.Double, () => get(), v => set((double)v),
                 presets?.Select(p => NumberParam.Format(p)).ToList(), min, max));
         }
 
         public ParamBuilder Flag(string label, Func<bool> get, Action<bool> set)
-            => Add(new FlagParam(_tab, label, get, set));
+            => Add(new FlagParam(_page, label, get, set));
 
         public ParamBuilder Folder(string label, Func<string> get, Action<string> set)
-            => Add(new FolderParam(_tab, label, get, set));
+            => Add(new FolderParam(_page, label, get, set));
 
         /// <summary>
         /// 给上一项加显示条件；任一参数写回后宿主重新求值。
@@ -359,8 +376,8 @@ namespace DotNet.HalconCore
 
         private ParamBuilder Add(ParamItem item)
         {
-            if (_items.Any(i => i.Tab == item.Tab && i.Label == item.Label))
-                throw new ArgumentException($"参数 '{item.Label}' 在 {item.Tab} 页重复声明");
+            if (_items.Any(i => i.Page == item.Page && i.Label == item.Label))
+                throw new ArgumentException($"参数 '{item.Label}' 在 '{item.Page}' 页重复声明");
             item.Group = _group;
             _items.Add(item);
             return this;

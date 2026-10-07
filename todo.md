@@ -344,13 +344,13 @@ public class RegionAreaStrategy : ParaStrategyBase<RegionAreaPara>
 
 ### 阶段 10：开放扩展点（1.5～2 周）
 
-- [ ] `ParamItem.Page` 字符串化，`ParamBuilder.Page(string)`；`Tab(TabPageEnum)` 标 `[Obsolete]` 并映射。
+- [x] `ParamItem.Page` 字符串化，`ParamBuilder.Page(string)`；`Tab(TabPageEnum)` 标 `[Obsolete]` 并映射。
 - [ ] `ParaForm` 去掉 Designer 里的固定页签与 5 个 `ParamPanel`，按声明动态生成。
 - [ ] 新增参数种类 `Text`、`File`、`Action`、`SourceList`；`MergeRegion` 改用 `SourceList`，`RegionSources` 从 `SourceRef[]` 改为 `List<SourceRef>`。JSON 都是数组，旧方案直接读得进来，不需要参数迁移；只需在读入后去掉补齐用的空槽（`Local`），并用旧方案样本做回归测试。
 - [ ] `OutputBuilder` 公开 `Circle`、`Text`、`Flag`、`Numbers`；`OutputItem.ValueType`；`Validate` 与来源选择窗口改按 `ValueType` 判断兼容。
 - [ ] `IRoiHost` 拆为 `IInteractionHost` + 模板事件；适配器类实现，`HDisplayUI` 不再实现 `IRoiHost`。HalconAlgo.Tests 的 `FakeRoiHost` 同步改写。
 - [ ] Shell 内部引入 `ICapabilityEditor`，ROI 页、模板页改成 `RoiEditor`、`TemplateEditor`。
-- [ ] `TabPageEnum.FileImage` / `Matching` 不再出现在 Core。
+- [x] `TabPageEnum.FileImage` / `Matching` 不再出现在 Core。
 
 ### 阶段 11：插件加载加固与参数迁移（1 周）
 

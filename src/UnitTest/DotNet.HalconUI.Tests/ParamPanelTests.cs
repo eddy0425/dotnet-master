@@ -295,11 +295,11 @@ namespace DotNet.HalconUI.Tests
                 bool a = true, b = false;
                 int size = 15;
                 var grouped = new ParamBuilder()
-                    .Tab(TabPageEnum.Display)
+                    .Page(Pages.Display)
                     .Group("显示设置").Flag("甲", () => a, v => a = v)
                     .Group("字体设置").Int("字号", () => size, v => size = v)
                     .Group("显示设置").Flag("乙", () => b, v => b = v)
-                    .Tab(TabPageEnum.Parameter).Flag("不分组", () => a, v => a = v)
+                    .Page(Pages.Parameter).Flag("不分组", () => a, v => a = v)
                     .Items.ToList();
                 panel.Bind(grouped);
 

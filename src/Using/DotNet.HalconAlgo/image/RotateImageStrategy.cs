@@ -14,7 +14,7 @@ namespace DotNet.HalconAlgo
     {
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Parameter)
+            p.Page(Pages.Parameter)
              .Source("图像来源", () => inPara.ImageIn, v => inPara.ImageIn = v, OutEnum.Image)
              .Choice("选择方式", () => inPara.RotateType, v => inPara.RotateType = v,
                      Option.Of(RotateMode.ImageCenter, "图像中心"), Option.Of(RotateMode.Coord, "坐标系"),

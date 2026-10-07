@@ -853,9 +853,9 @@ namespace DotNet.HalconAlgo.Tests
         {
             CollectionAssert.IsSubsetOf(
                 new[] { "图像来源", "区域来源", "起始角度", "增量角度", "最大重叠率", "匹配数量", "得分", "金字塔" },
-                Strategy.Labels(TabPageEnum.Parameter));
-            CollectionAssert.AreEqual(new[] { "跟随坐标" }, Strategy.Labels(TabPageEnum.Region));
-            CollectionAssert.IsSubsetOf(new[] { "查找区域", "显示轮廓", "显示点" }, Strategy.Labels(TabPageEnum.Display));
+                Strategy.Labels(Pages.Parameter));
+            CollectionAssert.AreEqual(new[] { "跟随坐标" }, Strategy.Labels(Pages.Region));
+            CollectionAssert.IsSubsetOf(new[] { "查找区域", "显示轮廓", "显示点" }, Strategy.Labels(Pages.Display));
         }
 
         [TestMethod]

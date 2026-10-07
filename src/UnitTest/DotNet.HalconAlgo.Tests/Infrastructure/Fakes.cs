@@ -254,24 +254,24 @@ namespace DotNet.HalconAlgo.Tests
 
     internal static class Params
     {
-        public static ParamItem Param(this IParaBinding binding, string label, TabPageEnum? tab = null)
+        public static ParamItem Param(this IParaBinding binding, string label, string page = null)
         {
-            var found = binding.DescribeParams().Where(i => i.Label == label && (tab == null || i.Tab == tab)).ToList();
+            var found = binding.DescribeParams().Where(i => i.Label == label && (page == null || i.Page == page)).ToList();
             if (found.Count != 1) throw new InvalidOperationException($"参数 '{label}' 找到 {found.Count} 个");
             return found[0];
         }
 
         /// <summary> 像面板一样写回一项：值变了才调用 setter 并通知策略 </summary>
-        public static bool SetParam(this IParaBinding binding, string label, object value, TabPageEnum? tab = null)
+        public static bool SetParam(this IParaBinding binding, string label, object value, string page = null)
         {
-            var item = binding.Param(label, tab);
+            var item = binding.Param(label, page);
             bool changed = item.TrySetValue(value);
             if (changed) binding.ParamsChanged(new[] { item });
             return changed;
         }
 
-        public static string[] Labels(this IParaBinding binding, TabPageEnum tab)
-            => binding.DescribeParams().Where(i => i.Tab == tab).Select(i => i.Label).ToArray();
+        public static string[] Labels(this IParaBinding binding, string page)
+            => binding.DescribeParams().Where(i => i.Page == page).Select(i => i.Label).ToArray();
     }
 
     /// <summary>捕获 <see cref="Log"/> 输出；Dispose 时恢复原 logger。</summary>

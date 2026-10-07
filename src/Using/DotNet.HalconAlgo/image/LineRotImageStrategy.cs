@@ -14,7 +14,7 @@ namespace DotNet.HalconAlgo
     {
         protected override void DeclareParams(ParamBuilder p)
         {
-            p.Tab(TabPageEnum.Parameter)
+            p.Page(Pages.Parameter)
              .Source("图像来源", () => inPara.ImageIn, v => inPara.ImageIn = v, OutEnum.Image)
              .Source("直线来源", () => inPara.LineIn, v => inPara.LineIn = v, OutEnum.Line)
              .Choice("对齐方式", () => inPara.AlignAxis, v => inPara.AlignAxis = v,

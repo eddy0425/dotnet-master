@@ -41,14 +41,14 @@ namespace DotNet.HalconAlgo
         protected override void DeclareParams(ParamBuilder p)
         {
             var sources = Sources();
-            p.Tab(TabPageEnum.Parameter)
+            p.Page(Pages.Parameter)
              .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
             for (int i = 0; i < sources.Length; i++)
             {
                 int slot = i;
                 p.Source($"输入区域{slot}", () => Sources()[slot], v => Sources()[slot] = v, OutEnum.Region);
             }
-            p.Tab(TabPageEnum.Display)
+            p.Page(Pages.Display)
              .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v);
         }
