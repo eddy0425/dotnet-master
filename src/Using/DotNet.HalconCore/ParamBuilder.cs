@@ -24,6 +24,18 @@ namespace DotNet.HalconCore
 
         /// <summary> 文件夹路径 </summary>
         Folder,
+
+        /// <summary> 字符串（条码期望值、文件名前缀…） </summary>
+        Text,
+
+        /// <summary> 文件路径，带过滤器 </summary>
+        File,
+
+        /// <summary> 按钮：执行策略的一个方法（"重新示教"、"清除模板"） </summary>
+        Action,
+
+        /// <summary> 可变长的上游输出引用列表 </summary>
+        SourceList,
     }
 
     /// <summary>
@@ -64,10 +76,13 @@ namespace DotNet.HalconCore
         /// </summary>
         public bool TrySetValue(object value)
         {
-            if (Equals(GetValue(), value)) return false;
+            if (SameValue(GetValue(), value)) return false;
             SetValue(value);
             return true;
         }
+
+        /// <summary> 新值与当前值是否相同（相同则不写回）；列表一类按内容比较的项覆盖它 </summary>
+        protected virtual bool SameValue(object current, object value) => Equals(current, value);
 
         protected abstract void SetValue(object value);
 
@@ -273,6 +288,73 @@ namespace DotNet.HalconCore
             : base(page, label, ParamKind.Folder, get, set) { }
     }
 
+    public sealed class TextParam : ParamItem<string>
+    {
+        internal TextParam(string page, string label, Func<string> get, Action<string> set)
+            : base(page, label, ParamKind.Text, get, set) { }
+    }
+
+    public sealed class FileParam : ParamItem<string>
+    {
+        internal FileParam(string page, string label, Func<string> get, Action<string> set, string filter)
+            : base(page, label, ParamKind.File, get, set)
+        {
+            Filter = string.IsNullOrWhiteSpace(filter) ? "所有文件|*.*" : filter;
+        }
+
+        /// <summary> 文件对话框的过滤器，写法同 WinForms：<c>"图像|*.bmp;*.png|所有文件|*.*"</c> </summary>
+        public string Filter { get; }
+    }
+
+    /// <summary>
+    /// 按钮：执行策略的一个方法。没有值；宿主按下按钮时写回 <see cref="Press"/>，
+    /// 于是和其它参数走同一条写回路径 —— 连续运行时排在两帧之间、在执行线程上执行，之后照常通知 <c>ParamsChanged</c>。
+    /// </summary>
+    public sealed class ActionParam : ParamItem
+    {
+        /// <summary> 宿主按下按钮时写回的值 </summary>
+        public static readonly object Press = new object();
+
+        private readonly Action _action;
+
+        internal ActionParam(string page, string label, Action action)
+            : base(page, label, ParamKind.Action)
+        {
+            _action = action ?? throw new ArgumentNullException(nameof(action));
+        }
+
+        public override object GetValue() => null;
+
+        protected override bool SameValue(object current, object value) => !ReferenceEquals(value, Press);
+
+        protected override void SetValue(object value) => _action();
+    }
+
+    /// <summary> 可变长的上游输出引用列表（例如"区域合并"的输入）；按内容判断是否变了 </summary>
+    public sealed class SourceListParam : ParamItem<IReadOnlyList<SourceRef>>
+    {
+        internal SourceListParam(string page, string label, Func<IReadOnlyList<SourceRef>> get, Action<IReadOnlyList<SourceRef>> set,
+            OutEnum sourceType, int maxCount)
+            : base(page, label, ParamKind.SourceList, () => get() ?? new SourceRef[0], set)
+        {
+            if (maxCount < 0) throw new ArgumentOutOfRangeException(nameof(maxCount));
+            SourceType = sourceType;
+            MaxCount = maxCount;
+        }
+
+        public OutEnum SourceType { get; }
+
+        /// <summary> 最多几项；0 表示不限 </summary>
+        public int MaxCount { get; }
+
+        protected override bool SameValue(object current, object value)
+        {
+            var a = current as IEnumerable<SourceRef> ?? new SourceRef[0];
+            var b = value as IEnumerable<SourceRef> ?? new SourceRef[0];
+            return a.SequenceEqual(b);
+        }
+    }
+
     /// <summary>
     /// 参数声明：一份声明同时生成面板、回存逻辑、来源类型与输入依赖。
     /// </summary>
@@ -361,6 +443,25 @@ namespace DotNet.HalconCore
 
         public ParamBuilder Folder(string label, Func<string> get, Action<string> set)
             => Add(new FolderParam(_page, label, get, set));
+
+        public ParamBuilder Text(string label, Func<string> get, Action<string> set)
+            => Add(new TextParam(_page, label, get, set));
+
+        /// <param name="filter">文件对话框的过滤器，例如 <c>"图像|*.bmp;*.png"</c>；省略时为所有文件。</param>
+        public ParamBuilder File(string label, Func<string> get, Action<string> set, string filter = null)
+            => Add(new FileParam(_page, label, get, set, filter));
+
+        /// <summary> 按钮：按下时执行 <paramref name="action"/>（宿主保证不与执行交错） </summary>
+        public ParamBuilder Action(string label, Action action)
+            => Add(new ActionParam(_page, label, action));
+
+        /// <summary>
+        /// 可变长的来源列表：每项都是一条输入依赖，宿主逐项校验。setter 收到的是新列表，策略自行复制保存。
+        /// </summary>
+        /// <param name="maxCount">最多几项；0 表示不限。</param>
+        public ParamBuilder SourceList(string label, Func<IReadOnlyList<SourceRef>> get, Action<IReadOnlyList<SourceRef>> set,
+            OutEnum type, int maxCount = 0)
+            => Add(new SourceListParam(_page, label, get, set, type, maxCount));
 
         /// <summary>
         /// 给上一项加显示条件；任一参数写回后宿主重新求值。

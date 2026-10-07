@@ -136,6 +136,7 @@ namespace DotNet.VisionMaster
         {
             page.Text = name;
             panel.SourcePicker = PickSource;
+            panel.SourceListPicker = list => PickSource(() => _valueForm.Pick(Upstream(), list.SourceType));
             panel.SourceFormatter = source => _flow.Describe(source);
             panel.ValueWriter = WriteValue;
             panel.Committed += Panel_Committed;
@@ -265,11 +266,13 @@ namespace DotNet.VisionMaster
             return index < 0 ? new IParaStrategy[0] : (IReadOnlyList<IParaStrategy>)_flow.Take(index).ToList();
         }
 
-        private SourceRef? PickSource(SourceParam param)
+        private SourceRef? PickSource(SourceParam param) => PickSource(() => _valueForm.Pick(Upstream(), param));
+
+        private static SourceRef? PickSource(Func<SourceRef?> pick)
         {
             try
             {
-                return _valueForm.Pick(Upstream(), param);
+                return pick();
             }
             catch (Exception ex)
             {

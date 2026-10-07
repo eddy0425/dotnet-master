@@ -133,6 +133,16 @@ namespace DotNet.HalconUI
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Func<string, string> FolderPicker { get; set; } = PickFolder;
 
+        /// <summary> 选择文件；参数是过滤器与当前路径，返回 null 表示取消。默认弹 <see cref="OpenFileDialog"/> </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Func<string, string, string> FilePicker { get; set; } = PickFile;
+
+        /// <summary>
+        /// 给来源列表添一项：宿主弹出变量树并按 <see cref="SourceListParam.SourceType"/> 过滤（不能选"默认"）。返回 null 表示取消。
+        /// </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Func<SourceListParam, SourceRef?> SourceListPicker { get; set; }
+
         /// <summary> 打开文件夹（参数是已存在的目录）。默认用资源管理器打开 </summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Action<string> FolderOpener { get; set; } = OpenFolder;
@@ -216,8 +226,13 @@ namespace DotNet.HalconUI
                     Commit(row, value, showAfter: true);   // 写回后规整显示格式（例如 "05" → "5"）
                     return true;
                 case FolderParam _:
+                case FileParam _:
                     SetError(row, null);
                     Commit(row, row.Editor.Text?.Trim() ?? string.Empty);
+                    return true;
+                case TextParam _:
+                    SetError(row, null);
+                    Commit(row, row.Editor.Text ?? string.Empty);   // 文本原样保存, 空格可能就是期望值的一部分
                     return true;
                 default:
                     return true;
@@ -293,6 +308,40 @@ namespace DotNet.HalconUI
                     _toolTip.SetToolTip(row.OpenButton, "打开路径");
                     break;
 
+                case TextParam text:
+                    var textBox = NewTextBox(readOnly: false);
+                    textBox.Validating += (s, e) => { if (!_updating) CommitText(text); };
+                    textBox.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { CommitText(text); e.SuppressKeyPress = true; } };
+                    row.Editor = textBox;
+                    break;
+
+                case FileParam file:
+                    var filePath = NewTextBox(readOnly: false);
+                    filePath.Validating += (s, e) => { if (!_updating) CommitText(file); };
+                    filePath.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { CommitText(file); e.SuppressKeyPress = true; } };
+                    filePath.TextChanged += (s, e) => _toolTip.SetToolTip(filePath, filePath.Text);
+                    row.Editor = filePath;
+                    row.Button = NewButton(null, FolderIcon, (s, e) => PickFile(row, file));
+                    _toolTip.SetToolTip(row.Button, "选择文件");
+                    break;
+
+                case ActionParam action:
+                    // 按钮本身就是这一行: 文字即标签, 按下时写回 Press, 和其它参数走同一条写回路径
+                    var press = NewButton(action.Label, null, (s, e) => Commit(row, ActionParam.Press));
+                    press.TabStop = true;
+                    press.FlatAppearance.BorderSize = 1;
+                    row.Editor = press;
+                    break;
+
+                case SourceListParam sources:
+                    // 下拉里列出全部来源; "+" 从变量树添一项, "−" 去掉下拉里选中的那一项
+                    row.Editor = NewComboBox(ComboBoxStyle.DropDownList);
+                    row.Button = NewButton("+", null, (s, e) => AddListSource(row, sources));
+                    row.OpenButton = NewButton("−", null, (s, e) => RemoveListSource(row, sources));
+                    _toolTip.SetToolTip(row.Button, "添加来源");
+                    _toolTip.SetToolTip(row.OpenButton, "移除选中的来源");
+                    break;
+
                 default:
                     throw new NotSupportedException($"不支持的参数类型: {item.GetType().Name}");
             }
@@ -304,7 +353,7 @@ namespace DotNet.HalconUI
                 group.Rows.Add(row);
                 host = group.Box;
             }
-            if (!(item is FlagParam))
+            if (!(item is FlagParam) && !(item is ActionParam))
             {
                 row.Label = new Label { Text = item.Label, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
                 host.Controls.Add(row.Label);
@@ -391,7 +440,9 @@ namespace DotNet.HalconUI
             }
         }
 
-        private static bool IsWide(Row row) => row.Item is FolderParam && row.Item.Group == null;
+        /// <summary> 不分组的路径 / 来源列表内容长，各占一整行 </summary>
+        private static bool IsWide(Row row)
+            => (row.Item is FolderParam || row.Item is FileParam || row.Item is SourceListParam) && row.Item.Group == null;
 
         private int Px(int pixels) => (int)Math.Round(pixels * _scale);
 
@@ -416,8 +467,10 @@ namespace DotNet.HalconUI
                     row.Button.Bounds = new Rectangle(
                         editorX + Px(WideEditorWidth + ButtonGap), y + Px((EditorHeight - ButtonHeight) / 2),
                         Px(ButtonWidth), Px(ButtonHeight));
-                    row.OpenButton.Bounds = new Rectangle(row.Button.Right + Px(OpenButtonGap), row.Button.Top, Px(ButtonWidth), Px(ButtonHeight));
-                    _errors.SetIconPadding(row.Editor, Px(ButtonGap + ButtonWidth + OpenButtonGap + ButtonWidth + 2));
+                    if (row.OpenButton != null)
+                        row.OpenButton.Bounds = new Rectangle(row.Button.Right + Px(OpenButtonGap), row.Button.Top, Px(ButtonWidth), Px(ButtonHeight));
+                    int buttons = row.OpenButton != null ? ButtonGap + ButtonWidth + OpenButtonGap + ButtonWidth : ButtonGap + ButtonWidth;
+                    _errors.SetIconPadding(row.Editor, Px(buttons + 2));
 
                     right = Math.Max(right, Px(SlotLeft + LabelWidth + WideEditorWidth + ButtonGap + ButtonWidth + OpenButtonGap + ButtonWidth + ErrorIconWidth));
                     bottom = Math.Max(bottom, top + Px(EditorHeight + SlotTop));
@@ -436,6 +489,10 @@ namespace DotNet.HalconUI
                     {
                         row.Label.Bounds = new Rectangle(x, y, Px(LabelWidth - 2), Px(EditorHeight));
                         row.Editor.SetBounds(editorX, y, Px(EditorWidth), Px(EditorHeight));
+                    }
+                    else if (row.Item is ActionParam)
+                    {
+                        row.Editor.SetBounds(x, y, Px(LabelWidth + EditorWidth), Px(EditorHeight));   // 按钮占标签 + 编辑框的宽度
                     }
                     else
                     {
@@ -481,7 +538,7 @@ namespace DotNet.HalconUI
             int x = right > 0 ? right : Px(GroupLeft);   // 槽位列的列宽里已经留了间距
             foreach (var group in visible)
             {
-                bool valued = group.Rows.Any(r => !(r.Item is FlagParam));
+                bool valued = group.Rows.Any(r => !(r.Item is FlagParam));   // 按钮也按"标签 + 编辑框"的宽度算
                 bool buttons = group.Rows.Any(r => r.Button != null);
                 bool openButtons = group.Rows.Any(r => r.OpenButton != null);
                 int width = valued ? GroupPadLeft * 2 + GroupLabelWidth + GroupEditorWidth + ErrorIconWidth : GroupFlagWidth;
@@ -502,6 +559,10 @@ namespace DotNet.HalconUI
                         // ErrorProvider 的图标画在分组框里，放到按钮右边、框宽里预留的位置
                         int buttonCount = (row.Button != null ? 1 : 0) + (row.OpenButton != null ? 1 : 0);
                         _errors.SetIconPadding(row.Editor, Px(buttonCount * (GroupButtonGap + ButtonWidth) + 2));
+                    }
+                    else if (row.Item is ActionParam)
+                    {
+                        row.Editor.SetBounds(Px(GroupPadLeft), y, Px(GroupLabelWidth + GroupEditorWidth), Px(EditorHeight));
                     }
                     else
                     {
@@ -583,6 +644,19 @@ namespace DotNet.HalconUI
                         break;
                     case FolderParam folder:
                         row.Editor.Text = folder.Value ?? string.Empty;
+                        break;
+                    case TextParam text:
+                        row.Editor.Text = text.Value ?? string.Empty;
+                        break;
+                    case FileParam file:
+                        row.Editor.Text = file.Value ?? string.Empty;
+                        break;
+                    case SourceListParam list:
+                        var combo = (ComboBox)row.Editor;
+                        combo.Items.Clear();
+                        foreach (var source in list.Value) combo.Items.Add(SourceFormatter(source));
+                        combo.SelectedIndex = combo.Items.Count - 1;
+                        _toolTip.SetToolTip(combo, string.Join(Environment.NewLine, combo.Items.Cast<string>()));
                         break;
                 }
             }
@@ -686,8 +760,47 @@ namespace DotNet.HalconUI
         {
             var picked = SourcePicker?.Invoke(source);
             if (!picked.HasValue) return;
-            Commit(row, picked.Value);
-            ShowValue(row);
+            Commit(row, picked.Value, showAfter: true);
+        }
+
+        private void AddListSource(Row row, SourceListParam list)
+        {
+            if (list.MaxCount > 0 && list.Value.Count >= list.MaxCount)
+            {
+                SetError(row, $"最多 {list.MaxCount} 项");
+                return;
+            }
+            var picked = SourceListPicker?.Invoke(list);
+            if (!picked.HasValue || picked.Value.IsLocal) return;
+            SetError(row, null);
+            Commit(row, list.Value.Concat(new[] { picked.Value }).ToList(), showAfter: true);
+        }
+
+        private void RemoveListSource(Row row, SourceListParam list)
+        {
+            int index = ((ComboBox)row.Editor).SelectedIndex;
+            if (index < 0 || index >= list.Value.Count) return;
+            var next = list.Value.ToList();
+            next.RemoveAt(index);
+            SetError(row, null);
+            Commit(row, next, showAfter: true);
+        }
+
+        private void PickFile(Row row, FileParam file)
+        {
+            var picked = FilePicker?.Invoke(file.Filter, row.Editor.Text);
+            if (picked == null) return;
+            row.Editor.Text = picked;
+            CommitText(file);
+        }
+
+        private static string PickFile(string filter, string current)
+        {
+            using (var dialog = new OpenFileDialog { Filter = filter, CheckFileExists = false })
+            {
+                try { if (!string.IsNullOrEmpty(current)) dialog.FileName = current; } catch (ArgumentException) { }
+                return dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : null;
+            }
         }
 
         private void PickFolder(Row row)

@@ -1,3 +1,8 @@
+sealed class DotNet.HalconCore.ActionParam : DotNet.HalconCore.ParamItem
+    protected override System.Boolean SameValue(System.Object current, System.Object value)
+    protected override void SetValue(System.Object value)
+    public override System.Object GetValue()
+    public static readonly System.Object Press
 sealed class DotNet.HalconCore.AlgoAttribute : System.Attribute
     public .ctor(System.String key, System.String displayName)
     public DotNet.Drawing.RectEnum DefaultRoi { get; set; }
@@ -42,6 +47,8 @@ class DotNet.HalconCore.DisplayOptions
     public System.Int32 FontSize { get; set; }
     public System.Int32 FontX { get; set; }
     public System.Int32 FontY { get; set; }
+sealed class DotNet.HalconCore.FileParam : DotNet.HalconCore.ParamItem<System.String>
+    public System.String Filter { get; }
 sealed class DotNet.HalconCore.FlagParam : DotNet.HalconCore.ParamItem<System.Boolean>
 sealed class DotNet.HalconCore.FolderParam : DotNet.HalconCore.ParamItem<System.String>
 interface DotNet.HalconCore.IAlgoStrategy
@@ -213,19 +220,24 @@ abstract class DotNet.HalconCore.ParaStrategyBase<TPara> : DotNet.HalconCore.IPa
     public void ParamsChanged(System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> changed)
 sealed class DotNet.HalconCore.ParamBuilder
     public .ctor()
+    public DotNet.HalconCore.ParamBuilder Action(System.String label, System.Action action)
     public DotNet.HalconCore.ParamBuilder Choice<T>(System.String label, System.Func<T> get, System.Action<T> set, params DotNet.HalconCore.Option<T>[] options)
     public DotNet.HalconCore.ParamBuilder Double(System.String label, System.Func<System.Double> get, System.Action<System.Double> set, System.Double[] presets = null, System.Nullable<System.Double> min = null, System.Nullable<System.Double> max = null)
+    public DotNet.HalconCore.ParamBuilder File(System.String label, System.Func<System.String> get, System.Action<System.String> set, System.String filter = null)
     public DotNet.HalconCore.ParamBuilder Flag(System.String label, System.Func<System.Boolean> get, System.Action<System.Boolean> set)
     public DotNet.HalconCore.ParamBuilder Folder(System.String label, System.Func<System.String> get, System.Action<System.String> set)
     public DotNet.HalconCore.ParamBuilder Group(System.String title)
     public DotNet.HalconCore.ParamBuilder Int(System.String label, System.Func<System.Int32> get, System.Action<System.Int32> set, System.Int32[] presets = null, System.Nullable<System.Int32> min = null, System.Nullable<System.Int32> max = null)
     public DotNet.HalconCore.ParamBuilder Page(System.String page)
     public DotNet.HalconCore.ParamBuilder Source(System.String label, System.Func<DotNet.HalconCore.SourceRef> get, System.Action<DotNet.HalconCore.SourceRef> set, DotNet.HalconCore.OutEnum type)
+    public DotNet.HalconCore.ParamBuilder SourceList(System.String label, System.Func<System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.SourceRef>> get, System.Action<System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.SourceRef>> set, DotNet.HalconCore.OutEnum type, System.Int32 maxCount = 0)
     public DotNet.HalconCore.ParamBuilder Tab(DotNet.HalconCore.TabPageEnum tab)
+    public DotNet.HalconCore.ParamBuilder Text(System.String label, System.Func<System.String> get, System.Action<System.String> set)
     public DotNet.HalconCore.ParamBuilder When(System.Func<System.Boolean> visible)
     public System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.ParamItem> Items { get; }
 abstract class DotNet.HalconCore.ParamItem
     protected abstract void SetValue(System.Object value)
+    protected virtual System.Boolean SameValue(System.Object current, System.Object value)
     public DotNet.HalconCore.ParamKind Kind { get; }
     public System.Boolean IsVisible { get; }
     public System.Boolean TrySetValue(System.Object value)
@@ -239,12 +251,16 @@ abstract class DotNet.HalconCore.ParamItem<T> : DotNet.HalconCore.ParamItem
     public T Value { get; }
     public override System.Object GetValue()
 enum DotNet.HalconCore.ParamKind : System.Int32
+    Action = 8
     Choice = 1
     Double = 3
+    File = 7
     Flag = 4
     Folder = 5
     Int = 2
     Source = 0
+    SourceList = 9
+    Text = 6
 sealed class DotNet.HalconCore.ParamOption
     public System.Object Value { get; }
     public System.String Text { get; }
@@ -275,6 +291,10 @@ enum DotNet.HalconCore.RunStatus : System.Int32
     Error = 2
     Ok = 0
     Warning = 1
+sealed class DotNet.HalconCore.SourceListParam : DotNet.HalconCore.ParamItem<System.Collections.Generic.IReadOnlyList<DotNet.HalconCore.SourceRef>>
+    protected override System.Boolean SameValue(System.Object current, System.Object value)
+    public DotNet.HalconCore.OutEnum SourceType { get; }
+    public System.Int32 MaxCount { get; }
 sealed class DotNet.HalconCore.SourceParam : DotNet.HalconCore.ParamItem<DotNet.HalconCore.SourceRef>
     public DotNet.HalconCore.OutEnum SourceType { get; }
     public System.Boolean AllowsLocal { get; }
@@ -304,3 +324,4 @@ sealed class DotNet.HalconCore.TemplateView
     public HalconDotNet.HObject ModelRegion { get; }
     public System.Nullable<DotNet.HalconCore.ModelResult> Best { get; }
     public System.String ModelPath { get; }
+sealed class DotNet.HalconCore.TextParam : DotNet.HalconCore.ParamItem<System.String>

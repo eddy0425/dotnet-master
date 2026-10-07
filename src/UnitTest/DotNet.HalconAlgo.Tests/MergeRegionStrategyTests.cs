@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using DotNet.Drawing;
 using DotNet.HalconCore;
 using HalconDotNet;
@@ -39,17 +40,17 @@ namespace DotNet.HalconAlgo.Tests
             return o;
         }
 
-        private void Sources(params SourceRef[] sources)
-        {
-            for (int i = 0; i < sources.Length; i++) _strategy.inPara.RegionSources[i] = sources[i];
-        }
+        /// <summary> 直接写配置；可以带本地项（模拟旧方案里补齐用的空槽位） </summary>
+        private void Sources(params SourceRef[] sources) => _strategy.inPara.RegionSources = sources.ToList();
+
+        private SourceListParam SourceList => (SourceListParam)_strategy.Param("输入区域");
 
         [TestMethod]
         public void Identity()
         {
             Assert.AreEqual("region.merge", AlgoInfo.Of(_strategy).Key);
             Assert.AreEqual("区域合并", _strategy.Name);
-            Assert.AreEqual(6, _strategy.inPara.RegionSources.Length);
+            Assert.AreEqual(0, _strategy.inPara.RegionSources.Count, "新建时没有来源, 个数不再固定");
         }
 
         [TestMethod]
@@ -71,7 +72,7 @@ namespace DotNet.HalconAlgo.Tests
         {
             _strategy.inPara.RegionSources = null;
             Assert.AreEqual(RunStatus.Error, _strategy.On(_display, _a).Status);
-            Assert.AreEqual(6, _strategy.inPara.RegionSources.Length, "旧配置里的 null 补回 6 个空槽位");
+            Assert.AreEqual(0, _strategy.inPara.RegionSources.Count, "旧配置里的 null 当作空列表");
         }
 
         [TestMethod]
@@ -238,26 +239,25 @@ namespace DotNet.HalconAlgo.Tests
 
         #region 参数
 
+        /// <summary> 可变长来源列表取代原来的 6 个固定槽位 </summary>
         [TestMethod]
-        public void Params_CoordInAndSixSourceSlots()
+        public void Params_CoordInAndSourceList()
         {
-            CollectionAssert.AreEqual(
-                new[] { "跟随坐标", "输入区域0", "输入区域1", "输入区域2", "输入区域3", "输入区域4", "输入区域5" },
-                _strategy.Labels(Pages.Parameter));
+            CollectionAssert.AreEqual(new[] { "跟随坐标", "输入区域" }, _strategy.Labels(Pages.Parameter));
             Assert.AreEqual(OutEnum.Coord, ((SourceParam)_strategy.Param("跟随坐标")).SourceType);
-            Assert.AreEqual(OutEnum.Region, ((SourceParam)_strategy.Param("输入区域5")).SourceType);
+            Assert.AreEqual(OutEnum.Region, SourceList.SourceType);
+            Assert.AreEqual(0, SourceList.MaxCount, "个数不限");
         }
 
         [TestMethod]
-        public void Params_NullSourceArray_StillDeclaresSixSlots_AndWrites()
+        public void Params_NullSourceList_Writes()
         {
             // 旧配置里 "RegionSources": null 反序列化后就是 null
             _strategy.inPara.RegionSources = null;
 
-            Assert.IsTrue(_strategy.SetParam("输入区域2", _b.Ref("区域")));
+            Assert.IsTrue(_strategy.SetParam("输入区域", new[] { _a.Ref("区域"), _b.Ref("区域") }));
 
-            Assert.AreEqual(6, _strategy.inPara.RegionSources.Length);
-            Assert.AreEqual(_b.Ref("区域"), _strategy.inPara.RegionSources[2]);
+            CollectionAssert.AreEqual(new[] { _a.Ref("区域"), _b.Ref("区域") }, _strategy.inPara.RegionSources);
         }
 
         [TestMethod]
@@ -265,10 +265,25 @@ namespace DotNet.HalconAlgo.Tests
         {
             _strategy.inPara.TmplPoint = new Point2d(1, 2);
 
-            _strategy.SetParam("输入区域3", _b.Ref("区域"));
+            _strategy.SetParam("输入区域", new[] { _b.Ref("区域") });
 
             Assert.IsNull(_strategy.inPara.TmplPoint);
-            Assert.AreEqual(_b.Ref("区域"), _strategy.inPara.RegionSources[3]);
+            CollectionAssert.AreEqual(new[] { _b.Ref("区域") }, _strategy.inPara.RegionSources);
+        }
+
+        /// <summary>
+        /// 旧方案：6 个槽位，没用的存成本地。JSON 都是数组，直接读得进来；读入后去掉补齐用的空槽，不需要参数迁移。
+        /// </summary>
+        [TestMethod]
+        public void OldSchemeWithSixSlots_LoadsWithoutEmptySlots()
+        {
+            var old = new { RegionSources = new[] { _a.Ref("区域"), SourceRef.Local, _b.Ref("区域"), SourceRef.Local, SourceRef.Local, SourceRef.Local } };
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(old);
+            _strategy.inPara = Newtonsoft.Json.JsonConvert.DeserializeObject<RegionMerge>(json);
+
+            CollectionAssert.AreEqual(new[] { _a.Ref("区域"), _b.Ref("区域") }, SourceList.Value.ToArray(), "参数页只看到真正的来源");
+            Assert.IsTrue(_strategy.On(_display, _a, _b).IsOk);
+            StringAssert.Contains(_display.LastText, "合并数量:2");
         }
 
         [TestMethod]
@@ -286,7 +301,8 @@ namespace DotNet.HalconAlgo.Tests
         {
             _strategy.inPara.TmplPoint = new Point2d(1, 2);
 
-            Assert.IsFalse(_strategy.SetParam("输入区域0", SourceRef.Local), "值没变就不算改动");
+            Sources(_a.Ref("区域"));
+            Assert.IsFalse(_strategy.SetParam("输入区域", new[] { _a.Ref("区域") }), "内容没变就不算改动（新列表实例也一样）");
 
             Assert.AreEqual(new Point2d(1, 2), _strategy.inPara.TmplPoint);
         }
@@ -343,8 +359,7 @@ namespace DotNet.HalconAlgo.Tests
 
             Assert.IsFalse(json.Contains("\"Region\""));
             Assert.AreEqual(new Point2d(1, 2), back.TmplPoint);
-            Assert.AreEqual(_a.Ref("区域"), back.RegionSources[0]);
-            Assert.AreEqual(SourceRef.Local, back.RegionSources[1]);
+            CollectionAssert.AreEqual(new[] { _a.Ref("区域") }, back.RegionSources);
         }
     }
 }

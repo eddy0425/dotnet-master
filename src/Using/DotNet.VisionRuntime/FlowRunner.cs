@@ -224,7 +224,7 @@ namespace DotNet.VisionRuntime
         public IReadOnlyList<IParaStrategy> Upstream(int index) => _tools.Take(index).ToList();
 
         /// <summary>
-        /// 运行前校验：每个来源引用的工具必须存在、排在前面、输出存在且类型匹配。
+        /// 运行前校验：每个来源引用（含来源列表里的每一项）的工具必须存在、排在前面、输出存在且类型匹配。
         /// </summary>
         public IReadOnlyList<FlowIssue> Validate()
         {
@@ -232,18 +232,31 @@ namespace DotNet.VisionRuntime
             for (int i = 0; i < _tools.Count; i++)
             {
                 if (!(_tools[i] is IParaBinding binding)) continue;
-                foreach (var source in binding.DescribeParams().OfType<SourceParam>())
+                foreach (var param in binding.DescribeParams())
                 {
-                    var issue = Check(i, source);
-                    if (issue != null) issues.Add(new FlowIssue(i, _tools[i], source.Label, issue));
+                    switch (param)
+                    {
+                        case SourceParam source:
+                            Report(issues, i, source.Label, Check(i, source.Value, source.SourceType));
+                            break;
+                        case SourceListParam list:
+                            var entries = list.Value;
+                            for (int k = 0; k < entries.Count; k++)
+                                Report(issues, i, $"{list.Label}[{k}]", Check(i, entries[k], list.SourceType));
+                            break;
+                    }
                 }
             }
             return issues;
         }
 
-        private string Check(int index, SourceParam param)
+        private void Report(List<FlowIssue> issues, int index, string label, string issue)
         {
-            var source = param.Value;
+            if (issue != null) issues.Add(new FlowIssue(index, _tools[index], label, issue));
+        }
+
+        private string Check(int index, SourceRef source, OutEnum type)
+        {
             if (source.IsLocal) return null;
 
             int at = -1;
@@ -256,7 +269,7 @@ namespace DotNet.VisionRuntime
 
             var output = _tools[at].FindOutput(source.Output);
             if (output == null) return $"'{_tools[at].Name}' 没有输出 '{source.Output}'";
-            if (output.Type != param.SourceType) return $"'{_tools[at].Name}/{source.Output}' 的类型是 {output.Type}, 需要 {param.SourceType}";
+            if (output.Type != type) return $"'{_tools[at].Name}/{source.Output}' 的类型是 {output.Type}, 需要 {type}";
             return null;
         }
 

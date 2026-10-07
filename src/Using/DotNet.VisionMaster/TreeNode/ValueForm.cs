@@ -45,6 +45,18 @@ namespace DotNet.VisionMaster
         public SourceRef? Pick(IReadOnlyList<IParaStrategy> upstream, SourceParam param)
         {
             Prepare(upstream, param.SourceType, param.AllowsLocal, param.Value);
+            return ShowPick();
+        }
+
+        /// <summary> 给来源列表选一项：只能选上游的 <paramref name="type"/> 输出，没有"默认" </summary>
+        public SourceRef? Pick(IReadOnlyList<IParaStrategy> upstream, OutEnum type)
+        {
+            Prepare(upstream, type, allowLocal: false, current: SourceRef.Local);
+            return ShowPick();
+        }
+
+        private SourceRef? ShowPick()
+        {
             DialogResult = DialogResult.None;
             ShowDialog(_owner);
             return DialogResult == DialogResult.OK ? Picked : (SourceRef?)null;

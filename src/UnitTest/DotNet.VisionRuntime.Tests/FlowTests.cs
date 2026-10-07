@@ -199,6 +199,39 @@ namespace DotNet.VisionRuntime.Tests
             Assert.AreEqual("输入", issues[0].Label);
         }
 
+        private sealed class ListPara : DisplayOptions
+        {
+            public List<SourceRef> Inputs { get; set; } = new List<SourceRef>();
+        }
+
+        private sealed class ListStep : ParaStrategyBase<ListPara>
+        {
+            public ListStep(string name) { Name = name; }
+            protected override void DeclareParams(ParamBuilder p)
+                => p.SourceList("输入", () => inPara.Inputs, v => inPara.Inputs = v.ToList(), OutEnum.Image);
+            protected override void DeclareOutputs(OutputBuilder o) { }
+            protected override void ResetOutputs() { }
+            protected override RunResult Execute(RunContext context) => RunResult.Ok();
+        }
+
+        /// <summary> 来源列表里的每一项都是一条输入依赖，逐项校验 </summary>
+        [TestMethod]
+        public void Validate_SourceList_ChecksEachEntry()
+        {
+            var a = new Step("A");
+            var list = new ListStep("L");
+            var c = new Step("C");
+            list.inPara.Inputs.Add(a.Ref("图像"));
+            list.inPara.Inputs.Add(c.Ref("图像"));      // 下游
+            list.inPara.Inputs.Add(a.Ref("次数"));      // 类型不对
+
+            var issues = new FlowRunner(new IParaStrategy[] { a, list, c }).Validate();
+
+            CollectionAssert.AreEqual(new[] { "输入[1]", "输入[2]" }, issues.Select(i => i.Label).ToArray());
+            StringAssert.Contains(issues[0].Message, "必须排在本工具之前");
+            StringAssert.Contains(issues[1].Message, "需要 Image");
+        }
+
         [TestMethod]
         public void Validate_LocalAndValidSources_NoIssues()
         {
@@ -217,7 +250,7 @@ namespace DotNet.VisionRuntime.Tests
             {
                 roi.inPara.HoRect.Dispose();
                 roi.inPara.HoRect = NewRegion(RectEnum.Rectangle, 10, 10, 20, 20);
-                merge.inPara.RegionSources[0] = roi.Ref("区域");
+                merge.inPara.RegionSources.Add(roi.Ref("区域"));
 
                 var result = new FlowRunner(new IParaStrategy[] { roi, merge }).Run(_initial);
 
@@ -267,7 +300,7 @@ namespace DotNet.VisionRuntime.Tests
             roi.Name = "定位框";
             roi.inPara.HoRect.Dispose();
             roi.inPara.HoRect = NewRegion(RectEnum.Rectangle, 10, 20, 30, 40);
-            merge.inPara.RegionSources[2] = roi.Ref("区域");
+            merge.inPara.RegionSources.Add(roi.Ref("区域"));
             merge.inPara.CoordIn = roi.Ref("坐标系");
             merge.inPara.TmplPoint = new Point2d(1, 2);
             fit.inPara.Transition = Transition.All;
@@ -288,7 +321,7 @@ namespace DotNet.VisionRuntime.Tests
                 Assert.IsTrue(roi2.inPara.HoRect.HoRegion.IsUsableRegion(), "ROI 区域随参数落盘");
 
                 var merge2 = (MergeRegionStrategy)loaded[1];
-                Assert.AreEqual(roi.Ref("区域"), merge2.inPara.RegionSources[2]);
+                CollectionAssert.AreEqual(new[] { roi.Ref("区域") }, merge2.inPara.RegionSources);
                 Assert.AreEqual(roi.Ref("坐标系"), merge2.inPara.CoordIn);
                 Assert.AreEqual(new Point2d(1, 2), merge2.inPara.TmplPoint);
 

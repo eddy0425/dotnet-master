@@ -20,9 +20,6 @@ namespace DotNet.HalconAlgo
     [Algo("region.merge", "区域合并", Group = "区域", Order = 220)]
     public class MergeRegionStrategy : ParaStrategyBase<RegionMerge>
     {
-        /// <summary> 输入区域的槽位数 </summary>
-        public const int SourceCount = 6;
-
         private int _merged;
         private int _missing;
 
@@ -40,14 +37,9 @@ namespace DotNet.HalconAlgo
 
         protected override void DeclareParams(ParamBuilder p)
         {
-            var sources = Sources();
             p.Page(Pages.Parameter)
-             .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord);
-            for (int i = 0; i < sources.Length; i++)
-            {
-                int slot = i;
-                p.Source($"输入区域{slot}", () => Sources()[slot], v => Sources()[slot] = v, OutEnum.Region);
-            }
+             .Source("跟随坐标", () => inPara.CoordIn, v => inPara.CoordIn = v, OutEnum.Coord)
+             .SourceList("输入区域", Sources, v => inPara.RegionSources = v.ToList(), OutEnum.Region);
             p.Page(Pages.Display)
              .Group(DisplayGroup)
              .Flag("查找区域", () => inPara.DispRegion, v => inPara.DispRegion = v);
@@ -56,7 +48,7 @@ namespace DotNet.HalconAlgo
         /// <summary> 来源或跟随坐标一改，旧的示教原点就失效；只改显示选项时保留 </summary>
         protected override void OnParamsChanged(IReadOnlyList<ParamItem> changed)
         {
-            if (changed.Any(item => item.Kind == ParamKind.Source)) inPara.TmplPoint = null;
+            if (changed.Any(item => item.Kind == ParamKind.Source || item.Kind == ParamKind.SourceList)) inPara.TmplPoint = null;
         }
 
         protected override void DeclareOutputs(OutputBuilder o)
@@ -84,8 +76,6 @@ namespace DotNet.HalconAlgo
             {
                 foreach (var source in Sources())
                 {
-                    if (source.IsLocal) continue;   // 空槽位
-
                     // 解析不到 / 空句柄 / 没有像素都按"来源无效"计数, 不中断整轮合并:
                     // 全空时 area_center 的 (0,0) 会被当成重心发布, 部分为空时残缺重心会被示教成模板点。
                     if (!context.TryResolveRegion(source, out HObject region)) { _missing++; continue; }
@@ -136,17 +126,14 @@ namespace DotNet.HalconAlgo
         }
 
         /// <summary>
-        /// 输入区域槽位。旧配置里 <c>"RegionSources": null</c> 或长度不足时补齐，参数页与执行都不会因此出错。
+        /// 输入区域。旧方案是 6 个固定槽位，没用的槽位存成本地（"默认"）；读进来之后去掉这些空槽，
+        /// <c>"RegionSources": null</c> 当作空列表 —— JSON 都是数组，不需要参数迁移。
         /// </summary>
-        private SourceRef[] Sources()
+        private List<SourceRef> Sources()
         {
             var sources = inPara.RegionSources;
-            if (sources == null || sources.Length < SourceCount)
-            {
-                var padded = new SourceRef[SourceCount];
-                if (sources != null) System.Array.Copy(sources, padded, sources.Length);
-                inPara.RegionSources = sources = padded;
-            }
+            if (sources == null || sources.Any(s => s.IsLocal))
+                inPara.RegionSources = sources = (sources ?? new List<SourceRef>()).Where(s => !s.IsLocal).ToList();
             return sources;
         }
 
@@ -168,8 +155,8 @@ namespace DotNet.HalconAlgo
         /// <summary> 跟随坐标 </summary>
         public SourceRef CoordIn { get; set; } = SourceRef.Local;
 
-        /// <summary> 区域来源；本地表示空槽位 </summary>
-        public SourceRef[] RegionSources { get; set; } = new SourceRef[MergeRegionStrategy.SourceCount];
+        /// <summary> 区域来源（上游的区域输出），个数不限 </summary>
+        public List<SourceRef> RegionSources { get; set; } = new List<SourceRef>();
 
         /// <summary>
         /// 示教态合并重心（变换前）：首轮全部来源有效时记录，作为下游跟随的零角参考原点。

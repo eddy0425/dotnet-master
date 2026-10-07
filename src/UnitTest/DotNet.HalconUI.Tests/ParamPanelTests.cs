@@ -349,6 +349,134 @@ namespace DotNet.HalconUI.Tests
             });
         }
 
+        #region 文本 / 文件 / 按钮 / 来源列表
+
+        private sealed class More
+        {
+            public string Text = "abc";
+            public string File = "";
+            public int Pressed;
+            public List<SourceRef> Sources = new List<SourceRef>();
+        }
+
+        private static void RunMore(Action<ParamPanel, More, List<ParamItem>, List<ParamItem>> body, int maxCount = 0)
+        {
+            Sta.Run(() =>
+            {
+                var more = new More();
+                var items = new ParamBuilder()
+                    .Text("条码", () => more.Text, v => more.Text = v)
+                    .File("模型", () => more.File, v => more.File = v, "模型|*.shm")
+                    .Action("重新示教", () => more.Pressed++)
+                    .SourceList("输入区域", () => more.Sources, v => more.Sources = v.ToList(), OutEnum.Region, maxCount)
+                    .Items.ToList();
+                var committed = new List<ParamItem>();
+                using (var panel = new ParamPanel { Dock = DockStyle.Fill })
+                using (WindowHost.ShowOffscreen(panel, 600, 400))
+                {
+                    panel.Committed += (s, e) => committed.AddRange(e.Changed);
+                    panel.Bind(items);
+                    body(panel, more, items, committed);
+                }
+            });
+        }
+
+        [TestMethod]
+        public void Text_CommitsRawText()
+        {
+            RunMore((panel, more, items, committed) =>
+            {
+                var item = Item(items, "条码");
+                Assert.AreEqual("abc", panel.EditorOf(item).Text);
+                panel.EditorOf(item).Text = " X1 ";
+
+                Assert.IsTrue(panel.CommitText(item));
+
+                Assert.AreEqual(" X1 ", more.Text);
+                Assert.AreEqual(1, committed.Count);
+            });
+        }
+
+        [TestMethod]
+        public void File_PickerGetsFilter_WritesBack()
+        {
+            RunMore((panel, more, items, committed) =>
+            {
+                var item = Item(items, "模型");
+                string seenFilter = null;
+                panel.FilePicker = (filter, current) => { seenFilter = filter; return @"D:\m\a.shm"; };
+
+                panel.ButtonOf(item).PerformClick();
+
+                Assert.AreEqual("模型|*.shm", seenFilter);
+                Assert.AreEqual(@"D:\m\a.shm", more.File);
+                Assert.AreEqual(@"D:\m\a.shm", panel.EditorOf(item).Text);
+            });
+        }
+
+        [TestMethod]
+        public void Action_ButtonRunsActionAndNotifies()
+        {
+            RunMore((panel, more, items, committed) =>
+            {
+                var item = Item(items, "重新示教");
+                var button = (Button)panel.EditorOf(item);
+                Assert.AreEqual("重新示教", button.Text, "按钮文字就是标签");
+
+                button.PerformClick();
+                button.PerformClick();
+
+                Assert.AreEqual(2, more.Pressed);
+                Assert.AreEqual(2, committed.Count(i => i == item));
+            });
+        }
+
+        [TestMethod]
+        public void SourceList_AddAndRemove()
+        {
+            RunMore((panel, more, items, committed) =>
+            {
+                var item = Item(items, "输入区域");
+                var a = new SourceRef(Guid.NewGuid(), "区域");
+                var b = new SourceRef(Guid.NewGuid(), "区域");
+                var picks = new Queue<SourceRef?>(new SourceRef?[] { a, b, null });
+                panel.SourceListPicker = p => picks.Dequeue();
+                panel.SourceFormatter = s => s.IsLocal ? "默认" : s.ToolId == a.ToolId ? "A/区域" : "B/区域";
+                var combo = (ComboBox)panel.EditorOf(item);
+
+                panel.ButtonOf(item).PerformClick();
+                panel.ButtonOf(item).PerformClick();
+                panel.ButtonOf(item).PerformClick();   // 取消
+
+                CollectionAssert.AreEqual(new[] { a, b }, more.Sources);
+                CollectionAssert.AreEqual(new[] { "A/区域", "B/区域" }, combo.Items.Cast<string>().ToArray());
+
+                combo.SelectedIndex = 0;
+                panel.OpenButtonOf(item).PerformClick();
+
+                CollectionAssert.AreEqual(new[] { b }, more.Sources);
+                Assert.AreEqual(3, committed.Count);
+            });
+        }
+
+        [TestMethod]
+        public void SourceList_MaxCount_RefusesMore()
+        {
+            RunMore((panel, more, items, committed) =>
+            {
+                var item = Item(items, "输入区域");
+                panel.SourceListPicker = p => new SourceRef(Guid.NewGuid(), "区域");
+
+                panel.ButtonOf(item).PerformClick();
+                panel.ButtonOf(item).PerformClick();
+
+                Assert.AreEqual(1, more.Sources.Count);
+                StringAssert.Contains(panel.ErrorOf(item), "最多 1 项");
+            }, maxCount: 1);
+        }
+
+        #endregion
+
         #region 宿主写回
 
         /// <summary> 宿主排队执行写回（连续运行中排到两帧之间）：执行完之前显示为待生效，执行完才通知 </summary>

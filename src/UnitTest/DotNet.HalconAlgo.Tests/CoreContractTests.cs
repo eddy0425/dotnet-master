@@ -105,6 +105,63 @@ namespace DotNet.HalconAlgo.Tests
             Assert.ThrowsException<ArgumentNullException>(() => p.Page(" "));
         }
 
+        [TestMethod]
+        public void Action_PressRunsAction_OtherValuesDoNot()
+        {
+            int pressed = 0;
+            var item = (ActionParam)new ParamBuilder().Action("重新示教", () => pressed++).Items.Single();
+
+            Assert.AreEqual(ParamKind.Action, item.Kind);
+            Assert.IsNull(item.GetValue());
+            Assert.IsFalse(item.TrySetValue(null));
+            Assert.IsTrue(item.TrySetValue(ActionParam.Press), "按一次算一次改动, 宿主据此通知 ParamsChanged");
+            Assert.IsTrue(item.TrySetValue(ActionParam.Press));
+            Assert.AreEqual(2, pressed);
+        }
+
+        [TestMethod]
+        public void SourceList_ComparesByContent()
+        {
+            var a = new SourceRef(Guid.NewGuid(), "区域");
+            var b = new SourceRef(Guid.NewGuid(), "区域");
+            IReadOnlyList<SourceRef> value = new List<SourceRef> { a };
+            int writes = 0;
+            var item = (SourceListParam)new ParamBuilder()
+                .SourceList("输入", () => value, v => { value = v; writes++; }, OutEnum.Region, maxCount: 3).Items.Single();
+
+            Assert.IsFalse(item.TrySetValue(new[] { a }), "内容相同的新实例不算改动");
+            Assert.IsTrue(item.TrySetValue(new[] { a, b }));
+            CollectionAssert.AreEqual(new[] { a, b }, value.ToArray());
+            Assert.AreEqual(1, writes);
+            Assert.AreEqual(3, item.MaxCount);
+            Assert.ThrowsException<ArgumentOutOfRangeException>(() => new ParamBuilder().SourceList("x", () => value, v => { }, OutEnum.Region, -1));
+        }
+
+        [TestMethod]
+        public void SourceList_NullGetter_ReadsAsEmpty()
+        {
+            var item = (SourceListParam)new ParamBuilder().SourceList("输入", () => null, v => { }, OutEnum.Region).Items.Single();
+            Assert.AreEqual(0, item.Value.Count);
+            Assert.IsFalse(item.TrySetValue(new SourceRef[0]));
+        }
+
+        [TestMethod]
+        public void TextAndFile_Kinds_DefaultFilter()
+        {
+            string text = "a", file = null;
+            var items = new ParamBuilder()
+                .Text("条码", () => text, v => text = v)
+                .File("模型", () => file, v => file = v)
+                .File("图像", () => file, v => file = v, "图像|*.bmp;*.png").Items;
+
+            Assert.AreEqual(ParamKind.Text, items[0].Kind);
+            Assert.AreEqual(ParamKind.File, items[1].Kind);
+            Assert.AreEqual("所有文件|*.*", ((FileParam)items[1]).Filter);
+            Assert.AreEqual("图像|*.bmp;*.png", ((FileParam)items[2]).Filter);
+            Assert.IsTrue(items[0].TrySetValue(" b "));
+            Assert.AreEqual(" b ", text, "文本原样保存");
+        }
+
 #pragma warning disable 618 // 验证旧写法的映射
         [TestMethod]
         public void Tab_Obsolete_MapsToPageNames()
