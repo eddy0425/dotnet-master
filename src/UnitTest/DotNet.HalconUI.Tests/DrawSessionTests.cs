@@ -320,11 +320,28 @@ namespace DotNet.HalconUI.Tests
             shape.Dragging = true;
             using (var session = DrawSession.Begin(_window, shape))
             {
-                session.RenderInitial();
+                session.RenderInitial(withShape: true);
 
                 Assert.AreEqual(DrawHandle.None, shape.Hover);
                 Assert.IsFalse(shape.Dragging);
                 Assert.AreEqual(50, shape.CX, "初始渲染不改几何");
+            }
+        }
+
+        [TestMethod]
+        public void RenderInitial_WithoutShape_LeavesShapeUntouched()
+        {
+            // 新建会话只画背景：图元仍停在 Idle，Hover / Dragging 不被改写
+            var shape = new CircleShape();
+            shape.Hover = DrawHandle.Center;
+            using (var session = DrawSession.Begin(_window, shape))
+            {
+                session.RenderInitial(withShape: false);
+
+                Assert.AreEqual(DrawPhase.Idle, shape.Phase);
+                Assert.AreEqual(DrawHandle.Center, shape.Hover);
+                Assert.IsFalse(shape.Dragging);
+                Assert.IsFalse(shape.Completed);
             }
         }
 
@@ -344,7 +361,8 @@ namespace DotNet.HalconUI.Tests
                         session.OnMouseDown(Mouse.Left(30, 100));
                         session.OnMouseUp(Mouse.Right(30, 100));
                         session.OnMouseMove(Mouse.Move(31, 31));
-                        session.RenderInitial();
+                        session.RenderInitial(withShape: true);
+                        session.RenderInitial(withShape: false);
                     }
                 }
 

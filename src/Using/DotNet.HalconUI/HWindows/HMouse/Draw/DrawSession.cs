@@ -202,15 +202,23 @@ namespace DotNet.HalconUI.Draw
         }
 
         /// <summary>
-        /// Draw*Mod 在阻塞等待之前调用一次，用传入的初始几何把 ROI 画出来。
-        /// 否则用户必须先移动鼠标才能看到初始 ROI，体验割裂。
+        /// 在等待之前先渲染一帧：把背景铺进 backbuffer 并 swap 到屏幕。
         /// </summary>
-        internal void RenderInitial()
+        /// <param name="withShape">
+        /// true（Draw*Mod）：再用传入的初始几何把 ROI 画出来，否则用户必须先移动鼠标才能看到初始 ROI；
+        /// false（新建）：图元还没有几何，只画背景。
+        /// </param>
+        /// <remarks>
+        /// 新建时也不能省掉这一帧：会话一开始就切到了 flush=false，窗口首次切换时 backbuffer 尚未初始化，
+        /// 第一次鼠标移动之前屏幕显示的就是这块空缓冲 —— 表现为首次新建区域 / 模板时图像窗口黑屏或闪烁。
+        /// </remarks>
+        internal void RenderInitial(bool withShape)
         {
             try
             {
                 _renderer.RefreshPixelSize();
                 _renderer.RestoreBackground();
+                if (!withShape) return;
                 _shape.Hover = DrawHandle.None;
                 _shape.Dragging = false;
                 _shape.RenderStatic();

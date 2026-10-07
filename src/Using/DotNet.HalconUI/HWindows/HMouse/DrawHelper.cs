@@ -46,11 +46,11 @@ namespace DotNet.HalconUI
 
         /// <summary>
         /// 所有 <c>Draw*Async</c> / <c>Draw*ModAsync</c> 的公共骨架：
-        /// 取消旧会话 → 开新会话 → (可选)按初始几何渲染一帧 → 异步等待 → 释放。
+        /// 取消旧会话 → 开新会话 → 渲染首帧(背景, Mod 时再加初始几何) → 异步等待 → 释放。
         /// </summary>
         /// <param name="window">目标窗口。会话按该对象注册，多窗口互不干扰。</param>
         /// <param name="shape">已填好初始几何的图元状态机；返回后其几何字段即为最终结果。</param>
-        /// <param name="edit">true 表示 <c>Mod</c> 语义：直接进入编辑阶段并先画一帧。</param>
+        /// <param name="edit">true 表示 <c>Mod</c> 语义：直接进入编辑阶段，首帧连同初始几何一起画出；false 为新建，首帧只画背景。</param>
         /// <param name="token">调用方的取消令牌。</param>
         /// <param name="timeout">等待上限；null 取 <see cref="DefaultTimeout"/>。</param>
         /// <returns>用户右键确认返回 true；取消 / 超时 / 被新会话顶掉返回 false。</returns>
@@ -76,11 +76,9 @@ namespace DotNet.HalconUI
 
             using (var session = DrawSession.Begin(window, shape))
             {
-                if (edit)
-                {
-                    shape.BeginEdit();
-                    session.RenderInitial();
-                }
+                if (edit) shape.BeginEdit();
+                // 新建也要先渲染一帧背景：否则首次切到 flush=false 时屏幕显示未初始化的 backbuffer(黑屏 / 闪烁)
+                session.RenderInitial(withShape: edit);
                 return await session.WaitForCompletionAsync(timeout ?? DefaultTimeout, token);
             }
         }
