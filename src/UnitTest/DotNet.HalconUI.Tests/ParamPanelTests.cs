@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Windows.Forms;
 using DotNet.HalconCore;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -284,6 +286,30 @@ namespace DotNet.HalconUI.Tests
 
                 panel.Bind(null);
                 Assert.AreEqual(0, panel.Items.Count);
+            });
+        }
+
+        [TestMethod]
+        public void Bind_Again_ReleasesOldEditorsFromErrorProvider()
+        {
+            Run((panel, para, items, committed) =>
+            {
+                // ErrorProvider 内部按控件登记, 控件释放后也不移除: 反复换绑不能让登记数一直涨
+                // items 是 .NET Framework 里 ErrorProvider 的内部字段, 换运行时要跟着改
+                var errorsField = typeof(ParamPanel).GetField("_errors", BindingFlags.Instance | BindingFlags.NonPublic);
+                var itemsField = typeof(ErrorProvider).GetField("items", BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.IsNotNull(errorsField, "ParamPanel._errors 字段不存在");
+                Assert.IsNotNull(itemsField, "ErrorProvider.items 是框架内部字段, 当前运行时没有");
+                var registered = (ICollection)itemsField.GetValue((ErrorProvider)errorsField.GetValue(panel));
+
+                panel.Bind(Declare(para));
+                int once = registered.Count;
+                Assert.IsTrue(once > 0, "基线没有登记任何控件, 测试失去意义");
+                for (int i = 0; i < 5; i++) panel.Bind(Declare(para));
+
+                Assert.AreEqual(once, registered.Count);
+                panel.Bind(null);
+                Assert.AreEqual(0, registered.Count);
             });
         }
 

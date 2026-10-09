@@ -243,9 +243,11 @@ namespace DotNet.HalconUI
 
         private void Clear()
         {
+            // ErrorProvider 按控件登记, 控件释放后也不会移除; 先清掉再释放控件, 不然会一直攥着旧编辑控件和闭包里的策略对象
+            _errors.Clear();
+            _toolTip.RemoveAll();
             foreach (var row in _rows)
             {
-                _errors.SetError(row.Editor, string.Empty);
                 row.Label?.Dispose();
                 row.Editor.Dispose();
                 row.Button?.Dispose();
@@ -255,7 +257,6 @@ namespace DotNet.HalconUI
             _groups.Clear();
             _rows.Clear();
             _errorText.Clear();
-            _toolTip.RemoveAll();
         }
 
         private void AddRow(ParamItem item)
