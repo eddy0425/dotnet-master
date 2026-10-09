@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using DotNet.HalconCore;
@@ -16,7 +17,11 @@ namespace DotNet.VisionMaster
     public partial class ToolForm : UIForm
     {
         internal const string AlgorithmDragFormat = "DotNet.VisionMaster.AlgorithmKey";
+        private static readonly Color SelectedBackColor = Color.FromArgb(0, 122, 204);
+        private static readonly Color GlyphColor = Color.FromArgb(170, 175, 190);
+        private static readonly Color ToolTextColor = Color.FromArgb(215, 218, 225);
         private readonly AlgoCatalog _catalog;
+        private Font _groupFont;
 
         // 供 WinForms Designer 使用；运行时使用带目录的构造函数。
         public ToolForm() : this(AlgoCatalog.Load(null)) { }
@@ -28,6 +33,8 @@ namespace DotNet.VisionMaster
             InitImageList();
             treeView_Tool.NodeMouseDoubleClick += treeView_Tool_NodeMouseDoubleClick;
             treeView_Tool.KeyDown += treeView_Tool_KeyDown;
+            treeView_Tool.FontChanged += (s, e) => ResetGroupFont();
+            Disposed += (s, e) => ResetGroupFont();
             StartPosition = FormStartPosition.Manual;
 
             // 当前 SunnyUI 没有标题栏扩展按钮，使用标准菜单保留置顶开关。
@@ -98,6 +105,83 @@ namespace DotNet.VisionMaster
         }
 
         private void ToolFrm_Load(object sender, EventArgs e) => GenerateTree();
+
+        private void ResetGroupFont()
+        {
+            _groupFont?.Dispose();
+            _groupFont = null;
+        }
+
+        /// <summary>
+        /// 自绘节点：整行选中背景、实线连接线、三角展开符、分组名加粗。
+        /// 展开符和图标仍按原生布局摆放（按层级 × Indent），点击命中由原生 TreeView 判定，位置必须对得上。
+        /// 连接线颜色取 Designer 里的 LineColor；ShowLines 在自绘模式下不起作用。
+        /// </summary>
+        private void treeView_Tool_DrawNode(object sender, DrawTreeNodeEventArgs e)
+        {
+            // 节点不可见时会收到空 Bounds
+            if (e.Bounds.IsEmpty) return;
+            var tree = treeView_Tool;
+            var g = e.Graphics;
+            var node = e.Node;
+            var row = new Rectangle(0, e.Bounds.Y, tree.ClientSize.Width, e.Bounds.Height);
+            // 用 IsSelected 而不是 e.State：失焦时 State 不带 Selected，配合 HideSelection = false 保持高亮
+            bool selected = node.IsSelected;
+            int indent = tree.Indent;
+            int midY = row.Y + row.Height / 2;
+            int imageWidth = tree.ImageList?.ImageSize.Width ?? 0;
+            int iconX = node.Bounds.X - imageWidth - 2;
+
+            using (var back = new SolidBrush(selected ? SelectedBackColor : tree.BackColor))
+                g.FillRectangle(back, row);
+
+            using (var pen = new Pen(tree.LineColor))
+            {
+                // 祖先还有后续兄弟时，竖线要穿过本行
+                for (var p = node.Parent; p?.Parent != null; p = p.Parent)
+                    if (p.NextNode != null)
+                    {
+                        int px = (p.Level - 1) * indent + indent / 2;
+                        g.DrawLine(pen, px, row.Y, px, row.Bottom);
+                    }
+                if (node.Parent != null)
+                {
+                    int x = (node.Level - 1) * indent + indent / 2;
+                    g.DrawLine(pen, x, row.Y, x, node.NextNode != null ? row.Bottom : midY);
+                    g.DrawLine(pen, x, midY, iconX - 3, midY);
+                }
+                // 展开的分组从展开符下方接出竖线，连到第一个子节点
+                if (node.IsExpanded && node.Nodes.Count > 0)
+                {
+                    int x = node.Level * indent + indent / 2;
+                    g.DrawLine(pen, x, midY + 6, x, row.Bottom);
+                }
+            }
+
+            if (node.Nodes.Count > 0)
+            {
+                int cx = node.Level * indent + indent / 2;
+                Point[] glyph = node.IsExpanded
+                    ? new[] { new Point(cx - 4, midY - 2), new Point(cx + 4, midY - 2), new Point(cx, midY + 3) }
+                    : new[] { new Point(cx - 2, midY - 4), new Point(cx - 2, midY + 4), new Point(cx + 3, midY) };
+                var oldMode = g.SmoothingMode;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var brush = new SolidBrush(selected ? Color.White : GlyphColor))
+                    g.FillPolygon(brush, glyph);
+                g.SmoothingMode = oldMode;
+            }
+
+            if (tree.ImageList != null && node.ImageIndex >= 0)
+                tree.ImageList.Draw(g, iconX, midY - tree.ImageList.ImageSize.Height / 2, node.ImageIndex);
+
+            Font font = tree.Font;
+            if (node.Parent == null)
+                font = _groupFont ?? (_groupFont = new Font(tree.Font, FontStyle.Bold));
+            var textRect = new Rectangle(node.Bounds.X, row.Y, Math.Max(0, row.Right - node.Bounds.X), row.Height);
+            Color textColor = selected || node.Parent == null ? Color.White : ToolTextColor;
+            TextRenderer.DrawText(g, node.Text, font, textRect, textColor,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
 
         private void treeView_Tool_MouseDown(object sender, MouseEventArgs e)
         {
